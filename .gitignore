@@ -1,0 +1,14 @@
+# Arduino IDE temporary build folders
+build/
+bin/
+.tmp/
+
+# Local configuration files
+.vscode/
+.idea/
+*.local
+
+# Core dumps or OS-specific junk
+core
+.DS_Store
+Thumbs.db
