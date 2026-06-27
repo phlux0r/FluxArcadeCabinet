@@ -1,94 +1,221 @@
+// =============================================================================
+// FLUX MASTER ARCADE — v2.0
+// Main state machine orchestrator.
+//
+// To add a new game:
+//   1. #include its header below
+//   2. Instantiate it in the "Game instances" section
+//   3. Add it to the gameRegistry[] array
+//   4. Add a CabinetState for it in ArcadeConfig.h
+//   5. Add a case to the switch in loop()
+// =============================================================================
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 #include <SD.h>
-#include "ArcadeConfig.h"
-#include "LauncherMenu.h"
-#include "GameEngineLander.h"  // Import our flat-tab game module!
 
-// Instantiate hardware graphics pipes
-Adafruit_ST7735 tft = Adafruit_ST7735(ArcadeConfig::TFT_CS, ArcadeConfig::TFT_DC, ArcadeConfig::TFT_RST);
-GFXcanvas16 canvas(ArcadeConfig::SCREEN_WIDTH, ArcadeConfig::SCREEN_HEIGHT);
+// Cabinet subsystems
+#include "cabinet/ArcadeConfig.h"
+#include "cabinet/InputManager.h"
+#include "cabinet/AudioEngine.h"
+#include "cabinet/ParticleManager.h"
 
-// Subsystem instantiations
-GameState currentCabinetState = STATE_LAUNCHER_MENU;
+// Game interface
+#include "games/IGame.h"
+
+// Game implementations
+#include "games/AsteroidFlux/AsteroidFluxGame.h"
+#include "games/LanderFlux/LanderFluxGame.h"
+
+// Launcher
+#include "launcher/LauncherMenu.h"
+
+// =============================================================================
+// HARDWARE
+// =============================================================================
+Adafruit_ST7735 tft(ArcadeConfig::TFT_CS, ArcadeConfig::TFT_DC, ArcadeConfig::TFT_RST);
+
+// Two canvases — one per physical orientation.
+// We keep both allocated so switching games is instant (no heap allocation).
+GFXcanvas16 canvasPortrait (ArcadeConfig::PORTRAIT_WIDTH,  ArcadeConfig::PORTRAIT_HEIGHT);
+GFXcanvas16 canvasLandscape(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+
+// =============================================================================
+// CABINET SUBSYSTEMS (shared across all games)
+// =============================================================================
+InputManager input;
+AudioEngine  audio;
+
+// =============================================================================
+// GAME INSTANCES
+// =============================================================================
+AsteroidFluxGame asteroidGame;
+LanderFluxGame   landerGame;
+
+// =============================================================================
+// LAUNCHER
+// =============================================================================
 LauncherMenu launcher;
-GameEngineLander landerGame; // Instantiate the Lander cartridge engine!
 
+// Game registry — order determines menu order
+const GameEntry gameRegistry[] = {
+    { "Asteroid Flux",  STATE_ASTEROID_FLUX },
+    { "Lander Flux",    STATE_LANDER_FLUX   },
+    // Add future games here: { "New Game", STATE_NEW_GAME },
+};
+const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
+
+// =============================================================================
+// STATE
+// =============================================================================
+CabinetState cabinetState = STATE_LAUNCHER_MENU;
+IGame*       activeGame   = nullptr;
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+// Switch to a game: set rotation, resize canvas pointer, init game
+void launchGame(IGame* game) {
+    activeGame = game;
+    uint8_t rotation = game->getRotation();
+    tft.setRotation(rotation);
+    input.waitForButtonARelease();  // Prevent launch-press bleeding into game
+    game->init(audio);
+    Serial.printf("[CABINET] Launched: %s (rotation %d)\n", game->getName(), rotation);
+}
+
+void returnToLauncher() {
+    activeGame = nullptr;
+    tft.setRotation(2);  // Portrait for menu
+    launcher.onEnter(audio);
+    cabinetState = STATE_LAUNCHER_MENU;
+    Serial.println("[CABINET] Returned to launcher.");
+}
+
+// Return the correct canvas for the current display rotation
+GFXcanvas16& activeCanvas() {
+    return (tft.getRotation() == 1) ? canvasLandscape : canvasPortrait;
+}
+
+// Push the active canvas to the display
+void flushCanvas() {
+    GFXcanvas16& c = activeCanvas();
+    tft.drawRGBBitmap(0, 0, c.getBuffer(), c.width(), c.height());
+}
+
+// =============================================================================
+// SETUP
+// =============================================================================
 void setup() {
     Serial.begin(115200);
-    delay(1000);
-    Serial.println("[SYSTEM] Starting Master Arcade Console Setup...");
+    delay(500);
+    Serial.println("[CABINET] Flux Master Arcade v2.0 starting...");
 
-    // Initialize Backlight
+    // Backlight on
     pinMode(ArcadeConfig::TFT_BLK, OUTPUT);
     digitalWrite(ArcadeConfig::TFT_BLK, HIGH);
 
-    // Initialize display hardware orientation
+    // Display
     tft.initR(INITR_BLACKTAB);
-    tft.setRotation(2); // Right side up on breadboard layout
-    
-    // Configure inputs
-    pinMode(ArcadeConfig::BUTTON_A, INPUT_PULLUP);
-    pinMode(ArcadeConfig::BUTTON_B, INPUT_PULLUP);
+    tft.setSPISpeed(ArcadeConfig::TFT_SPI_SPEED);
+    SPI.setFrequency(ArcadeConfig::SPI_BUS_SPEED);
+    tft.setRotation(2);  // Portrait for launcher menu
+    tft.fillScreen(ArcadeConfig::COLOR_BLACK);
 
-    // Initialize Shared SPI SD Card Module
-    if (!SD.begin(ArcadeConfig::SD_CS)) {
-        Serial.println("[WARNING] Launcher running without SD card access.");
-    } else {
-        Serial.println("[SYSTEM] SD System tied into launcher pipeline.");
+    // Input
+    input.begin();
+
+    // Audio
+    if (!audio.begin()) {
+        Serial.println("[WARNING] Audio engine failed to start.");
     }
 
-    launcher.init();
-    Serial.println("[SYSTEM] Setup complete.");
+    // SD card (optional — cabinet runs without it)
+    if (!SD.begin(ArcadeConfig::SD_CS)) {
+        Serial.println("[WARNING] SD card not found — running without SD assets.");
+    } else {
+        Serial.println("[CABINET] SD card ready.");
+    }
+
+    // Seed RNG from floating analogue pins
+    randomSeed(analogRead(0) + analogRead(ArcadeConfig::JOY_X) + micros());
+
+    // Register games in the launcher
+    launcher.setGames(gameRegistry, GAME_COUNT);
+    launcher.onEnter(audio);
+
+    audio.playLaunchMelody();
+
+    Serial.println("[CABINET] Setup complete.");
 }
 
+// =============================================================================
+// MAIN LOOP
+// =============================================================================
 void loop() {
-    // Capture live snapshots of our inputs globally at the start of every frame
-    bool btnA = (digitalRead(ArcadeConfig::BUTTON_A) == LOW);
-    bool btnB = (digitalRead(ArcadeConfig::BUTTON_B) == LOW);
-    int joyX  = analogRead(ArcadeConfig::JOY_X);
-    int joyY  = analogRead(ArcadeConfig::JOY_Y);
+    // --- Frame timing ---
+    static uint32_t lastFrameUs = 0;
+    while (micros() - lastFrameUs < ArcadeConfig::FRAME_INTERVAL_US) {
+        delayMicroseconds(10);
+    }
+    lastFrameUs = micros();
 
-    // Dynamic Frame Router
-    switch (currentCabinetState) {
-        
-        case STATE_LAUNCHER_MENU:
-            // Capture if user launched a game from menu selection
-            currentCabinetState = launcher.update(canvas);
-            
-            // If the user just launched Lander, call its setup profile once
-            if (currentCabinetState == STATE_LANDER_FLUX) {
-                landerGame.init();
+    // --- Input (read once, passed everywhere) ---
+    input.update();
+    const InputState& state = input.getState();
+
+    // --- Audio (non-blocking update) ---
+    audio.update();
+
+    // --- State machine ---
+    switch (cabinetState) {
+
+        case STATE_LAUNCHER_MENU: {
+            CabinetState next = launcher.update(canvasPortrait, state, audio);
+            tft.drawRGBBitmap(0, 0, canvasPortrait.getBuffer(),
+                              ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+
+            if (next != STATE_LAUNCHER_MENU) {
+                cabinetState = next;
+                // Map state to game instance and launch
+                switch (next) {
+                    case STATE_ASTEROID_FLUX:
+                        asteroidGame.setTFT(tft);
+                        launchGame(&asteroidGame);
+                        break;
+                    case STATE_LANDER_FLUX:
+                        landerGame.setTFT(tft);
+                        launchGame(&landerGame);
+                        break;
+                    default: returnToLauncher(); break;
+                }
             }
             break;
+        }
 
-        case STATE_ASTEROID_FLUX:
-            // Placeholder page until we port Asteroids next
-            canvas.fillScreen(ArcadeConfig::COLOR_BLUE);
-            canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-            canvas.setCursor(15, 60);
-            canvas.print("ASTEROID RUNNING");
-            canvas.setCursor(15, 80);
-            canvas.print("Press BTN B to Exit");
-            
-            if (btnB) currentCabinetState = STATE_LAUNCHER_MENU;
+        case STATE_ASTEROID_FLUX: {
+            bool running = asteroidGame.update(canvasLandscape, state, audio);
+            // Asteroid Flux flushes its own canvas internally (landscape)
+            // because it did so in the standalone version — we keep that pattern.
+            // If you prefer the flush here, remove the internal flush from the game.
+            if (!running) returnToLauncher();
             break;
+        }
 
-        case STATE_LANDER_FLUX:
-            // Run active frame execution loop inside the modular class.
-            // If the game returns false, it means the player hit the back button.
-            bool keepRunning = landerGame.update(canvas, btnA, btnB, joyX, joyY);
-            
-            if (!keepRunning) {
-                currentCabinetState = STATE_LAUNCHER_MENU;
-                delay(200); // Quick debounce to prevent accidental double-jumps
-            }
+        case STATE_LANDER_FLUX: {
+            bool running = landerGame.update(canvasPortrait, state, audio);
+            tft.drawRGBBitmap(0, 0, canvasPortrait.getBuffer(),
+                              ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+            if (!running) returnToLauncher();
+            break;
+        }
+
+        // Add future game cases here
+
+        default:
+            returnToLauncher();
             break;
     }
-
-    // Refresh display matrix instantly by pushing compiled frame memory buffer
-    tft.drawRGBBitmap(0, 0, canvas.getBuffer(), ArcadeConfig::SCREEN_WIDTH, ArcadeConfig::SCREEN_HEIGHT);
-
-    delay(16); // Target ~60fps performance timing
 }
