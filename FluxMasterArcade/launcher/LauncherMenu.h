@@ -7,6 +7,7 @@
 #include "cabinet/ArcadeConfig.h"
 #include "cabinet/InputManager.h"
 #include "cabinet/AudioEngine.h"
+#include "../assets/shared/ArcadeScreen.h"
 
 struct GameEntry {
     const char*  name;
@@ -51,64 +52,56 @@ private:
     }
 
     void renderMenu(GFXcanvas16 &canvas) {
-        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-
-        // Outer border — leaves bottom 20px for volume section
-        canvas.drawRect(2, 2, 124, 138, ArcadeConfig::COLOR_AMBER);
-        canvas.drawFastHLine(2, 22, 124, ArcadeConfig::COLOR_AMBER);
-
-        // Title
-        canvas.setTextSize(1);
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(14, 8);
-        canvas.print("FLUX CABINET  v2.0");
+        // Background image
+        for (int i = 0; i < (ArcadeConfig::PORTRAIT_WIDTH * ArcadeConfig::PORTRAIT_HEIGHT); i++) {
+            uint16_t px = pgm_read_word(&flux_arcade_128x160_data[i]);
+            canvas.drawPixel(i % ArcadeConfig::PORTRAIT_WIDTH,
+                            i / ArcadeConfig::PORTRAIT_WIDTH, px);
+        }
 
         // Game list
         for (int i = 0; i < _gameCount; i++) {
-            int yPos = 38 + (i * 22);
+            int yPos = 39 + (i * 22);
             if (i == _selection) {
                 uint16_t rowColor = _blinkState ? ArcadeConfig::COLOR_GREEN : 0x03E0;
-                canvas.fillRect(6, yPos - 3, 116, 14, rowColor);
+                canvas.fillRect(26, yPos - 3, 76, 14, rowColor);
                 canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
             } else {
                 canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
             }
-            canvas.setCursor(12, yPos);
+            canvas.setCursor(38, yPos);
             canvas.print(_games[i].name);
         }
 
-        // Nav hint inside the border
+        // Nav hint
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(8, 120);
-        canvas.print("[JOY] Navigate [A] Go");
+        canvas.setCursor(36, 100);
+        canvas.print("[JOY] MOVE");
+        canvas.setCursor(36, 110);
+        canvas.print("[BTN A] GO");
 
-        // --- Volume section --- fills the bottom strip with a dark background
-        // so it's visible regardless of what's drawn above
-        canvas.fillRect(0, 140, 128, 20, 0x1082);  // Dark grey background strip
-        canvas.drawFastHLine(0, 140, 128, ArcadeConfig::COLOR_AMBER);
+        // Volume strip (moved up 20px)
+        //canvas.fillRect(0, 120, 148, 20, 0x1082);
+        //canvas.drawFastHLine(0, 120, 128, ArcadeConfig::COLOR_AMBER);
 
-        // "VOL" label
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(2, 148);
+        canvas.setCursor(2, 150);
         canvas.print("VOL");
 
-        // Bar outline — starts after label
-        canvas.drawRect(24, 147, 100, 8, ArcadeConfig::COLOR_AMBER);
+        canvas.drawRect(24, 153, 100, 4, ArcadeConfig::COLOR_AMBER);
 
-        // Filled portion
         int fillW = (int)(98.0f * _volume);
         if (fillW > 0) {
             uint16_t fillColor = (_volume > 0.6f) ? ArcadeConfig::COLOR_GREEN
-                               : (_volume > 0.3f) ? ArcadeConfig::COLOR_AMBER
-                               :                    ArcadeConfig::COLOR_RED;
-            canvas.fillRect(25, 148, fillW, 6, fillColor);
+                            : (_volume > 0.3f) ? ArcadeConfig::COLOR_AMBER
+                            :                    ArcadeConfig::COLOR_RED;
+            canvas.fillRect(25, 154, fillW, 2, fillColor);
         }
 
-        // 10 tick marks
         for (int s = 1; s < 10; s++) {
             int tx = 25 + (int)(98.0f * s / 10.0f);
-            canvas.drawFastVLine(tx, 148, 6, ArcadeConfig::COLOR_BLACK);
+            canvas.drawFastVLine(tx, 154, 2, ArcadeConfig::COLOR_BLACK);
         }
     }
 

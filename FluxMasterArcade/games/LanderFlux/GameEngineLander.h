@@ -48,7 +48,7 @@ private:
     unsigned long _attractModeTimer    = 0;
     bool          _showInstructionPage = false;
 
-    float _currentGravity  = 0.04f;
+    float _currentGravity  = 0.025f;
     bool  _fuelTankActive  = false;
     float _fuelTankX       = 0.0f;
     float _fuelTankY       = 0.0f;
@@ -83,7 +83,7 @@ private:
         _padX = random(15, ArcadeConfig::PORTRAIT_WIDTH - 15 - _padWidth);
 
         int gravityIncrements = (_level - 1) / 3;
-        _currentGravity = 0.04f + (gravityIncrements * 0.01f);
+        _currentGravity = 0.025f + (gravityIncrements * 0.005f);
         if (_currentGravity > 0.10f) _currentGravity = 0.10f;
 
         _obstacles.generateNewMap(_level);

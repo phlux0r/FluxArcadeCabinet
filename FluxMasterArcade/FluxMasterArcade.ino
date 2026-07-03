@@ -60,8 +60,8 @@ LauncherMenu launcher;
 
 // Game registry — order determines menu order
 const GameEntry gameRegistry[] = {
-    { "Asteroid Flux",  STATE_ASTEROID_FLUX },
-    { "Lander Flux",    STATE_LANDER_FLUX   },
+    { "Asteroids",  STATE_ASTEROID_FLUX },
+    { "Lander",    STATE_LANDER_FLUX   },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
