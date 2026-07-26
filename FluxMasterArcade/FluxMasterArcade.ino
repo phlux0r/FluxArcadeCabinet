@@ -27,6 +27,7 @@
 // Game implementations
 #include "games/AsteroidFlux/AsteroidFluxGame.h"
 #include "games/LanderFlux/LanderFluxGame.h"
+#include "games/MazeFlux/MazeFluxGame.h"
 
 // Launcher
 #include "launcher/LauncherMenu.h"
@@ -52,6 +53,7 @@ AudioEngine  audio;
 // =============================================================================
 AsteroidFluxGame asteroidGame;
 LanderFluxGame   landerGame;
+MazeFluxGame     mazeGame;
 
 // =============================================================================
 // LAUNCHER
@@ -62,6 +64,7 @@ LauncherMenu launcher;
 const GameEntry gameRegistry[] = {
     { "Asteroids",  STATE_ASTEROID_FLUX },
     { "Lander",    STATE_LANDER_FLUX   },
+    { "Maze", STATE_MAZE_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
@@ -189,6 +192,10 @@ void loop() {
                         landerGame.setTFT(tft);
                         launchGame(&landerGame);
                         break;
+                    case STATE_MAZE_FLUX:
+                        mazeGame.setTFT(tft);
+                        launchGame(&mazeGame);
+                        break;
                     default: returnToLauncher(); break;
                 }
             }
@@ -212,6 +219,11 @@ void loop() {
             break;
         }
 
+        case STATE_MAZE_FLUX: {
+            bool running = mazeGame.update(canvasPortrait, state, audio);
+            if (!running) returnToLauncher();
+            break;
+        }
         // Add future game cases here
 
         default:

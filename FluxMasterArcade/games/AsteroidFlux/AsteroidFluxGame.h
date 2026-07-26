@@ -246,6 +246,7 @@ public:
         if (_phase == PHASE_ATTRACT) {
             // Issue loop command once only — not every frame
             if (!_attractMusicStarted) {
+                Serial.printf("[Asteroid] Playing loop");
                 audio.loopWAV("/audio/asteroid_loop.wav");
                 _attractMusicStarted = true;
             }

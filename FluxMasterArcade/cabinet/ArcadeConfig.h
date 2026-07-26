@@ -143,6 +143,9 @@ struct ArcadeConfig {
     // Particles
     static const int MAX_PARTICLES        = 30;
     static const int PARTICLE_LIFESPAN_MS = 600;
+
+    // Maze Flux
+    static const int MAZE_TIME_LEFT       = 500;
 };
 
 // -------------------------------------------------------------------------
@@ -152,7 +155,8 @@ struct ArcadeConfig {
 enum CabinetState {
     STATE_LAUNCHER_MENU,
     STATE_ASTEROID_FLUX,
-    STATE_LANDER_FLUX
+    STATE_LANDER_FLUX,
+    STATE_MAZE_FLUX
     // STATE_NEW_GAME  <-- add future games here
 };
 
