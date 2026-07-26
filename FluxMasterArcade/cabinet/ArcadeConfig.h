@@ -51,6 +51,16 @@ struct ArcadeConfig {
     static const int BUTTON_DEBOUNCE_MS = 30;
 
     // -------------------------------------------------------------------------
+    // POWER BUTTON (deep-sleep on/off)
+    // Wire between this GPIO and GND — uses internal pull-up, active LOW.
+    // Battery stays connected to the board's B+/B- pads at all times so the
+    // onboard charge circuit keeps working; this button only toggles the
+    // ESP32 between deep sleep and running.
+    // -------------------------------------------------------------------------
+    static const int POWER_BTN            = 6;
+    static const unsigned long POWER_HOLD_MS = 2000;
+
+    // -------------------------------------------------------------------------
     // SCREEN DIMENSIONS
     // Physical display is 128x160. Rotation changes which axis is which.
     // Use LANDSCAPE_ for Asteroid Flux (rotation 1), PORTRAIT_ for everything else.

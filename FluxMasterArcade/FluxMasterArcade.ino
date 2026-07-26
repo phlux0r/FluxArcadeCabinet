@@ -20,6 +20,7 @@
 #include "cabinet/InputManager.h"
 #include "cabinet/AudioEngine.h"
 #include "cabinet/ParticleManager.h"
+#include "cabinet/PowerManager.h"
 
 // Game interface
 #include "games/IGame.h"
@@ -47,6 +48,7 @@ GFXcanvas16 canvasLandscape(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCA
 // =============================================================================
 InputManager input;
 AudioEngine  audio;
+PowerManager powerMgr;
 
 // =============================================================================
 // GAME INSTANCES
@@ -129,6 +131,7 @@ void setup() {
 
     // Input
     input.begin();
+    powerMgr.begin();
 
     // Audio
     if (!audio.begin()) {
@@ -176,6 +179,7 @@ void loop() {
     switch (cabinetState) {
 
         case STATE_LAUNCHER_MENU: {
+            powerMgr.update(audio);  // power button only checked from the menu
             CabinetState next = launcher.update(canvasPortrait, state, audio);
             tft.drawRGBBitmap(0, 0, canvasPortrait.getBuffer(),
                               ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
