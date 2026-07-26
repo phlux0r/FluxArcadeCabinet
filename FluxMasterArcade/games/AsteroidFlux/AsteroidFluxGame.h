@@ -333,7 +333,8 @@ public:
             _ship.setY((int)_shipYOffset);
 
             // X-axis: joystick X lets ship push into field up to 1/3 screen width
-            _shipXOffset += input.joyY * SHIP_MOVE_SPEED;
+            // (inverted to match physical joystick direction)
+            _shipXOffset += -input.joyY * SHIP_MOVE_SPEED;
             _shipXOffset  = constrain(_shipXOffset, 0.0f,
                                       (float)(SHIP_X_MAX - SHIP_X_MIN));
             _ship.setX((float)SHIP_X_MIN + _shipXOffset);
