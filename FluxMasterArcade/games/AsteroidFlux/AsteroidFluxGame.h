@@ -322,17 +322,19 @@ public:
             _background.update();
             _particles.update();
 
-            _ship.updatePosition(input.joyY);  // no-op, kept for compat
+            _ship.updatePosition(input.joyX);  // no-op, kept for compat
 
-            // Y-axis: velocity-based, negated to match physical joystick direction
-            _shipYOffset += -input.joyY * SHIP_MOVE_SPEED;
+            // Y-axis: velocity-based
+            // (joystick X/Y swapped and Y-direction inverted for this game's
+            // physical orientation)
+            _shipYOffset += input.joyX * SHIP_MOVE_SPEED;
             _shipYOffset  = constrain(_shipYOffset,
                                       (float)SHIP_Y_MIN,
                                       (float)SHIP_Y_MAX);
             _ship.setY((int)_shipYOffset);
 
             // X-axis: joystick X lets ship push into field up to 1/3 screen width
-            _shipXOffset += input.joyX * SHIP_MOVE_SPEED;
+            _shipXOffset += input.joyY * SHIP_MOVE_SPEED;
             _shipXOffset  = constrain(_shipXOffset, 0.0f,
                                       (float)(SHIP_X_MAX - SHIP_X_MIN));
             _ship.setX((float)SHIP_X_MIN + _shipXOffset);
