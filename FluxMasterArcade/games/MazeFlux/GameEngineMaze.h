@@ -487,10 +487,13 @@ private:
         }
         // Blinking prompt — visible 600ms out of every 1000ms
         if (millis() % 1000 < 600) {
+            const char* prompt = "A TO START";
             canvas.setTextSize(1);
-            canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-            canvas.setCursor(10, 142);
-            canvas.print("HIT BUTTON TO START");
+            int16_t tbx, tby; uint16_t tbw, tbh;
+            canvas.getTextBounds(prompt, 0, 0, &tbx, &tby, &tbw, &tbh);
+            canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
+            canvas.setCursor((ArcadeConfig::PORTRAIT_WIDTH - (int16_t)tbw) / 2, 142);
+            canvas.print(prompt);
         }
     }
 
