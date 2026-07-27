@@ -51,6 +51,33 @@ struct ArcadeConfig {
     static const int BUTTON_DEBOUNCE_MS = 30;
 
     // -------------------------------------------------------------------------
+    // POWER BUTTON (deep-sleep on/off)
+    // Wire between this GPIO and GND — uses internal pull-up, active LOW.
+    // Battery stays connected to the board's B+/B- pads at all times so the
+    // onboard charge circuit keeps working; this button only toggles the
+    // ESP32 between deep sleep and running.
+    // -------------------------------------------------------------------------
+    static const int POWER_BTN            = 6;
+    static const unsigned long POWER_HOLD_MS = 2000;
+
+    // -------------------------------------------------------------------------
+    // MAX98357A SHUTDOWN (SD_MODE pin)
+    // Wire this GPIO to SD_MODE, with a ~100k pull-up from SD_MODE to VDD so
+    // the amp defaults enabled whenever the GPIO is undriven (e.g. at boot
+    // before pinMode() runs). Firmware drives it LOW to shut the amp down
+    // (µA-level) before deep sleep and HIGH to re-enable it on wake.
+    // -------------------------------------------------------------------------
+    static const int AMP_SD_MODE = 5;
+
+    // -------------------------------------------------------------------------
+    // ONBOARD RGB LED (WS2812 on the SuperMini board, addressable via
+    // neopixelWrite()/rgbLedWrite() — not a plain GPIO). Holds its last
+    // colour indefinitely once powered, so it must be explicitly driven
+    // black rather than just left alone.
+    // -------------------------------------------------------------------------
+    static const int RGB_LED_PIN = 48;
+
+    // -------------------------------------------------------------------------
     // SCREEN DIMENSIONS
     // Physical display is 128x160. Rotation changes which axis is which.
     // Use LANDSCAPE_ for Asteroid Flux (rotation 1), PORTRAIT_ for everything else.
