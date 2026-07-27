@@ -497,18 +497,35 @@ private:
         canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
         canvas.setTextSize(2);
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(4, 10);
+        canvas.setTextWrap(false);  // "HOW TO PLAY" is a hair wider than the
+                                    // screen at size 2 — clip the last pixel
+                                    // or two rather than wrapping to 2 lines
+        canvas.setCursor(0, 10);
         canvas.print("HOW TO PLAY");
+        canvas.setTextWrap(true);
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.setCursor(1, 38); canvas.print("> JOYSTICK TO MOVE");
         canvas.setCursor(1, 50); canvas.print("> FIND THE KEY");
         canvas.setCursor(1, 62); canvas.print("> REACH THE EXIT");
-        canvas.setCursor(1, 74); canvas.print("> [A] ACTIVATES SWITCH");
+        canvas.setCursor(1, 74); canvas.print("> [A] USE SWITCH");
         canvas.setCursor(1, 86); canvas.print("> AVOID BOMBS+BULLETS");
-        canvas.setCursor(1, 110);
+
+        // High score box — same outline treatment as Lander Flux's info screen
+        char scoreStr[24];
+        snprintf(scoreStr, sizeof(scoreStr), "HIGH SCORE: %d", _highScore);
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        canvas.getTextBounds(scoreStr, 0, 0, &tbx, &tby, &tbw, &tbh);
+
+        const int16_t boxX = 4, boxY = 106;
+        const int16_t boxW = ArcadeConfig::PORTRAIT_WIDTH - 12, boxH = 28;
+        canvas.drawRect(boxX, boxY, boxW, boxH, ArcadeConfig::COLOR_ION_BLUE);
+
+        canvas.setCursor(boxX + (boxW - (int16_t)tbw) / 2, boxY + 9);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.print("HI SCORE: "); canvas.print(_highScore);
+        canvas.print("HIGH SCORE: ");
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.print(_highScore);
     }
 
     void renderGameOver(GFXcanvas16 &canvas) {
