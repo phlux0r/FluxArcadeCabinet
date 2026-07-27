@@ -13,6 +13,7 @@
 #include "Obstacles.h"
 #include "Collectibles.h"
 #include "SpriteManager.h"
+#include "assets/TitleScreen.h"
 
 class GameEngineMaze {
 private:
@@ -477,18 +478,18 @@ private:
     }
 
     void renderTitle(GFXcanvas16 &canvas) {
-        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-        canvas.setTextSize(2);
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(10, 40);
-        canvas.print("MAZE FLUX");
-        canvas.setTextSize(1);
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(10, 80);
-        canvas.print("HI: "); canvas.print(_highScore);
+        // Blit the 128x160 portrait bitmap into the canvas pixel by pixel —
+        // same pattern as Lander Flux's title screen.
+        for (int i = 0; i < (ArcadeConfig::PORTRAIT_WIDTH * ArcadeConfig::PORTRAIT_HEIGHT); i++) {
+            uint16_t px = pgm_read_word(&maze_flux_128x160_data[i]);
+            canvas.drawPixel(i % ArcadeConfig::PORTRAIT_WIDTH,
+                             i / ArcadeConfig::PORTRAIT_WIDTH, px);
+        }
+        // Blinking prompt — visible 600ms out of every 1000ms
         if (millis() % 1000 < 600) {
-            canvas.setCursor(10, 145);
+            canvas.setTextSize(1);
             canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+            canvas.setCursor(10, 142);
             canvas.print("HIT BUTTON TO START");
         }
     }
