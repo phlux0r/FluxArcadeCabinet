@@ -65,6 +65,7 @@ private:
         Serial.println("[POWER] Hold detected — going to sleep.");
         audio.stopAll();
         digitalWrite(ArcadeConfig::TFT_BLK, LOW);  // backlight off
+        neopixelWrite(ArcadeConfig::RGB_LED_PIN, 0, 0, 0);  // onboard RGB off
 
         // Shut the amp down via SD_MODE and hold that level through deep
         // sleep so its own pull-up doesn't float it back high once the CPU

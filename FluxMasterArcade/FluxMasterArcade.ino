@@ -122,6 +122,10 @@ void setup() {
     pinMode(ArcadeConfig::TFT_BLK, OUTPUT);
     digitalWrite(ArcadeConfig::TFT_BLK, HIGH);
 
+    // Onboard RGB LED holds its last colour indefinitely once powered —
+    // drive it black so it doesn't sit lit through sleep or normal running.
+    neopixelWrite(ArcadeConfig::RGB_LED_PIN, 0, 0, 0);
+
     // Display
     tft.initR(INITR_BLACKTAB);
     tft.setSPISpeed(ArcadeConfig::TFT_SPI_SPEED);

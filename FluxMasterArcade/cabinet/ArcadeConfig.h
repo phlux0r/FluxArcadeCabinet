@@ -70,6 +70,14 @@ struct ArcadeConfig {
     static const int AMP_SD_MODE = 5;
 
     // -------------------------------------------------------------------------
+    // ONBOARD RGB LED (WS2812 on the SuperMini board, addressable via
+    // neopixelWrite()/rgbLedWrite() — not a plain GPIO). Holds its last
+    // colour indefinitely once powered, so it must be explicitly driven
+    // black rather than just left alone.
+    // -------------------------------------------------------------------------
+    static const int RGB_LED_PIN = 48;
+
+    // -------------------------------------------------------------------------
     // SCREEN DIMENSIONS
     // Physical display is 128x160. Rotation changes which axis is which.
     // Use LANDSCAPE_ for Asteroid Flux (rotation 1), PORTRAIT_ for everything else.
