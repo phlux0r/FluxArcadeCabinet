@@ -628,7 +628,12 @@ public:
             if (!_showInstructions) renderTitle(canvas);
             else                    renderInstructions(canvas);
 
-            if (btnA) {
+            // Require BTN A to be released before it can start a new game —
+            // otherwise a held press (e.g. dismissing the game-over screen)
+            // bleeds straight through into starting a run immediately.
+            if (_btnAWasHeld) {
+                if (!btnA) _btnAWasHeld = false;
+            } else if (btnA) {
                 _score = 0; _level = 1; _floor = 0;
                 initLevel();
                 _player.lives = 3;
@@ -648,6 +653,7 @@ public:
             if (btnA || millis() - _gameOverMs > GAMEOVER_TIMEOUT_MS) {
                 _state        = STATE_TITLE;
                 _attractTimer = millis();
+                _btnAWasHeld  = true;
             }
             return true;
         }
