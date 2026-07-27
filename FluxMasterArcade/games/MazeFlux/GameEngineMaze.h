@@ -48,7 +48,7 @@ private:
     int _activeDoors     = 0;
     int _activeTeleports = 0;
 
-    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
+    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_CONFIRM_EXIT, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
     GameState _state = STATE_TITLE;
 
     int  _level     = 1;
@@ -67,6 +67,11 @@ private:
 
     bool _btnAWasHeld      = false;
     bool _showInstructions = false;
+
+    // Hold BTN B 2s during play to bring up an exit confirmation
+    unsigned long _btnBHoldStart   = 0;
+    bool          _confirmExitGuard = false;  // wait for release before the dialog reacts
+    static const unsigned long EXIT_HOLD_MS = 2000UL;
 
     int _camX = 0;
     int _camY = 0;
@@ -472,9 +477,10 @@ private:
         canvas.fillRect(0, 0, ArcadeConfig::PORTRAIT_WIDTH, MazeRenderer::HUD_HEIGHT, ArcadeConfig::COLOR_BLACK);
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(1, 1);  canvas.print("L:"); canvas.print(_level);
-        canvas.setCursor(40, 1); canvas.print("T:"); canvas.print(_timeLeft);
-        canvas.setCursor(80, 1); canvas.print("S:"); canvas.print(_score);
+        canvas.setCursor(1, 1);   canvas.print("L:"); canvas.print(_level);
+        canvas.setCursor(27, 1);  canvas.print("T:"); canvas.print(_timeLeft);
+        canvas.setCursor(60, 1);  canvas.print("S:"); canvas.print(_score);
+        canvas.setCursor(106, 1); canvas.print("x"); canvas.print(_player.lives);
     }
 
     void renderTitle(GFXcanvas16 &canvas) {
@@ -532,6 +538,31 @@ private:
         canvas.print(_highScore);
     }
 
+    void renderConfirmExit(GFXcanvas16 &canvas) {
+        // Frozen game view behind the dialog
+        renderPlaying(canvas);
+
+        const int16_t boxX = 8, boxY = 60;
+        const int16_t boxW = ArcadeConfig::PORTRAIT_WIDTH - 16, boxH = 44;
+        canvas.fillRect(boxX, boxY, boxW, boxH, ArcadeConfig::COLOR_BLACK);
+        canvas.drawRect(boxX, boxY, boxW, boxH, ArcadeConfig::COLOR_RED);
+
+        canvas.setTextSize(1);
+        const char* q = "ARE YOU SURE?";
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        canvas.getTextBounds(q, 0, 0, &tbx, &tby, &tbw, &tbh);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(boxX + (boxW - (int16_t)tbw) / 2, boxY + 10);
+        canvas.print(q);
+
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setCursor(boxX + 12, boxY + 28);
+        canvas.print("[A] YES");
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor(boxX + 66, boxY + 28);
+        canvas.print("[B] NO");
+    }
+
     void renderGameOver(GFXcanvas16 &canvas) {
         canvas.fillScreen(ArcadeConfig::COLOR_RED);
         canvas.setTextSize(2);
@@ -575,6 +606,7 @@ public:
         _btnAWasHeld  = true;
 
         initLevel();
+        _player.lives = 3;
         audio.playTone(523, 100);
     }
 
@@ -599,6 +631,7 @@ public:
             if (btnA) {
                 _score = 0; _level = 1; _floor = 0;
                 initLevel();
+                _player.lives = 3;
                 _state = STATE_PLAYING;
             }
 
@@ -630,7 +663,44 @@ public:
             return true;
         }
 
+        // ---- EXIT CONFIRMATION ----
+        if (_state == STATE_CONFIRM_EXIT) {
+            renderConfirmExit(canvas);
+            if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
+                ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+
+            // The BTN B hold that opened this dialog is still down on the
+            // first frame or two — wait for both buttons to release before
+            // a press can confirm/cancel, so it can't be actioned by accident.
+            if (!btnA && !btnB) _confirmExitGuard = false;
+
+            if (!_confirmExitGuard) {
+                if (btnA) {
+                    audio.mute();
+                    return false;  // confirmed — back to launcher
+                }
+                if (btnB) {
+                    _state = STATE_PLAYING;  // cancelled — resume
+                }
+            }
+            return true;
+        }
+
         // ---- PLAYING ----
+        // Hold BTN B for EXIT_HOLD_MS to bring up the exit confirmation
+        if (btnB) {
+            if (_btnBHoldStart == 0) _btnBHoldStart = millis();
+            if (millis() - _btnBHoldStart >= EXIT_HOLD_MS) {
+                _btnBHoldStart    = 0;
+                _confirmExitGuard = true;
+                _state            = STATE_CONFIRM_EXIT;
+                audio.playTone(300, 150);
+                return true;
+            }
+        } else {
+            _btnBHoldStart = 0;
+        }
+
         if (millis() - _lastSecondMs >= 1000UL) {
             _lastSecondMs = millis();
             _timeLeft--;
