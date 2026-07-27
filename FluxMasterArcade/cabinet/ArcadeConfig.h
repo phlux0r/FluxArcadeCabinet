@@ -61,6 +61,15 @@ struct ArcadeConfig {
     static const unsigned long POWER_HOLD_MS = 2000;
 
     // -------------------------------------------------------------------------
+    // MAX98357A SHUTDOWN (SD_MODE pin)
+    // Wire this GPIO to SD_MODE, with a ~100k pull-up from SD_MODE to VDD so
+    // the amp defaults enabled whenever the GPIO is undriven (e.g. at boot
+    // before pinMode() runs). Firmware drives it LOW to shut the amp down
+    // (µA-level) before deep sleep and HIGH to re-enable it on wake.
+    // -------------------------------------------------------------------------
+    static const int AMP_SD_MODE = 5;
+
+    // -------------------------------------------------------------------------
     // SCREEN DIMENSIONS
     // Physical display is 128x160. Rotation changes which axis is which.
     // Use LANDSCAPE_ for Asteroid Flux (rotation 1), PORTRAIT_ for everything else.
