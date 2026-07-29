@@ -175,6 +175,17 @@ struct ArcadeConfig {
     // initLevel() adds (level * 10), so this yields 240s at level 1
     // (previously 500 -> 510s at level 1).
     static const int MAZE_TIME_LEFT       = 230;
+
+    // =========================================================================
+    // PLATFORM FLUX — GAME CONSTANTS
+    // =========================================================================
+    static constexpr float RUNNER_GRAVITY            = 0.35f;
+    static constexpr float RUNNER_JUMP_VELOCITY       = 4.6f;
+    static constexpr float RUNNER_BASE_SCROLL_SPEED   = 1.4f;
+    static constexpr float RUNNER_SPEED_STEP          = 0.15f;
+    static constexpr float RUNNER_MAX_SCROLL_SPEED    = 3.2f;
+    static const int   RUNNER_TIER_DISTANCE       = 300;   // score units per tier
+    static const int   RUNNER_INVINCIBLE_MS       = 6000;
 };
 
 // -------------------------------------------------------------------------
@@ -185,7 +196,8 @@ enum CabinetState {
     STATE_LAUNCHER_MENU,
     STATE_ASTEROID_FLUX,
     STATE_LANDER_FLUX,
-    STATE_MAZE_FLUX
+    STATE_MAZE_FLUX,
+    STATE_PLATFORM_FLUX
     // STATE_NEW_GAME  <-- add future games here
 };
 

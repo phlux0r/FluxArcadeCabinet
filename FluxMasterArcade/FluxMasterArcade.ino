@@ -29,6 +29,7 @@
 #include "games/AsteroidFlux/AsteroidFluxGame.h"
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
+#include "games/PlatformFlux/PlatformFluxGame.h"
 
 // Launcher
 #include "launcher/LauncherMenu.h"
@@ -56,6 +57,7 @@ PowerManager powerMgr;
 AsteroidFluxGame asteroidGame;
 LanderFluxGame   landerGame;
 MazeFluxGame     mazeGame;
+PlatformFluxGame platformGame;
 
 // =============================================================================
 // LAUNCHER
@@ -67,6 +69,7 @@ const GameEntry gameRegistry[] = {
     { "Asteroids",  STATE_ASTEROID_FLUX },
     { "Lander",    STATE_LANDER_FLUX   },
     { "Maze", STATE_MAZE_FLUX },
+    { "Platform",  STATE_PLATFORM_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
@@ -204,6 +207,10 @@ void loop() {
                         mazeGame.setTFT(tft);
                         launchGame(&mazeGame);
                         break;
+                    case STATE_PLATFORM_FLUX:
+                        platformGame.setTFT(tft);
+                        launchGame(&platformGame);
+                        break;
                     default: returnToLauncher(); break;
                 }
             }
@@ -229,6 +236,14 @@ void loop() {
 
         case STATE_MAZE_FLUX: {
             bool running = mazeGame.update(canvasPortrait, state, audio);
+            if (!running) returnToLauncher();
+            break;
+        }
+
+        case STATE_PLATFORM_FLUX: {
+            bool running = platformGame.update(canvasLandscape, state, audio);
+            // Platform Flux flushes its own canvas internally (landscape),
+            // same pattern as Asteroid Flux.
             if (!running) returnToLauncher();
             break;
         }
