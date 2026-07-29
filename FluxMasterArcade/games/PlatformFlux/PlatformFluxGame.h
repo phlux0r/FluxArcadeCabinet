@@ -27,6 +27,7 @@ private:
     int _score     = 0;
     int _highScore = 0;
     int _lastEnemyUnlockTier = 0;
+    float _playerXOffset = 0.0f;
 
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
@@ -71,7 +72,8 @@ private:
         _platforms.initGame();
         _enemies.initGame();
         _powerUp.reset();
-        _player.reset(30.0f, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
+        _playerXOffset = 0.0f;
+        _player.reset((float)ArcadeConfig::RUNNER_BASE_X, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
         _uiDirty = true;
         _phase = PHASE_PLAYING;
         _phaseTimer = millis();
@@ -150,6 +152,15 @@ public:
             }
 
             if (input.btnAPressed) _player.jump();
+
+            // Joystick nudges the runner forward/back within a bounded range —
+            // rotation-1 games read joyY for on-screen horizontal, same swap
+            // AsteroidFlux uses for its physical orientation.
+            _playerXOffset += input.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED;
+            _playerXOffset  = constrain(_playerXOffset,
+                                        (float)ArcadeConfig::RUNNER_X_MIN_OFFSET,
+                                        (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
+            _player.setX((float)ArcadeConfig::RUNNER_BASE_X + _playerXOffset);
 
             float px = _player.getX(), pRight = px + RUNNER_WIDTH;
             float py = _player.getY(), pBottom = py + RUNNER_HEIGHT;

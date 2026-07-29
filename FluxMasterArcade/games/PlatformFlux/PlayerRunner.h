@@ -137,6 +137,8 @@ public:
         if (_invincible && millis() >= _invincibleEndTime) _invincible = false;
     }
 
+    void setX(float x) { _x = x; }
+
     float getX() const { return _x; }
     float getY() const { return _y; }
     bool  isOnGround() const { return _onGround; }

@@ -187,6 +187,14 @@ struct ArcadeConfig {
     static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
     static const int   RUNNER_INVINCIBLE_MS       = 6000;
 
+    // Joystick-controlled horizontal drift around the runner's base X.
+    // Rotation-1 games read joyY for on-screen horizontal, same swap
+    // AsteroidFlux uses for its physical orientation.
+    static const int   RUNNER_BASE_X          = 30;
+    static const int   RUNNER_X_MIN_OFFSET    = -14;
+    static const int   RUNNER_X_MAX_OFFSET    = 20;
+    static constexpr float RUNNER_X_MOVE_SPEED = 1.0f;
+
     // Platform generation — how the run opens and how gaps/movement scale.
     static const int   PLATFORM_INTRO_COUNT    = 5;    // flat, gap-free platforms at run start
     static const int   PLATFORM_MIN_GAP        = 14;
