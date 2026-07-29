@@ -181,11 +181,18 @@ struct ArcadeConfig {
     // =========================================================================
     static constexpr float RUNNER_GRAVITY            = 0.35f;
     static constexpr float RUNNER_JUMP_VELOCITY       = 4.6f;
-    static constexpr float RUNNER_BASE_SCROLL_SPEED   = 1.4f;
-    static constexpr float RUNNER_SPEED_STEP          = 0.15f;
-    static constexpr float RUNNER_MAX_SCROLL_SPEED    = 3.2f;
-    static const int   RUNNER_TIER_DISTANCE       = 300;   // score units per tier
+    static constexpr float RUNNER_BASE_SCROLL_SPEED   = 0.9f;
+    static constexpr float RUNNER_SPEED_STEP          = 0.12f;
+    static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
+    static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
     static const int   RUNNER_INVINCIBLE_MS       = 6000;
+
+    // Platform generation — how the run opens and how gaps/movement scale.
+    static const int   PLATFORM_INTRO_COUNT    = 5;    // flat, gap-free platforms at run start
+    static const int   PLATFORM_MIN_GAP        = 14;
+    static const int   PLATFORM_MAX_GAP        = 24;
+    static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
+    static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 };
 
 // -------------------------------------------------------------------------

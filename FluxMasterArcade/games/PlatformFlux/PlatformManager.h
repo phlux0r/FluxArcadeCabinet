@@ -12,6 +12,10 @@
 // pool-and-recycle pattern. Segments spawn off the right edge and recycle
 // once they scroll past the left edge, with gap/width/height chosen from
 // the current difficulty tier.
+//
+// The run opens with a stretch of flat, contiguous platforms (no gaps, no
+// height change, no bobbing) so the player has time to get used to the
+// controls before any jump is required.
 // =============================================================================
 class PlatformManager {
 private:
@@ -30,14 +34,27 @@ private:
     float    _scrollSpeed;
     int      _tier;
     unsigned long _distance;
+    int      _introPlatformsLeft;
 
     int groundLevel() const {
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
     }
 
     void spawnPlatform(int index, float startX) {
-        int minGap = 18 + _tier * 2;
-        int maxGap = 30 + _tier * 4;
+        if (_introPlatformsLeft > 0) {
+            // Flat, contiguous run — no gap, no height change, no bobbing.
+            _introPlatformsLeft--;
+            _pool[index].x        = startX;
+            _pool[index].width    = random(40, 65);
+            _pool[index].baseY    = groundLevel();
+            _pool[index].y        = groundLevel();
+            _pool[index].active   = true;
+            _pool[index].isMoving = false;
+            return;
+        }
+
+        int minGap = ArcadeConfig::PLATFORM_MIN_GAP + _tier * 2;
+        int maxGap = ArcadeConfig::PLATFORM_MAX_GAP + _tier * 3;
         int width  = random(24, 45) - _tier;
         if (width < 16) width = 16;
 
@@ -46,7 +63,7 @@ private:
         _pool[index].active  = true;
 
         // Height varies more as tiers progress; stays reachable by jump.
-        int maxRise = min(34, 14 + _tier * 4);
+        int maxRise = min(30, 10 + _tier * 3);
         _pool[index].baseY   = groundLevel() - random(0, maxRise);
         _pool[index].y       = (int)_pool[index].baseY;
 
@@ -57,18 +74,19 @@ private:
 
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
-                         _tier(0), _distance(0) {
+                         _tier(0), _distance(0), _introPlatformsLeft(0) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
     void initGame() {
-        _scrollSpeed = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED;
-        _tier        = 0;
-        _distance    = 0;
+        _scrollSpeed        = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED;
+        _tier               = 0;
+        _distance           = 0;
+        _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
-        _pool[0].width    = 60;
+        _pool[0].width    = 70;
         _pool[0].baseY    = groundLevel();
         _pool[0].y        = groundLevel();
         _pool[0].active   = true;
@@ -81,9 +99,13 @@ public:
         }
     }
 
-    // Advances difficulty tier based on distance travelled.
+    // Advances difficulty tier based on distance travelled. Tiers (and the
+    // speed ramp that comes with them) only begin counting once the intro
+    // run has been fully placed, so the opening stretch stays at base speed.
     void advanceDifficulty() {
         _distance++;
+        if (_introPlatformsLeft > 0) return;
+
         int newTier = _distance / ArcadeConfig::RUNNER_TIER_DISTANCE;
         if (newTier != _tier) {
             _tier = newTier;
@@ -102,7 +124,7 @@ public:
 
             if (_pool[i].isMoving) {
                 _pool[i].bobPhase += 0.04f;
-                _pool[i].y = (int)(_pool[i].baseY + sinf(_pool[i].bobPhase) * 10.0f);
+                _pool[i].y = (int)(_pool[i].baseY + sinf(_pool[i].bobPhase) * ArcadeConfig::PLATFORM_BOB_AMPLITUDE);
             }
 
             float edge = _pool[i].x + _pool[i].width;
@@ -123,8 +145,9 @@ public:
             if (!_pool[i].active) continue;
             if (playerRight <= _pool[i].x || playerX >= _pool[i].x + _pool[i].width) continue;
             // Only count platforms the player is at/above (landing from a fall,
-            // not clipping through from below).
-            if (playerBottom <= _pool[i].y + 6) {
+            // not clipping through from below). Generous tolerance so a
+            // bobbing platform doesn't dip the player through its own top.
+            if (playerBottom <= _pool[i].y + 10) {
                 if (best == -1 || _pool[i].y < best) best = _pool[i].y;
             }
         }
@@ -144,8 +167,11 @@ public:
             if (!_pool[i].active) continue;
             uint16_t color = _pool[i].isMoving ? ArcadeConfig::COLOR_CYAN
                                                 : ArcadeConfig::COLOR_GREEN;
+            // Fixed-thickness slab, not a pillar down to the screen bottom —
+            // keeps moving platforms a constant visual size as they bob,
+            // instead of appearing to grow/shrink and swallow the player.
             canvas.fillRect((int)_pool[i].x, _pool[i].y,
-                            _pool[i].width, ArcadeConfig::LANDSCAPE_HEIGHT - _pool[i].y,
+                            _pool[i].width, ArcadeConfig::PLATFORM_THICKNESS,
                             color);
         }
     }
