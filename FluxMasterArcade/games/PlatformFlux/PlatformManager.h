@@ -117,6 +117,13 @@ public:
     }
 
     void update() {
+        // First pass: scroll everything and find the true rightmost edge
+        // across the whole pool. Recycling must never use an edge computed
+        // from only part of the pool — doing so let a recycled platform
+        // spawn using a stale (too-small) edge and land mid-screen on top
+        // of a platform that hadn't been scanned yet, which both looked
+        // like an extra block appearing out of nowhere and could silently
+        // paper over what should have been a real gap.
         float rightmostEdge = 0;
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
@@ -129,11 +136,14 @@ public:
 
             float edge = _pool[i].x + _pool[i].width;
             if (edge > rightmostEdge) rightmostEdge = edge;
+        }
 
-            if (edge < 0) {
-                spawnPlatform(i, rightmostEdge);
-                rightmostEdge = _pool[i].x + _pool[i].width;
-            }
+        // Second pass: recycle anything that has scrolled fully off-screen,
+        // always building off the confirmed global rightmost edge.
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (_pool[i].active && _pool[i].x + _pool[i].width >= 0) continue;
+            spawnPlatform(i, rightmostEdge);
+            rightmostEdge = _pool[i].x + _pool[i].width;
         }
     }
 

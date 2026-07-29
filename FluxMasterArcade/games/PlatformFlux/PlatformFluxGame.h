@@ -145,9 +145,16 @@ public:
             _platforms.update();
             _platforms.advanceDifficulty();
 
-            // Unlock the second flying enemy once tier 2 is reached.
-            if (_platforms.getTier() >= 2 && _lastEnemyUnlockTier < 2) {
-                _enemies.unlockSecondEnemy();
+            // Flying enemies stay off entirely at first — the first one
+            // unlocks at tier 2, the second at tier 4, so hazards ramp in
+            // alongside the platform gaps/speed rather than from frame one.
+            int tier = _platforms.getTier();
+            if (tier >= 2 && _lastEnemyUnlockTier < 1) {
+                _enemies.unlockNextEnemy();
+                _lastEnemyUnlockTier = 1;
+            }
+            if (tier >= 4 && _lastEnemyUnlockTier < 2) {
+                _enemies.unlockNextEnemy();
                 _lastEnemyUnlockTier = 2;
             }
 

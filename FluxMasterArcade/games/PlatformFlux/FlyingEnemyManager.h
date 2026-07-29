@@ -85,24 +85,25 @@ private:
     }
 
 public:
-    FlyingEnemyManager() : _activeEnemies(1) {
+    FlyingEnemyManager() : _activeEnemies(0) {
         for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
         for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
     }
 
+    // No enemies at run start — they unlock later as the difficulty tier
+    // rises, via unlockNextEnemy(), so the opening stretch stays hazard-free.
     void initGame() {
-        _activeEnemies = 1;
+        _activeEnemies = 0;
         for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
         for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
-        spawnEnemy(0, ArcadeConfig::LANDSCAPE_WIDTH + 20);
     }
 
-    // Called from PlatformFluxGame once a distance-based difficulty tier
-    // unlocks the second enemy; keeps unlock logic in the game, not here.
-    void unlockSecondEnemy() {
+    // Called from PlatformFluxGame when a distance-based difficulty tier
+    // unlocks the next enemy slot; keeps unlock timing in the game, not here.
+    void unlockNextEnemy() {
         if (_activeEnemies < MAX_ENEMIES) {
+            spawnEnemy(_activeEnemies, ArcadeConfig::LANDSCAPE_WIDTH + 20);
             _activeEnemies++;
-            spawnEnemy(_activeEnemies - 1, ArcadeConfig::LANDSCAPE_WIDTH + 40);
         }
     }
 
