@@ -61,7 +61,7 @@ private:
 
         // Game list
         for (int i = 0; i < _gameCount; i++) {
-            int yPos = 36 + (i * 15);
+            int yPos = 38 + (i * 15);
             if (i == _selection) {
                 uint16_t rowColor = _blinkState ? ArcadeConfig::COLOR_GREEN : 0x03E0;
                 canvas.fillRect(26, yPos - 2, 76, 12, rowColor);

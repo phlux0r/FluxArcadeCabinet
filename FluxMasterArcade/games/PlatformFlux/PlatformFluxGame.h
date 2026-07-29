@@ -182,8 +182,11 @@ public:
             _powerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
             _enemies.update(_platforms.getScrollSpeed(), _player, _particles, audio, playerHit);
 
-            // Falling off the bottom of the screen is also a death condition.
-            if (_player.getY() > ArcadeConfig::LANDSCAPE_HEIGHT + 20) playerHit = true;
+            // Falling off the bottom of the screen is always fatal — invincibility
+            // only protects against enemy/rock contact, never a bottomless pit.
+            // (Checked against the raw screen edge, not a padded margin, so a
+            // fall is caught the moment it happens instead of some frames later.)
+            bool fellOffScreen = _player.getY() > ArcadeConfig::LANDSCAPE_HEIGHT;
 
             // Score ticks with distance travelled (matches PlatformManager's
             // internal distance counter so difficulty and score stay in sync).
@@ -194,7 +197,7 @@ public:
                 uiNeedsUpdate = true;
             }
 
-            if (playerHit && !_player.isInvincible()) {
+            if (fellOffScreen || (playerHit && !_player.isInvincible())) {
                 triggerPlayerDeath(audio);
                 if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                 _phase = PHASE_DEATH;
