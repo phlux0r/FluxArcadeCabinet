@@ -148,11 +148,11 @@ public:
             _joyWasNeutral = true;
         } else if (_joyWasNeutral) {
             _joyWasNeutral = false;
-            if (input.joyUp) {
+            if (input.joyDown) {
                 _selection--;
                 if (_selection < 0) _selection = _gameCount - 1;
                 audio.playTone(660, 40);
-            } else if (input.joyDown) {
+            } else if (input.joyUp) {
                 _selection++;
                 if (_selection >= _gameCount) _selection = 0;
                 audio.playTone(660, 40);

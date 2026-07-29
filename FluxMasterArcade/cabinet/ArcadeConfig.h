@@ -172,7 +172,9 @@ struct ArcadeConfig {
     static const int PARTICLE_LIFESPAN_MS = 600;
 
     // Maze Flux
-    static const int MAZE_TIME_LEFT       = 500;
+    // initLevel() adds (level * 10), so this yields 240s at level 1
+    // (previously 500 -> 510s at level 1).
+    static const int MAZE_TIME_LEFT       = 230;
 };
 
 // -------------------------------------------------------------------------
