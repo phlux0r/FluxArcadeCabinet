@@ -4,18 +4,16 @@
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
+#include "assets/runner_sprites.h"
 
-// --- 12x14 SIDE-VIEW RUNNER BITMAP (16-bit RGB565 Colors) ---
-// Same sprite-sheet approach as AsteroidFlux's PlayerShip: fixed-size
-// PROGMEM-style const arrays swapped on a timer to fake motion.
-#define W ST7735_WHITE
-#define B ST7735_BLACK
-#define S 0xC618   // skin tone (light grey-tan, placeholder)
-#define C ST7735_CYAN
-#define O ST7735_ORANGE
-
-static const int RUNNER_WIDTH      = 12;
-static const int RUNNER_HEIGHT     = 14;
+// --- 18x20 SIDE-VIEW RUNNER SPRITE (16-bit RGB565, PROGMEM) ---
+// Generated from assets/frame1.png, frame2.png, frame3.png. Frame 1/2 are
+// the run cycle (legs alternating), frame 3 is the jump/airborne pose.
+// Drawn pixel-by-pixel (not drawRGBBitmap) so transparent source pixels —
+// encoded as RUNNER_TRANSPARENT_KEY — are skipped instead of boxing the
+// sprite in a solid rectangle.
+static const int RUNNER_WIDTH      = 18;
+static const int RUNNER_HEIGHT     = 20;
 static const int RUNNER_ANIM_SPEED = 90;   // ms per animation frame while grounded
 
 class PlayerRunner {
@@ -29,57 +27,13 @@ private:
     bool  _invincible;
     unsigned long _invincibleEndTime;
 
-    // Frame 0: legs forward — Frame 1: legs back — Frame 2: airborne (tucked)
-    const uint16_t _frames[3][168] = {
-        {
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,B,W,W,W,W,W,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,O,O,C,C,C,C,O,O,B,B,
-            B,O,O,O,C,C,C,C,O,O,O,B,
-            B,O,O,B,C,C,C,C,B,O,O,B,
-            B,B,O,B,C,C,C,C,B,O,B,B,
-            B,B,B,B,C,C,C,C,B,B,B,B,
-            B,B,B,S,S,B,B,S,S,B,B,B,
-            B,B,S,S,B,B,B,B,S,S,B,B,
-            B,S,S,B,B,B,B,B,B,S,S,B,
-            W,W,B,B,B,B,B,B,B,B,W,W
-        },
-        {
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,B,W,W,W,W,W,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,O,O,C,C,C,C,O,O,B,B,
-            B,O,O,O,C,C,C,C,O,O,O,B,
-            B,O,O,B,C,C,C,C,B,O,O,B,
-            B,B,O,B,C,C,C,C,B,O,B,B,
-            B,B,B,B,C,C,C,C,B,B,B,B,
-            B,B,S,S,B,B,B,B,B,S,S,B,
-            B,S,S,B,B,B,B,B,B,B,S,S,
-            S,S,B,B,B,B,B,B,B,B,B,S,
-            B,B,B,B,B,B,B,B,B,W,W,B
-        },
-        {
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,B,W,W,W,W,W,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,W,S,S,S,S,W,B,B,B,
-            B,B,B,B,W,W,W,W,B,B,B,B,
-            B,B,O,O,C,C,C,C,O,O,B,B,
-            B,O,O,O,C,C,C,C,O,O,O,B,
-            B,B,O,B,C,C,C,C,B,O,B,B,
-            B,B,B,S,C,C,C,C,S,B,B,B,
-            B,B,S,S,B,B,B,B,S,S,B,B,
-            B,S,S,B,B,B,B,B,B,S,S,B,
-            B,B,B,B,B,B,B,B,B,B,B,B,
-            B,B,B,B,B,B,B,B,B,B,B,B,
-            B,B,B,B,B,B,B,B,B,B,B,B
+    const uint16_t* frameData(int frame) const {
+        switch (frame) {
+            case 0:  return runner_frame_run1;
+            case 1:  return runner_frame_run2;
+            default: return runner_frame_jump;
         }
-    };
+    }
 
 public:
     PlayerRunner() : _x(30.0f), _y(0.0f), _vy(0.0f), _onGround(true),
@@ -148,15 +102,17 @@ public:
     void render(GFXcanvas16 &canvas) {
         // Blink while invincible, same visual language as AsteroidFlux's shield
         if (_invincible && (millis() / 80) % 2 == 0) return;
-        canvas.drawRGBBitmap((int)_x, (int)_y, _frames[_currentFrame],
-                             RUNNER_WIDTH, RUNNER_HEIGHT);
+
+        const uint16_t* data = frameData(_currentFrame);
+        int baseX = (int)_x, baseY = (int)_y;
+        for (int row = 0; row < RUNNER_HEIGHT; row++) {
+            for (int col = 0; col < RUNNER_WIDTH; col++) {
+                uint16_t px = pgm_read_word(&data[row * RUNNER_WIDTH + col]);
+                if (px == RUNNER_TRANSPARENT_KEY) continue;
+                canvas.drawPixel(baseX + col, baseY + row, px);
+            }
+        }
     }
 };
-
-#undef W
-#undef B
-#undef S
-#undef C
-#undef O
 
 #endif // PLAYER_RUNNER_H
