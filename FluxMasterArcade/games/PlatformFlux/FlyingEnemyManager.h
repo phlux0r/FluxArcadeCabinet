@@ -35,7 +35,8 @@ private:
         bool  active;
     };
 
-    static const int MAX_ENEMIES = 2;
+    // Capped at 1 — enemies must never be on-screen two at a time.
+    static const int MAX_ENEMIES = 1;
     static const int MAX_ROCKS   = 4;
 
     Enemy _enemies[MAX_ENEMIES];

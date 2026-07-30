@@ -201,6 +201,13 @@ struct ArcadeConfig {
     static const int   PLATFORM_MAX_GAP        = 24;
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
+
+    // Hazard progression tiers (see PlatformManager::_tier). Ordered so each
+    // hazard type gets its own stretch of play before the next stacks on top:
+    // tier 1 static gaps -> tier 2 moving platforms -> tier 3 first (and only)
+    // flying enemy -> tier 4 fire pits. Never more than one enemy at a time.
+    static const int   RUNNER_ENEMY_TIER    = 3;
+    static const int   RUNNER_FIREPIT_TIER  = 4;
 };
 
 // -------------------------------------------------------------------------

@@ -27,6 +27,8 @@ private:
         bool  isMoving;
         float baseY;
         float bobPhase;
+        bool  firePitBefore;   // fire pit rendered in the gap just before this platform
+        float firePitGapWidth; // gap width — region [x - firePitGapWidth, x) scrolls with x
     };
 
     static const int POOL_SIZE = 6;
@@ -41,6 +43,8 @@ private:
     }
 
     void spawnPlatform(int index, float startX) {
+        _pool[index].firePitBefore = false;
+
         if (_introPlatformsLeft > 0) {
             // Flat, contiguous run — no gap, no height change, no bobbing.
             _introPlatformsLeft--;
@@ -70,6 +74,17 @@ private:
         // Moving platforms unlock from tier 2 onward.
         _pool[index].isMoving = (_tier >= 2) && (random(0, 4) == 0);
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
+
+        // Fire pits unlock from tier 4 onward — purely a re-skin of an
+        // ordinary gap (same fall-through mechanic) restricted to ground-level
+        // stretches, so no new collision logic is needed, just a visual cue
+        // that this particular gap is one to respect.
+        if (_tier >= ArcadeConfig::RUNNER_FIREPIT_TIER &&
+            _pool[index].baseY == groundLevel() &&
+            random(0, 5) == 0) {
+            _pool[index].firePitBefore   = true;
+            _pool[index].firePitGapWidth = _pool[index].x - startX;
+        }
     }
 
 public:
@@ -91,6 +106,7 @@ public:
         _pool[0].y        = groundLevel();
         _pool[0].active   = true;
         _pool[0].isMoving = false;
+        _pool[0].firePitBefore = false;
 
         float cursor = (float)_pool[0].width;
         for (int i = 1; i < POOL_SIZE; i++) {
@@ -183,6 +199,19 @@ public:
             canvas.fillRect((int)_pool[i].x, _pool[i].y,
                             _pool[i].width, ArcadeConfig::PLATFORM_THICKNESS,
                             color);
+
+            if (_pool[i].firePitBefore) {
+                int fireX = (int)(_pool[i].x - _pool[i].firePitGapWidth);
+                int fireW = (int)_pool[i].firePitGapWidth;
+                int fireY = groundLevel();
+                bool flicker = (millis() / 100) % 2 == 0;
+                uint16_t fireColor = flicker ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_RED;
+                canvas.fillRect(fireX, fireY + ArcadeConfig::PLATFORM_THICKNESS - 3,
+                                fireW, 3, fireColor);
+                for (int fx = fireX; fx < fireX + fireW; fx += 3) {
+                    canvas.drawPixel(fx + (flicker ? 1 : 0), fireY - 1, ArcadeConfig::COLOR_YELLOW);
+                }
+            }
         }
     }
 };

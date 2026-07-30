@@ -145,17 +145,15 @@ public:
             _platforms.update();
             _platforms.advanceDifficulty();
 
-            // Flying enemies stay off entirely at first — the first one
-            // unlocks at tier 2, the second at tier 4, so hazards ramp in
-            // alongside the platform gaps/speed rather than from frame one.
+            // Hazard progression: static gaps (tier 1) -> moving platforms
+            // (tier 2, handled inside PlatformManager) -> the single flying
+            // enemy (tier 3) -> fire pits (tier 4, also inside
+            // PlatformManager). FlyingEnemyManager is hard-capped at 1
+            // enemy, so there's never more than one ship on screen.
             int tier = _platforms.getTier();
-            if (tier >= 2 && _lastEnemyUnlockTier < 1) {
+            if (tier >= ArcadeConfig::RUNNER_ENEMY_TIER && _lastEnemyUnlockTier < 1) {
                 _enemies.unlockNextEnemy();
                 _lastEnemyUnlockTier = 1;
-            }
-            if (tier >= 4 && _lastEnemyUnlockTier < 2) {
-                _enemies.unlockNextEnemy();
-                _lastEnemyUnlockTier = 2;
             }
 
             if (input.btnAPressed) _player.jump();
