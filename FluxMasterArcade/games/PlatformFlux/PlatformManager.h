@@ -18,9 +18,16 @@
 //              fire pits unlock from tier 0 onward
 //   tier 2-4 - floating platforms with gaps; moving platforms at tier 3;
 //              the flying enemy makes an early appearance at tier 4
-//   tier 5+  - solid ground again, now with spike traps (tier 5) and
+//   tier 5-7 - solid ground again, now with spike traps (tier 5) and
 //              rolling boulders (handled by a separate manager, tier 6);
-//              the flying enemy is off here and returns for good at tier 7
+//              the flying enemy is off here and returns at tier 7
+//
+// After tier 7 finishes, the whole tier 1-7 cycle repeats (see
+// advanceDifficulty/cycleLength) rather than sitting at tier 7 forever —
+// each new loop gets a fresh fire-pit guarantee, a slightly higher scroll
+// speed floor/ceiling, and a rotated ground/spike/ship/boulder color
+// palette (see getLoop, groundColor, spikeDangerColor) so a repeat trip
+// reads as a new stage rather than an identical rerun.
 //
 // The run opens with a stretch of flat, contiguous ground (no gaps, no
 // height change, no hazards) so the player has time to get used to the
@@ -54,7 +61,28 @@ private:
     unsigned long _distance;
     int      _introPlatformsLeft;
     int      _lastGroundY;   // running elevation for stepped ground generation
-    int      _firePitsPlaced; // this game's count so far, during the tier 0/1 window
+    int      _firePitsPlaced; // this loop's count so far, during the tier 0/1 window
+    int      _loop;              // how many full tier 1-7 cycles have completed
+    unsigned long _cycleDistance; // _distance wrapped to the current loop
+    float    _scrollSpeedCap;    // per-loop scroll speed ceiling, rises each loop
+
+    // Ground/spike palettes rotate each loop so a repeat trip through the
+    // tiers reads as visually distinct, not just "the same run again."
+    // Index 0 matches the original colors.
+    uint16_t groundColor() const {
+        static const uint16_t palette[4] = {
+            ArcadeConfig::COLOR_GREY, ArcadeConfig::COLOR_AMBER,
+            ArcadeConfig::COLOR_ION_BLUE, ArcadeConfig::COLOR_MAGENTA
+        };
+        return palette[_loop % 4];
+    }
+    uint16_t spikeDangerColor() const {
+        static const uint16_t palette[4] = {
+            ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_YELLOW,
+            ArcadeConfig::COLOR_CYAN, ArcadeConfig::COLOR_ORANGE
+        };
+        return palette[_loop % 4];
+    }
 
     int groundLevel() const {
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
@@ -66,12 +94,11 @@ private:
         return tier <= 1 || tier >= ArcadeConfig::RUNNER_GROUND2_TIER_START;
     }
 
-    // Tier boundaries, in _distance frames. Tier 4 (the early ship preview)
-    // runs twice as long as the others — it was only getting ~2 ships'
-    // worth of screen time before handing off to tier 5.
-    int tierForDistance(unsigned long distance) const {
+    // Tier boundaries, in cycle-relative distance frames. Tier 4 (the early
+    // ship preview) runs twice as long as the others — it was only getting
+    // ~2 ships' worth of screen time before handing off to tier 5.
+    void computeThresholds(unsigned long thresholds[7]) const {
         unsigned long base = ArcadeConfig::RUNNER_TIER_DISTANCE;
-        unsigned long thresholds[7];
         thresholds[0] = base * 1; // tier 1
         thresholds[1] = base * 2; // tier 2
         thresholds[2] = base * 3; // tier 3
@@ -79,12 +106,26 @@ private:
         thresholds[4] = thresholds[3] + base * 2; // tier 5 (tier 4 doubled)
         thresholds[5] = thresholds[4] + base;     // tier 6
         thresholds[6] = thresholds[5] + base;     // tier 7
+    }
+
+    int tierForDistance(unsigned long distance) const {
+        unsigned long thresholds[7];
+        computeThresholds(thresholds);
         int tier = 0;
         for (int i = 0; i < 7; i++) {
             if (distance >= thresholds[i]) tier = i + 1;
             else break;
         }
         return tier;
+    }
+
+    // Total length of one full tier 1-7 cycle, plus tier 7's own run —
+    // after this many frames the run wraps back to tier 1 (see
+    // advanceDifficulty), rather than sitting at tier 7 forever.
+    unsigned long cycleLength() const {
+        unsigned long thresholds[7];
+        computeThresholds(thresholds);
+        return thresholds[6] + ArcadeConfig::RUNNER_TIER_DISTANCE;
     }
 
     // Darkens a RGB565 color for mortar lines — same base hue, roughly
@@ -135,7 +176,7 @@ private:
         // approach is at EXACTLY baseline (see below), so without this a
         // pit that's "owed" could keep missing its chance forever if the
         // random walk simply never happened to revisit baseline in time.
-        bool nearDeadline = wantMorePits && (_distance + 400 >= tier2Start) &&
+        bool nearDeadline = wantMorePits && (_cycleDistance + 400 >= tier2Start) &&
                            (_lastGroundY != groundLevel());
         int stepDir, stepAmt;
         if (nearDeadline) {
@@ -159,7 +200,7 @@ private:
         // height; any residual elevation slack here effectively adds back
         // onto that tolerance and can let a fall get caught early again.
         bool eligibleTier = (_tier <= 1) && (_lastGroundY == groundLevel());
-        bool runningOut   = wantMorePits && (_distance + 200 >= tier2Start);
+        bool runningOut   = wantMorePits && (_cycleDistance + 200 >= tier2Start);
         bool mustForce    = eligibleTier && runningOut;
         bool wantFirePit  = eligibleTier && (mustForce || random(0, 3) == 0);
         bool wantSpike    = !wantFirePit &&
@@ -269,7 +310,9 @@ private:
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
-                         _lastGroundY(0), _firePitsPlaced(0) {
+                         _lastGroundY(0), _firePitsPlaced(0), _loop(0),
+                         _cycleDistance(0),
+                         _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
@@ -280,6 +323,9 @@ public:
         _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
         _lastGroundY        = groundLevel();
         _firePitsPlaced     = 0;
+        _loop               = 0;
+        _cycleDistance      = 0;
+        _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -302,16 +348,36 @@ public:
     // Advances difficulty tier based on distance travelled. Tiers (and the
     // speed ramp that comes with them) only begin counting once the intro
     // run has been fully placed, so the opening stretch stays at base speed.
+    // Once a full tier 1-7 cycle finishes, wraps back to tier 1 instead of
+    // sitting at tier 7 forever — each new loop gets its own fire-pit
+    // guarantee, a slightly higher scroll-speed ceiling, and a rotated
+    // ground/spike color palette (see groundColor/spikeDangerColor) so a
+    // repeat trip through the tiers reads as a new stage, not a rerun.
     void advanceDifficulty() {
         _distance++;
         if (_introPlatformsLeft > 0) return;
 
-        int newTier = tierForDistance(_distance);
+        unsigned long cycleLen = cycleLength();
+        int newLoop = _distance / cycleLen;
+        _cycleDistance = _distance % cycleLen;
+
+        if (newLoop != _loop) {
+            _loop           = newLoop;
+            _firePitsPlaced = 0;
+            // Both floor and ceiling shift up together so each new loop
+            // still opens gently and ramps up the same way — just a
+            // little faster start-to-finish than the loop before it,
+            // rather than only getting faster near the end.
+            _scrollSpeed    = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * _loop;
+            _scrollSpeedCap = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED  + 0.25f * _loop;
+        }
+
+        int newTier = tierForDistance(_cycleDistance);
         if (newTier != _tier) {
             _tier = newTier;
             _scrollSpeed += ArcadeConfig::RUNNER_SPEED_STEP;
-            if (_scrollSpeed > ArcadeConfig::RUNNER_MAX_SCROLL_SPEED) {
-                _scrollSpeed = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED;
+            if (_scrollSpeed > _scrollSpeedCap) {
+                _scrollSpeed = _scrollSpeedCap;
             }
         }
     }
@@ -416,20 +482,20 @@ public:
     // finding valid ground under the player's whole footprint; a jump that
     // landed straddling the edge (half on solid ground, half over the pit)
     // could still register as grounded on the solid half and survive. This
-    // kills on contact with the pit's true span (plus a 2px margin) any
-    // time the player's feet are down near ground level, however they got
-    // there — walking in, or a mistimed jump landing on the edge.
+    // kills on contact with the pit's true span any time the player's feet
+    // are down near ground level, however they got there — walking in, or
+    // a mistimed jump landing on the edge.
     bool firePitHitsPlayer(float playerX, float playerRight, float playerBottom) const {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active || !_pool[i].firePitBefore) continue;
-            // Matches the pit's true span exactly — no bonus margin added
-            // outward into the solid ground on either side. An earlier
-            // version padded both edges by 2px, which meant landing
-            // cleanly on solid ground within 2px of the pit still killed
-            // the player; that was the pit's actual span the whole time,
-            // not a false "close call."
-            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth;
-            float pitRight = _pool[i].x;
+            // Inset 2px on both sides — the sprite's actual silhouette sits
+            // about 2px in from the drawn edge of its bounding box on
+            // either side (transparent padding), so the raw box would read
+            // as touching the fire slightly before the visible character
+            // actually does. This forgiveness matches what's visually true,
+            // not a gameplay concession.
+            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth + 2.0f;
+            float pitRight = _pool[i].x - 2.0f;
             if (playerRight <= pitLeft || playerX >= pitRight) continue;
             if (playerBottom >= groundLevel() - 4) return true;
         }
@@ -471,6 +537,7 @@ public:
 
     float getScrollSpeed() const { return _scrollSpeed; }
     int   getTier() const { return _tier; }
+    int   getLoop() const { return _loop; }
     unsigned long getDistance() const { return _distance; }
 
     void render(GFXcanvas16 &canvas) {
@@ -480,7 +547,7 @@ public:
             uint16_t color;
             int fillHeight;
             if (_pool[i].isGroundSegment) {
-                color      = ArcadeConfig::COLOR_GREY;   // stone/earth, distinct from floating platforms
+                color      = groundColor();   // stone/earth, distinct from floating platforms; rotates per loop
                 fillHeight = ArcadeConfig::LANDSCAPE_HEIGHT - _pool[i].y;
             } else {
                 color      = _pool[i].isMoving ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_GREEN;
@@ -516,8 +583,9 @@ public:
                     canvas.drawFastVLine(sx, baseY - 3, 3, ArcadeConfig::COLOR_YELLOW);
                     canvas.drawFastVLine(sx + 5, baseY - 2, 2, ArcadeConfig::COLOR_YELLOW);
                 } else if (_pool[i].spikePhase == SPIKE_DANGER) {
-                    canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 11, ArcadeConfig::COLOR_WHITE);
-                    canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 11, ArcadeConfig::COLOR_WHITE);
+                    uint16_t spikeColor = spikeDangerColor();
+                    canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 11, spikeColor);
+                    canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 11, spikeColor);
                 }
             }
         }

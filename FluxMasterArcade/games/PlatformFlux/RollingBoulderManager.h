@@ -45,7 +45,7 @@ private:
         }
     }
 
-    void drawJaggedBoulder(GFXcanvas16 &canvas, Boulder &b, int cy) {
+    void drawJaggedBoulder(GFXcanvas16 &canvas, Boulder &b, int cy, uint16_t color) {
         float rad = b.angle * (PI / 180.0f);
         float cosA = cos(rad), sinA = sin(rad);
         int rx[8], ry[8];
@@ -55,7 +55,7 @@ private:
         }
         for (int i = 0; i < 8; i++) {
             int n = (i + 1) % 8;
-            canvas.drawLine(rx[i], ry[i], rx[n], ry[n], ArcadeConfig::COLOR_AMBER);
+            canvas.drawLine(rx[i], ry[i], rx[n], ry[n], color);
         }
     }
 
@@ -116,13 +116,21 @@ public:
         }
     }
 
-    void render(GFXcanvas16 &canvas, const PlatformManager &platforms) {
+    // loopIndex rotates the boulder's color each time the tier cycle wraps
+    // (see PlatformManager::getLoop).
+    void render(GFXcanvas16 &canvas, const PlatformManager &platforms, int loopIndex = 0) {
+        static const uint16_t palette[4] = {
+            ArcadeConfig::COLOR_AMBER, ArcadeConfig::COLOR_GREY,
+            ArcadeConfig::COLOR_MAGENTA, ArcadeConfig::COLOR_GREEN
+        };
+        uint16_t color = palette[loopIndex % 4];
+
         for (int i = 0; i < MAX_BOULDERS; i++) {
             if (!_boulders[i].active) continue;
             int groundY = platforms.surfaceYNear(_boulders[i].x - _boulders[i].radius,
                                                   _boulders[i].x + _boulders[i].radius);
             int cy = (int)(groundY - _boulders[i].radius);
-            drawJaggedBoulder(canvas, _boulders[i], cy);
+            drawJaggedBoulder(canvas, _boulders[i], cy, color);
         }
     }
 };

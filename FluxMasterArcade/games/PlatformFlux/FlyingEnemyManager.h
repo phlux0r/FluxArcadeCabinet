@@ -172,15 +172,24 @@ public:
         }
     }
 
-    void render(GFXcanvas16 &canvas) {
+    // loopIndex rotates the ship's color each time the tier cycle wraps
+    // (see PlatformManager::getLoop), so a repeat trip through the tiers
+    // reads as visually distinct rather than identical to the last one.
+    void render(GFXcanvas16 &canvas, int loopIndex = 0) {
+        static const uint16_t palette[4] = {
+            ArcadeConfig::COLOR_MAGENTA, ArcadeConfig::COLOR_GREEN,
+            ArcadeConfig::COLOR_ORANGE, ArcadeConfig::COLOR_CYAN
+        };
+        uint16_t shipColor = palette[loopIndex % 4];
+
         for (int i = 0; i < _activeEnemies; i++) {
             if (!_enemies[i].active) continue;
             int ex = (int)_enemies[i].x;
             int ey = (int)(_enemies[i].y + sinf(_enemies[i].bobPhase) * 3.0f);
             // Simple bat-like silhouette: body + two wing strokes
-            canvas.fillCircle(ex, ey, 3, ArcadeConfig::COLOR_MAGENTA);
-            canvas.drawLine(ex - 6, ey - 2, ex - 2, ey, ArcadeConfig::COLOR_MAGENTA);
-            canvas.drawLine(ex + 6, ey - 2, ex + 2, ey, ArcadeConfig::COLOR_MAGENTA);
+            canvas.fillCircle(ex, ey, 3, shipColor);
+            canvas.drawLine(ex - 6, ey - 2, ex - 2, ey, shipColor);
+            canvas.drawLine(ex + 6, ey - 2, ex + 2, ey, shipColor);
         }
         for (int i = 0; i < MAX_ROCKS; i++) {
             if (!_rocks[i].active) continue;

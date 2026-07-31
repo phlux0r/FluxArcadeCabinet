@@ -321,6 +321,9 @@ private:
     // ---- Deferred WAV-open-failed fallback (see playDeathSound) ----
     bool          _deathFallbackPending = false;
     unsigned long _deathFallbackCheckAt = 0;
+    // ---- Deferred WAV-open-failed fallback (see playGameOverToneSound) ----
+    bool          _gameOverFallbackPending = false;
+    unsigned long _gameOverFallbackCheckAt = 0;
 
     // ---- Tone / melody state (Core 1 only) ----
     bool          _toneActive     = false;
@@ -540,6 +543,20 @@ public:
         }
     }
 
+    // Reuses the shared /audio/gameend.wav path (same convention as
+    // AsteroidFlux's playGameOverSound) but falls back to a tone melody
+    // instead of requiring a PROGMEM sample — same polled-deadline pattern
+    // as playJumpSound/playDeathSound.
+    void playGameOverToneSound() {
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/gameend.wav");
+            _gameOverFallbackPending = true;
+            _gameOverFallbackCheckAt = millis() + 300;
+        } else {
+            playGameOverBlip();
+        }
+    }
+
     // -------------------------------------------------------------------------
     // TONE MODE — Core 1, update() driven
     // Does not play if WAV/sample is active
@@ -599,6 +616,12 @@ public:
         playMelody(n, d, 3);
     }
 
+    void playGameOverBlip() {
+        static const int n[] = {392, 330, 262, 196};
+        static const int d[] = {150, 150, 150, 350};
+        playMelody(n, d, 4);
+    }
+
     // -------------------------------------------------------------------------
     // UPDATE — call every frame from render loop (Core 1)
     // Only drives tone/melody. WAV streaming is handled by audio task.
@@ -630,6 +653,14 @@ public:
             } else if (now >= _deathFallbackCheckAt) {
                 _deathFallbackPending = false;
                 playDeathBlip();
+            }
+        }
+        if (_gameOverFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _gameOverFallbackPending = false;
+            } else if (now >= _gameOverFallbackCheckAt) {
+                _gameOverFallbackPending = false;
+                playGameOverBlip();
             }
         }
 

@@ -329,8 +329,8 @@ public:
             _particles.render(canvas, 11);
             _powerUp.render(canvas);
             _levitationPowerUp.render(canvas);
-            _enemies.render(canvas);
-            _boulders.render(canvas, _platforms);
+            _enemies.render(canvas, _platforms.getLoop());
+            _boulders.render(canvas, _platforms, _platforms.getLoop());
             _player.render(canvas);
 
             if (uiNeedsUpdate || _uiDirty) {
@@ -355,6 +355,7 @@ public:
                 _particles.clearAll();
                 _phase             = PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
+                audio.playGameOverToneSound();
             }
             return true;
         }
