@@ -88,8 +88,27 @@ private:
             return;
         }
 
-        int minGap = ArcadeConfig::PLATFORM_MIN_GAP + _tier * 2;
-        int maxGap = ArcadeConfig::PLATFORM_MAX_GAP + _tier * 3;
+        // Moving platforms unlock from tier 2 onward. Decided before the gap
+        // so the gap leading into a mover can be given extra safety margin —
+        // its landing surface bobs, so the timing window is tighter than a
+        // static platform at the same distance.
+        bool landingIsMoving = (_tier >= 2) && (random(0, 4) == 0);
+
+        // Gap is derived from actual jump range, not a flat/tier-scaled
+        // constant — a fixed max that grows with tier can end up wider than
+        // the player can physically clear once scroll speed (and therefore
+        // effective horizontal reach per jump) is factored in. Airtime is
+        // the full up-and-back-down hang time at the takeoff height;
+        // horizontal reach is airtime * scroll speed (platforms close the
+        // gap while the player is airborne, not the other way around).
+        float airtimeFrames = 2.0f * ArcadeConfig::RUNNER_JUMP_VELOCITY / ArcadeConfig::RUNNER_GRAVITY;
+        float safetyFactor  = landingIsMoving ? 0.65f : 0.85f;
+        int   safeReach      = (int)(_scrollSpeed * airtimeFrames * safetyFactor);
+
+        int minGap = ArcadeConfig::PLATFORM_MIN_GAP;
+        // At least a few px of variety even when reach barely clears the
+        // sprite-width floor (e.g. right at base scroll speed).
+        int maxGap = minGap + max(3, safeReach - minGap);
         int width  = random(24, 45) - _tier;
         if (width < 16) width = 16;
 
@@ -102,8 +121,7 @@ private:
         _pool[index].baseY   = groundLevel() - random(0, maxRise);
         _pool[index].y       = (int)_pool[index].baseY;
 
-        // Moving platforms unlock from tier 2 onward.
-        _pool[index].isMoving = (_tier >= 2) && (random(0, 4) == 0);
+        _pool[index].isMoving = landingIsMoving;
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
 
         // Fire pits unlock from tier 4 onward — purely a re-skin of an

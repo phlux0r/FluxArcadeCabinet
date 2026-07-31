@@ -35,9 +35,13 @@ public:
             _x = rightEdgeX + random(20, 60);
             // Clear whatever platform (if any) ends up under this X so the
             // pickup never spawns inside a slab — floats above its surface.
+            // Bounded to what a jump can actually reach (not an arbitrary
+            // band up toward the top of the screen), so it's never placed
+            // higher than the player can get to.
             int surfaceY = platforms.surfaceYNear(_x - 6, _x + 6);
-            int minY = ArcadeConfig::UI_MARGIN_TOP + 12;
             int maxY = surfaceY - 14;
+            int minY = surfaceY - ArcadeConfig::RUNNER_MAX_REACHABLE_RISE;
+            if (minY < ArcadeConfig::UI_MARGIN_TOP + 12) minY = ArcadeConfig::UI_MARGIN_TOP + 12;
             if (maxY < minY) maxY = minY;
             _y      = random(minY, maxY + 1);
             _active = true;

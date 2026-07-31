@@ -180,7 +180,11 @@ struct ArcadeConfig {
     // PLATFORM FLUX — GAME CONSTANTS
     // =========================================================================
     static constexpr float RUNNER_GRAVITY            = 0.35f;
-    static constexpr float RUNNER_JUMP_VELOCITY       = 4.6f;
+    // Raised from 4.6 — at RUNNER_BASE_SCROLL_SPEED, the old velocity gave
+    // barely any margin over PLATFORM_MIN_GAP once gap sizing is derived
+    // from actual jump range (see PlatformManager::spawnPlatform), making
+    // even minimum-width gaps feel like they required frame-perfect jumps.
+    static constexpr float RUNNER_JUMP_VELOCITY       = 5.4f;
     static constexpr float RUNNER_BASE_SCROLL_SPEED   = 0.9f;
     static constexpr float RUNNER_SPEED_STEP          = 0.12f;
     static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
@@ -203,7 +207,9 @@ struct ArcadeConfig {
     // and always find something to stand on, bridging the gap without ever
     // falling. +4px margin so it's reliably wider, not just barely.
     static const int   PLATFORM_MIN_GAP        = 22;
-    static const int   PLATFORM_MAX_GAP        = 34;
+    // Max gap is derived dynamically from jump range in
+    // PlatformManager::spawnPlatform (depends on current scroll speed),
+    // not a fixed constant here.
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 
@@ -213,6 +219,14 @@ struct ArcadeConfig {
     // flying enemy -> tier 4 fire pits. Never more than one enemy at a time.
     static const int   RUNNER_ENEMY_TIER    = 3;
     static const int   RUNNER_FIREPIT_TIER  = 4;
+
+    // Highest a ground pickup can be placed above a platform surface and
+    // still be reachable by a jump. True apex (V^2/2g) is ~42px with the
+    // current jump velocity; this stays comfortably under that so a pickup
+    // never requires frame-perfect timing to reach — the earlier version
+    // used a fixed band up near the top of the screen regardless of jump
+    // height, which could place one out of reach entirely.
+    static const int   RUNNER_MAX_REACHABLE_RISE = 28;
 
     // Levitation power-up — free vertical flight, gravity/ground suspended,
     // still vulnerable to enemy/rock contact. Bounded to the same playable
