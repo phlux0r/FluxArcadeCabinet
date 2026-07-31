@@ -314,6 +314,10 @@ private:
     bool _i2sReady   = false;
     TaskHandle_t _taskHandle = nullptr;
 
+    // ---- Deferred WAV-open-failed fallback (see playJumpSound) ----
+    bool          _jumpFallbackPending = false;
+    unsigned long _jumpFallbackCheckAt = 0;
+
     // ---- Tone / melody state (Core 1 only) ----
     bool          _toneActive     = false;
     int           _toneFreq       = 0;
@@ -499,10 +503,18 @@ public:
     }
 
     // Drop a WAV at /audio/jump.wav to override — falls back to a short
-    // rising two-note blip if the SD card or file isn't present.
+    // rising two-note blip if the SD card isn't present, or if it is but
+    // that specific file is missing/fails to open. The open result isn't
+    // known synchronously (WAV streaming runs on its own task), so a
+    // pending check is deferred a few frames into update() instead.
     void playJumpSound() {
-        if (SD.cardType() != CARD_NONE) playWAV("/audio/jump.wav");
-        else playJumpBlip();
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/jump.wav");
+            _jumpFallbackPending  = true;
+            _jumpFallbackCheckAt  = millis() + 60;
+        } else {
+            playJumpBlip();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -563,9 +575,19 @@ public:
     // Only drives tone/melody. WAV streaming is handled by audio task.
     // -------------------------------------------------------------------------
     void update() {
-        if (!_i2sReady || _audioState.playing) return;
-
         unsigned long now = millis();
+
+        // Deferred check: did the jump WAV actually start? wavDurationMs is
+        // only set once the header is successfully parsed, and stays set
+        // (not cleared on natural playback end) until the next WAV request
+        // resets it — so this reliably distinguishes "never opened" from
+        // "played and already finished," unlike the transient playing flag.
+        if (_jumpFallbackPending && now >= _jumpFallbackCheckAt) {
+            _jumpFallbackPending = false;
+            if (_audioState.wavDurationMs == 0) playJumpBlip();
+        }
+
+        if (!_i2sReady || _audioState.playing) return;
 
         if (_melodyPlaying) {
             if (now >= _nextNoteMs) {
