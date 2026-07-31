@@ -26,6 +26,7 @@
 //   /audio/gamestart.wav
 //   /audio/gameend.wav
 //   /audio/explosion.wav
+//   /audio/jump.wav        (Platform Flux — falls back to a tone blip)
 //
 // FALLBACK: PROGMEM 8kHz 8-bit arrays used when SD unavailable.
 //           Also streamed from the audio task.
@@ -497,6 +498,13 @@ public:
         else playLandingSuccess();
     }
 
+    // Drop a WAV at /audio/jump.wav to override — falls back to a short
+    // rising two-note blip if the SD card or file isn't present.
+    void playJumpSound() {
+        if (SD.cardType() != CARD_NONE) playWAV("/audio/jump.wav");
+        else playJumpBlip();
+    }
+
     // -------------------------------------------------------------------------
     // TONE MODE — Core 1, update() driven
     // Does not play if WAV/sample is active
@@ -543,6 +551,12 @@ public:
     void playCometPass()        { playTone(1200, 100); }
     void playThrustTick()       { playTone(180,   20); }
     void playSound(int f, int d){ playTone(f, d); }  // compat alias
+
+    void playJumpBlip() {
+        static const int n[] = {700, 1050};
+        static const int d[] = { 35,   45};
+        playMelody(n, d, 2);
+    }
 
     // -------------------------------------------------------------------------
     // UPDATE — call every frame from render loop (Core 1)

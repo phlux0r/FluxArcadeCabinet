@@ -221,7 +221,7 @@ public:
                 _lastEnemyUnlockTier = 1;
             }
 
-            if (input.btnAPressed) _player.jump();
+            if (input.btnAPressed && _player.jump()) audio.playJumpSound();
 
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap

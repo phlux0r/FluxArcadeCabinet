@@ -53,11 +53,13 @@ public:
         _levitating = false;
     }
 
-    void jump() {
-        if (_onGround) {
-            _vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
-            _onGround = false;
-        }
+    // Returns true only if the jump actually took effect (grounded), so
+    // callers can gate a jump sound to real jumps rather than every press.
+    bool jump() {
+        if (!_onGround) return false;
+        _vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
+        _onGround = false;
+        return true;
     }
 
     // groundY is the top surface Y of whatever platform is currently beneath
