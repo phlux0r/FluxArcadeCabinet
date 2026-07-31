@@ -197,8 +197,13 @@ struct ArcadeConfig {
 
     // Platform generation — how the run opens and how gaps/movement scale.
     static const int   PLATFORM_INTRO_COUNT    = 5;    // flat, gap-free platforms at run start
-    static const int   PLATFORM_MIN_GAP        = 14;
-    static const int   PLATFORM_MAX_GAP        = 24;
+    // Must stay wider than the runner sprite (18px) — groundYAt() does a
+    // simple per-platform AABB overlap test, so a gap narrower than the
+    // sprite lets the player's rect straddle both platforms' edges at once
+    // and always find something to stand on, bridging the gap without ever
+    // falling. +4px margin so it's reliably wider, not just barely.
+    static const int   PLATFORM_MIN_GAP        = 22;
+    static const int   PLATFORM_MAX_GAP        = 34;
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 
