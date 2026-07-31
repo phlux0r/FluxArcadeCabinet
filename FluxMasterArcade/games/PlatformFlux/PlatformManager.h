@@ -42,6 +42,37 @@ private:
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
     }
 
+    // Darkens a RGB565 color for mortar lines — same base hue, roughly
+    // half brightness, so it reads as grout rather than a different color.
+    static uint16_t darken(uint16_t c) {
+        uint16_t r = (c >> 11) & 0x1F;
+        uint16_t g = (c >> 5)  & 0x3F;
+        uint16_t b = c & 0x1F;
+        r >>= 1; g >>= 1; b >>= 1;
+        return (r << 11) | (g << 5) | b;
+    }
+
+    // Two courses of offset bricks within the slab's fixed thickness —
+    // a repeating pattern drawn over the existing fill color, not a
+    // different texture, so static/moving platform colors stay the same.
+    void drawBrickPattern(GFXcanvas16 &canvas, int x, int y, int width, uint16_t baseColor) {
+        uint16_t mortar = darken(baseColor);
+        static const int BRICK_W = 10;
+        static const int BRICK_H = ArcadeConfig::PLATFORM_THICKNESS / 2;
+
+        int midY = y + BRICK_H;
+        canvas.drawFastHLine(x, midY, width, mortar);
+
+        for (int row = 0; row < 2; row++) {
+            int rowY = y + row * BRICK_H;
+            int offset = (row % 2 == 0) ? 0 : BRICK_W / 2;
+            for (int bx = x - offset; bx < x + width; bx += BRICK_W) {
+                if (bx <= x) continue;
+                canvas.drawFastVLine(bx, rowY, BRICK_H, mortar);
+            }
+        }
+    }
+
     void spawnPlatform(int index, float startX) {
         _pool[index].firePitBefore = false;
 
@@ -199,6 +230,7 @@ public:
             canvas.fillRect((int)_pool[i].x, _pool[i].y,
                             _pool[i].width, ArcadeConfig::PLATFORM_THICKNESS,
                             color);
+            drawBrickPattern(canvas, (int)_pool[i].x, _pool[i].y, _pool[i].width, color);
 
             if (_pool[i].firePitBefore) {
                 int fireX = (int)(_pool[i].x - _pool[i].firePitGapWidth);
