@@ -422,8 +422,14 @@ public:
     bool firePitHitsPlayer(float playerX, float playerRight, float playerBottom) const {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active || !_pool[i].firePitBefore) continue;
-            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth - 2.0f;
-            float pitRight = _pool[i].x + 2.0f;
+            // Matches the pit's true span exactly — no bonus margin added
+            // outward into the solid ground on either side. An earlier
+            // version padded both edges by 2px, which meant landing
+            // cleanly on solid ground within 2px of the pit still killed
+            // the player; that was the pit's actual span the whole time,
+            // not a false "close call."
+            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth;
+            float pitRight = _pool[i].x;
             if (playerRight <= pitLeft || playerX >= pitRight) continue;
             if (playerBottom >= groundLevel() - 4) return true;
         }
