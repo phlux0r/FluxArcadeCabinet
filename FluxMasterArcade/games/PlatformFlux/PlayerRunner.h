@@ -135,13 +135,17 @@ public:
     bool  isFalling() const { return _vy > 0.0f; }
 
     void render(GFXcanvas16 &canvas) {
-        // Blink while invincible, same visual language as AsteroidFlux's shield
+        // Invincibility: vanish-blink, same visual language as AsteroidFlux's
+        // shield — reads as "protected/flickering," not a danger cue.
         if (_invincible && (millis() / 80) % 2 == 0) return;
 
-        // Warn in the last 2s of levitation, same blink cadence
+        // Levitation running out: distinct from invincibility on purpose —
+        // this is a warning (about to start falling), not a shield, so
+        // instead of vanishing it flashes the sprite red rather than hiding it.
+        bool warnFlash = false;
         if (_levitating) {
             unsigned long remaining = (_levitationEndTime > millis()) ? _levitationEndTime - millis() : 0;
-            if (remaining < 2000 && (millis() / 80) % 2 == 0) return;
+            warnFlash = remaining < 2000 && (millis() / 80) % 2 == 0;
         }
 
         const uint16_t* data = frameData(_currentFrame);
@@ -150,6 +154,7 @@ public:
             for (int col = 0; col < RUNNER_WIDTH; col++) {
                 uint16_t px = pgm_read_word(&data[row * RUNNER_WIDTH + col]);
                 if (px == RUNNER_TRANSPARENT_KEY) continue;
+                if (warnFlash) px = ArcadeConfig::COLOR_RED;
                 canvas.drawPixel(baseX + col, baseY + row, px);
             }
         }
