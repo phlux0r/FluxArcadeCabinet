@@ -200,7 +200,9 @@ struct ArcadeConfig {
     static constexpr float RUNNER_X_MOVE_SPEED = 1.0f;
 
     // Platform generation — how the run opens and how gaps/movement scale.
-    static const int   PLATFORM_INTRO_COUNT    = 5;    // flat, gap-free platforms at run start
+    // Shortened from 5 — real terrain (and fire pits) now starts around
+    // displayed score ~30-35 instead of ~60+, per request.
+    static const int   PLATFORM_INTRO_COUNT    = 2;    // flat, gap-free platforms at run start
     // Must stay wider than the runner sprite (18px) — groundYAt() does a
     // simple per-platform AABB overlap test, so a gap narrower than the
     // sprite lets the player's rect straddle both platforms' edges at once

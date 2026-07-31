@@ -113,16 +113,16 @@ private:
         if (newY < minY) newY = minY;
         if (newY > maxY) newY = maxY;
 
-        // Eligible from tier 0 (right after the flat intro) through tier 1 —
-        // earlier than before, and only ever rolled when the approach is at
-        // (or very near) baseline ground height. Restricting to a flat
-        // approach removes any ambiguity between "how high is the ground
-        // I'm standing on" and "where exactly is the pit," which could read
-        // as surviving a pit that was actually still comfortably jumpable
-        // from an elevated stair step.
+        // Eligible from tier 0 (right after the flat intro) through tier 1,
+        // and only ever rolled when the approach is at EXACTLY baseline
+        // ground height — not just "close." groundYAt()'s tight tolerance
+        // for gap-preceded platforms (see groundYAt) is only guaranteed
+        // lethal-if-not-jumped when both sides of the pit are the same
+        // height; any residual elevation slack here effectively adds back
+        // onto that tolerance and can let a fall get caught early again.
         bool wantFirePit = (_tier <= 1) &&
-                           (_lastGroundY >= groundLevel() - 6) &&
-                           (random(0, 4) == 0);
+                           (_lastGroundY == groundLevel()) &&
+                           (random(0, 3) == 0);
         bool wantSpike   = !wantFirePit &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
                            (random(0, 4) == 0);
@@ -331,11 +331,22 @@ public:
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
             if (playerRight <= _pool[i].x || playerX >= _pool[i].x + _pool[i].width) continue;
-            // Only count platforms the player is at/above (landing from a fall,
-            // not clipping through from below). Generous tolerance so a
-            // bobbing platform — or a stair step up — doesn't dip the
-            // player through its own top.
-            if (playerBottom <= _pool[i].y + 10) {
+
+            // Tolerance for "is this close enough to count as ground yet."
+            // Contiguous stairs steps (no gap before them) get a generous
+            // window so a step-up doesn't dip the player through its own
+            // top. Anything on the far side of a real gap — a platform-mode
+            // gap, or a fire pit landing — gets a tight one instead: gravity
+            // only needs a handful of frames to fall a few px, and when the
+            // far side is the SAME height as the takeoff (fire pits always
+            // are), a generous tolerance would count that tiny fall as
+            // "close enough" and snap the player straight back onto solid
+            // ground almost immediately, well before they'd actually fallen
+            // far enough to die — silently bridging what should have been a
+            // lethal gap regardless of jumping.
+            int tolerance = (_pool[i].isGroundSegment && !_pool[i].firePitBefore) ? 8 : 2;
+
+            if (playerBottom <= _pool[i].y + tolerance) {
                 if (best == -1 || _pool[i].y < best) best = _pool[i].y;
             }
         }
@@ -422,8 +433,10 @@ public:
                 int fireY = _pool[i].y; // == groundLevel() by construction (see spawnGroundSegment)
                 bool flicker = (millis() / 100) % 2 == 0;
                 uint16_t fireColor = flicker ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_RED;
-                canvas.fillRect(fireX, fireY + ArcadeConfig::PLATFORM_THICKNESS - 3,
-                                fireW, 3, fireColor);
+                // Fill the whole pit, floor to bottom of screen — no thin
+                // ember-bar-only strip that could read as a solid, walkable
+                // ledge inside what is actually a full lethal drop.
+                canvas.fillRect(fireX, fireY, fireW, ArcadeConfig::LANDSCAPE_HEIGHT - fireY, fireColor);
                 for (int fx = fireX; fx < fireX + fireW; fx += 3) {
                     canvas.drawPixel(fx + (flicker ? 1 : 0), fireY - 1, ArcadeConfig::COLOR_YELLOW);
                 }
