@@ -54,6 +54,7 @@ private:
     unsigned long _distance;
     int      _introPlatformsLeft;
     int      _lastGroundY;   // running elevation for stepped ground generation
+    int      _firePitsPlaced; // this game's count so far, during the tier 0/1 window
 
     int groundLevel() const {
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
@@ -63,6 +64,27 @@ private:
     // platforms with gaps. See class comment for the full progression.
     bool isGroundTier(int tier) const {
         return tier <= 1 || tier >= ArcadeConfig::RUNNER_GROUND2_TIER_START;
+    }
+
+    // Tier boundaries, in _distance frames. Tier 4 (the early ship preview)
+    // runs twice as long as the others — it was only getting ~2 ships'
+    // worth of screen time before handing off to tier 5.
+    int tierForDistance(unsigned long distance) const {
+        unsigned long base = ArcadeConfig::RUNNER_TIER_DISTANCE;
+        unsigned long thresholds[7];
+        thresholds[0] = base * 1; // tier 1
+        thresholds[1] = base * 2; // tier 2
+        thresholds[2] = base * 3; // tier 3
+        thresholds[3] = base * 4; // tier 4
+        thresholds[4] = thresholds[3] + base * 2; // tier 5 (tier 4 doubled)
+        thresholds[5] = thresholds[4] + base;     // tier 6
+        thresholds[6] = thresholds[5] + base;     // tier 7
+        int tier = 0;
+        for (int i = 0; i < 7; i++) {
+            if (distance >= thresholds[i]) tier = i + 1;
+            else break;
+        }
+        return tier;
     }
 
     // Darkens a RGB565 color for mortar lines — same base hue, roughly
@@ -105,8 +127,24 @@ private:
     void spawnGroundSegment(int index, float startX) {
         int width = random(35, 60);
 
-        int stepDir = random(0, 3) - 1;      // -1, 0, or 1
-        int stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
+        unsigned long tier2Start = ArcadeConfig::RUNNER_TIER_DISTANCE * 2;
+        bool wantMorePits = (_tier <= 1) && (_firePitsPlaced < 3);
+        // Once the tier 0/1 window is running out and we still owe fire
+        // pits, steer the elevation back toward baseline instead of a
+        // random step — a fire pit can only ever be placed when the
+        // approach is at EXACTLY baseline (see below), so without this a
+        // pit that's "owed" could keep missing its chance forever if the
+        // random walk simply never happened to revisit baseline in time.
+        bool nearDeadline = wantMorePits && (_distance + 400 >= tier2Start) &&
+                           (_lastGroundY != groundLevel());
+        int stepDir, stepAmt;
+        if (nearDeadline) {
+            stepAmt = min(8, abs(_lastGroundY - groundLevel()));
+            stepDir = (_lastGroundY < groundLevel()) ? 1 : -1;
+        } else {
+            stepDir = random(0, 3) - 1;      // -1, 0, or 1
+            stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
+        }
         int newY = _lastGroundY + stepDir * stepAmt;
         int minY = groundLevel() - 50;
         int maxY = groundLevel();
@@ -120,14 +158,16 @@ private:
         // lethal-if-not-jumped when both sides of the pit are the same
         // height; any residual elevation slack here effectively adds back
         // onto that tolerance and can let a fall get caught early again.
-        bool wantFirePit = (_tier <= 1) &&
-                           (_lastGroundY == groundLevel()) &&
-                           (random(0, 3) == 0);
-        bool wantSpike   = !wantFirePit &&
+        bool eligibleTier = (_tier <= 1) && (_lastGroundY == groundLevel());
+        bool runningOut   = wantMorePits && (_distance + 200 >= tier2Start);
+        bool mustForce    = eligibleTier && runningOut;
+        bool wantFirePit  = eligibleTier && (mustForce || random(0, 3) == 0);
+        bool wantSpike    = !wantFirePit &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
                            (random(0, 4) == 0);
 
         if (wantFirePit) {
+            _firePitsPlaced++;
             // Same jump-range-derived gap sizing as platform-mode gaps.
             float airtimeFrames = 2.0f * ArcadeConfig::RUNNER_JUMP_VELOCITY / ArcadeConfig::RUNNER_GRAVITY;
             int   safeReach      = (int)(_scrollSpeed * airtimeFrames * 0.85f);
@@ -229,7 +269,7 @@ private:
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
-                         _lastGroundY(0) {
+                         _lastGroundY(0), _firePitsPlaced(0) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
@@ -239,6 +279,7 @@ public:
         _distance           = 0;
         _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
         _lastGroundY        = groundLevel();
+        _firePitsPlaced     = 0;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -265,7 +306,7 @@ public:
         _distance++;
         if (_introPlatformsLeft > 0) return;
 
-        int newTier = _distance / ArcadeConfig::RUNNER_TIER_DISTANCE;
+        int newTier = tierForDistance(_distance);
         if (newTier != _tier) {
             _tier = newTier;
             _scrollSpeed += ArcadeConfig::RUNNER_SPEED_STEP;
@@ -366,6 +407,25 @@ public:
             float sx = _pool[i].x + _pool[i].spikeOffsetX;
             if (playerRight <= sx - 6 || playerX >= sx + 6) continue;
             if (playerBottom >= _pool[i].y - 8) return true;
+        }
+        return false;
+    }
+
+    // Direct "touching the flame" hit test — independent of the fall-through
+    // mechanic. Previously a fire pit was only lethal via groundYAt() never
+    // finding valid ground under the player's whole footprint; a jump that
+    // landed straddling the edge (half on solid ground, half over the pit)
+    // could still register as grounded on the solid half and survive. This
+    // kills on contact with the pit's true span (plus a 2px margin) any
+    // time the player's feet are down near ground level, however they got
+    // there — walking in, or a mistimed jump landing on the edge.
+    bool firePitHitsPlayer(float playerX, float playerRight, float playerBottom) const {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (!_pool[i].active || !_pool[i].firePitBefore) continue;
+            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth - 2.0f;
+            float pitRight = _pool[i].x + 2.0f;
+            if (playerRight <= pitLeft || playerX >= pitRight) continue;
+            if (playerBottom >= groundLevel() - 4) return true;
         }
         return false;
     }

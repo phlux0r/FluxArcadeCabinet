@@ -284,6 +284,16 @@ public:
                 playerHit = true;
             }
 
+            // Fire pits: direct contact kill, separate from the fall-through
+            // mechanic — catches a mistimed jump that lands straddling the
+            // pit's edge (half on solid ground, half over the flame), which
+            // groundYAt() alone could still read as "grounded" on the solid
+            // half.
+            if (_platforms.firePitHitsPlayer(px, pRight, pBottom) && !_player.isInvincible()) {
+                _particles.spawnExplosion(px + RUNNER_WIDTH / 2.0f, pBottom, ArcadeConfig::COLOR_ORANGE, 6);
+                playerHit = true;
+            }
+
             // Falling off the bottom of the screen is always fatal — invincibility
             // only protects against enemy/rock contact, never a bottomless pit.
             // (Checked against the raw screen edge, not a padded margin, so a
