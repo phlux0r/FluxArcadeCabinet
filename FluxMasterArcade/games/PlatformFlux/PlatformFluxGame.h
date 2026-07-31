@@ -255,14 +255,14 @@ public:
             _player.updateAnimation();
             _player.updateInvincibility();
 
-            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
+            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms);
             _powerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
 
             float firePitX;
             bool hasFirePitAhead = _platforms.upcomingFirePitX(firePitX);
-            _levitationPowerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT - 8,
+            _levitationPowerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms,
                                           hasFirePitAhead, firePitX);
-            _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
+            _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate, _platforms);
 
             _enemies.update(_platforms.getScrollSpeed(), _player, _particles, audio, playerHit);
 

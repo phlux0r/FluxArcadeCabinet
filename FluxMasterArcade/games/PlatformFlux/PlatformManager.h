@@ -215,6 +215,22 @@ public:
         return groundYAt(playerX, playerRight, 0, 0) == -1;
     }
 
+    // Topmost (smallest-Y) platform surface whose X range overlaps
+    // [xMin, xMax], or groundLevel() if nothing overlaps there (an empty
+    // gap, where ground-level clearance is the safe assumption). Used to
+    // keep power-ups from spawning inside a platform's slab — spawn X is
+    // only known at roll time, so callers query this with a small window
+    // around their chosen X rather than relying on a fixed ground Y.
+    int surfaceYNear(float xMin, float xMax) const {
+        int best = groundLevel();
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (!_pool[i].active) continue;
+            if (xMax <= _pool[i].x || xMin >= _pool[i].x + _pool[i].width) continue;
+            if (_pool[i].y < best) best = _pool[i].y;
+        }
+        return best;
+    }
+
     // Looks ahead at the already-generated pool (not just what's visible) for
     // a fire pit about to scroll on-screen, so a hazard-aware power-up can be
     // placed just before it instead of spawning at a purely random moment.

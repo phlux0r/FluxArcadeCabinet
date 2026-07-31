@@ -7,6 +7,7 @@
 #include "../../cabinet/ParticleManager.h"
 #include "../../cabinet/AudioEngine.h"
 #include "PlayerRunner.h"
+#include "PlatformManager.h"
 
 // =============================================================================
 // RUNNER POWER-UP MANAGER
@@ -27,12 +28,18 @@ public:
 
     // Gated to start just ahead of the flying enemy tier — there's no point
     // handing out contact-immunity before anything can hit the player.
-    void maybeSpawn(int tier, float rightEdgeX, int groundY) {
+    void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms) {
         if (_active) return;
         if (tier < ArcadeConfig::RUNNER_ENEMY_TIER - 1) return;
         if (random(0, 400) == 0) {
-            _x      = rightEdgeX + random(20, 60);
-            _y      = groundY - random(20, 40);
+            _x = rightEdgeX + random(20, 60);
+            // Clear whatever platform (if any) ends up under this X so the
+            // pickup never spawns inside a slab — floats above its surface.
+            int surfaceY = platforms.surfaceYNear(_x - 6, _x + 6);
+            int minY = ArcadeConfig::UI_MARGIN_TOP + 12;
+            int maxY = surfaceY - 14;
+            if (maxY < minY) maxY = minY;
+            _y      = random(minY, maxY + 1);
             _active = true;
         }
     }

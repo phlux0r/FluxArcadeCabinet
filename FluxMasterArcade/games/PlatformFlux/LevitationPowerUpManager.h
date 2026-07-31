@@ -7,6 +7,7 @@
 #include "../../cabinet/ParticleManager.h"
 #include "../../cabinet/AudioEngine.h"
 #include "PlayerRunner.h"
+#include "PlatformManager.h"
 
 // =============================================================================
 // LEVITATION POWER-UP MANAGER
@@ -38,7 +39,7 @@ public:
     // hasFirePitAhead/firePitX come from PlatformManager::upcomingFirePitX —
     // when a fire pit is queued just off-screen, spawn a bit ahead of it
     // instead of rolling purely at random.
-    void maybeSpawn(int tier, float rightEdgeX, int groundY,
+    void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms,
                     bool hasFirePitAhead, float firePitX) {
         if (_active || millis() < _cooldownUntil) return;
         if (tier < 2) return;
@@ -53,21 +54,34 @@ public:
 
         // Rare random roll — roughly half as frequent as the star.
         if (random(0, 900) == 0) {
-            _x      = rightEdgeX + random(20, 60);
-            _y      = groundY - random(30, 60);
+            _x = rightEdgeX + random(20, 60);
+            // Clear whatever platform (if any) ends up under this X so the
+            // pickup never spawns inside a slab — floats above its surface.
+            int surfaceY = platforms.surfaceYNear(_x - 6, _x + 6);
+            int minY = ArcadeConfig::UI_MARGIN_TOP + 12;
+            int maxY = surfaceY - 20;
+            if (maxY < minY) maxY = minY;
+            _y      = random(minY, maxY + 1);
             _active = true;
         }
     }
 
     void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
-                AudioEngine &audio, bool &uiNeedsUpdate) {
+                AudioEngine &audio, bool &uiNeedsUpdate, const PlatformManager &platforms) {
         // Trigger the pending fire-pit-ahead spawn once it's close enough to
         // place comfortably in front of the pit rather than off-screen.
         if (_pendingFirePitSpawn && !_active) {
             _pendingFirePitX -= scrollSpeed;
             if (_pendingFirePitX < ArcadeConfig::LANDSCAPE_WIDTH - 20) {
                 _x = _pendingFirePitX - 40;
-                _y = ArcadeConfig::LANDSCAPE_HEIGHT - 8 - 40;
+                // Fire pits are ground-level gaps, but the platform just
+                // before one could still be elevated — check its actual
+                // surface instead of assuming ground height.
+                int surfaceY = platforms.surfaceYNear(_x - 6, _x + 6);
+                int minY = ArcadeConfig::UI_MARGIN_TOP + 12;
+                int maxY = surfaceY - 20;
+                if (maxY < minY) maxY = minY;
+                _y = maxY;
                 _active = true;
                 _pendingFirePitSpawn = false;
             }
