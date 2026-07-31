@@ -509,13 +509,18 @@ public:
     // Drop a WAV at /audio/jump.wav to override — falls back to a short
     // rising two-note blip if the SD card isn't present, or if it is but
     // that specific file is missing/fails to open. The open result isn't
-    // known synchronously (WAV streaming runs on its own task), so a
-    // pending check is deferred a few frames into update() instead.
+    // known synchronously (WAV streaming runs on its own task and opening
+    // over SPI can take a while, especially if it's contending with
+    // display traffic), so this is polled from update() with a generous
+    // deadline rather than checked once at a fixed short delay — a single
+    // too-early check was concluding "failed" while the file was still
+    // legitimately opening, firing the fallback tone on top of the WAV
+    // once it did start.
     void playJumpSound() {
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/jump.wav");
             _jumpFallbackPending  = true;
-            _jumpFallbackCheckAt  = millis() + 60;
+            _jumpFallbackCheckAt  = millis() + 300;
         } else {
             playJumpBlip();
         }
@@ -523,13 +528,13 @@ public:
 
     // Drop a WAV at /audio/death.wav to override — falls back to a short
     // descending tone if the SD card isn't present, or if it is but that
-    // specific file is missing/fails to open (same deferred-check pattern
+    // specific file is missing/fails to open (same polled-deadline pattern
     // as playJumpSound).
     void playDeathSound() {
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/death.wav");
             _deathFallbackPending = true;
-            _deathFallbackCheckAt = millis() + 60;
+            _deathFallbackCheckAt = millis() + 300;
         } else {
             playDeathBlip();
         }
@@ -601,18 +606,31 @@ public:
     void update() {
         unsigned long now = millis();
 
-        // Deferred check: did the jump WAV actually start? wavDurationMs is
-        // only set once the header is successfully parsed, and stays set
+        // Polled check: did the jump/death WAV actually start? wavDurationMs
+        // is only set once the header is successfully parsed, and stays set
         // (not cleared on natural playback end) until the next WAV request
-        // resets it — so this reliably distinguishes "never opened" from
+        // resets it — so it reliably distinguishes "never opened" from
         // "played and already finished," unlike the transient playing flag.
-        if (_jumpFallbackPending && now >= _jumpFallbackCheckAt) {
-            _jumpFallbackPending = false;
-            if (_audioState.wavDurationMs == 0) playJumpBlip();
+        // Polled every frame rather than checked once at a fixed delay:
+        // opening the file over SPI can legitimately take longer than a
+        // short fixed wait, especially under display-traffic contention, so
+        // a too-early single check was misreading "still opening" as
+        // "failed" and firing the fallback tone alongside the real WAV.
+        if (_jumpFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _jumpFallbackPending = false; // WAV opened fine — no fallback needed
+            } else if (now >= _jumpFallbackCheckAt) {
+                _jumpFallbackPending = false;
+                playJumpBlip();
+            }
         }
-        if (_deathFallbackPending && now >= _deathFallbackCheckAt) {
-            _deathFallbackPending = false;
-            if (_audioState.wavDurationMs == 0) playDeathBlip();
+        if (_deathFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _deathFallbackPending = false;
+            } else if (now >= _deathFallbackCheckAt) {
+                _deathFallbackPending = false;
+                playDeathBlip();
+            }
         }
 
         if (!_i2sReady || _audioState.playing) return;
