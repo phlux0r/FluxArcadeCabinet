@@ -69,7 +69,7 @@ const GameEntry gameRegistry[] = {
     { "Asteroids",  STATE_ASTEROID_FLUX },
     { "Lander",    STATE_LANDER_FLUX   },
     { "Maze", STATE_MAZE_FLUX },
-    { "Platform",  STATE_PLATFORM_FLUX },
+    { "Runner",  STATE_PLATFORM_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);

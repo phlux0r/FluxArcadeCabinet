@@ -1,12 +1,13 @@
 // Image: flux-runner.png
-// Size: 128x160
+// Actual pixel layout is 160x128 (landscape) — verified by decoding the
+// array below; the source tool's "128x160" label/comment was wrong.
 // Array size: 40.0 KB
 
 #ifndef RUNNER_TITLESCREEN_H
 #define RUNNER_TITLESCREEN_H
 
-const int FLUX_RUNNER_128X160_WIDTH = 128;
-const int FLUX_RUNNER_128X160_HEIGHT = 160;
+const int FLUX_RUNNER_128X160_WIDTH = 160;
+const int FLUX_RUNNER_128X160_HEIGHT = 128;
 
 const uint16_t flux_runner_128x160_data[20480] PROGMEM = {
 

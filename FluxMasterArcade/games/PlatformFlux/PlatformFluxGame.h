@@ -10,6 +10,7 @@
 #include "PlatformManager.h"
 #include "FlyingEnemyManager.h"
 #include "RunnerPowerUpManager.h"
+#include "assets/TitleScreen.h"
 
 #include <Preferences.h>
 
@@ -31,6 +32,10 @@ private:
 
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
+
+    enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO };
+    AttractSlide  _attractSlide      = SLIDE_SPLASH;
+    unsigned long _attractSlideTimer = 0;
 
     unsigned long _phaseTimer = 0;
     bool _uiDirty = true;
@@ -65,6 +70,61 @@ private:
         canvas.print("HI:"); canvas.print(_highScore);
     }
 
+    void renderSplash(GFXcanvas16 &canvas) {
+        for (int i = 0; i < FLUX_RUNNER_128X160_WIDTH * FLUX_RUNNER_128X160_HEIGHT; i++) {
+            uint16_t px = pgm_read_word(&flux_runner_128x160_data[i]);
+            canvas.drawPixel(i % FLUX_RUNNER_128X160_WIDTH,
+                             i / FLUX_RUNNER_128X160_WIDTH, px);
+        }
+
+        // The art's bottom 16px is a dark strip reserved for HUD-style text —
+        // best distance on the left, start prompt on the right, both
+        // vertically centered in that strip.
+        int stripY = ArcadeConfig::LANDSCAPE_HEIGHT - 16;
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(4, stripY + 4);
+        canvas.print("BEST:"); canvas.print(_highScore);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 80, stripY + 4);
+        canvas.print("[BTN A] START");
+    }
+
+    void renderInfoScreen(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(30, 6);
+        canvas.print("--== HOW TO PLAY ==--");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+        canvas.setCursor(6, 22);
+        canvas.print("[JOY] SHIFT FWD/BACK");
+        canvas.setCursor(6, 34);
+        canvas.print("[BTN A] JUMP");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(6, 52);
+        canvas.print("WATCH FOR:");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setCursor(10, 66);
+        canvas.print("PLATFORMS & GAPS");
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(10, 78);
+        canvas.print("MOVING PLATFORMS");
+        canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
+        canvas.setCursor(10, 90);
+        canvas.print("FLYING ENEMY + ROCKS");
+        canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+        canvas.setCursor(10, 102);
+        canvas.print("FIRE PITS");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(24, 118);
+        canvas.print("[BTN A] TO START");
+    }
+
     void startNewGame(AudioEngine &audio) {
         _score = 0;
         _lastEnemyUnlockTier = 0;
@@ -90,8 +150,10 @@ public:
 
     void init(AudioEngine &audio) override {
         loadHighScore();
-        _phase       = PHASE_ATTRACT;
-        _btnBWasHeld = true;
+        _phase              = PHASE_ATTRACT;
+        _attractSlide       = SLIDE_SPLASH;
+        _attractSlideTimer  = millis();
+        _btnBWasHeld        = true;
     }
 
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
@@ -114,21 +176,14 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-            canvas.setTextSize(2);
-            canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-            canvas.setCursor(14, 30);
-            canvas.print("PLATFORM");
-            canvas.setCursor(40, 50);
-            canvas.print("FLUX");
+            if (millis() - _attractSlideTimer > ArcadeConfig::ATTRACT_MODE_TIMER) {
+                _attractSlide      = (_attractSlide == SLIDE_SPLASH) ? SLIDE_INFO : SLIDE_SPLASH;
+                _attractSlideTimer = millis();
+            }
 
-            canvas.setTextSize(1);
-            canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-            canvas.setCursor(20, 80);
-            canvas.print("BEST DIST: "); canvas.print(_highScore);
-            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-            canvas.setCursor(18, 100);
-            canvas.print("[BTN A] TO START");
+            if (_attractSlide == SLIDE_SPLASH) renderSplash(canvas);
+            else                                renderInfoScreen(canvas);
+
             flushLandscape(canvas);
 
             if (input.btnBPressed) { audio.mute(); return false; }
@@ -296,7 +351,7 @@ public:
     }
 
     uint8_t getRotation() const override { return 1; }
-    const char* getName()  const override { return "Platform Flux"; }
+    const char* getName()  const override { return "Flux Runner"; }
 
 private:
     void flushLandscape(GFXcanvas16 &canvas) {
