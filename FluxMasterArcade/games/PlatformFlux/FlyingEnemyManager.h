@@ -106,24 +106,21 @@ public:
     // unlock, this can turn back off (the enemy makes an early appearance
     // at RUNNER_EARLY_SHIP_TIER, then steps aside for the ground-hazard
     // tiers before returning for good at RUNNER_ENEMY_TIER). Turning off
-    // clears any enemy and rocks in flight rather than leaving them
-    // stranded/frozen mid-air into a tier that's not supposed to have them.
+    // does NOT touch any enemy or rocks currently in flight — it only
+    // stops new spawns/respawns/rock-drops (see update()), so the last
+    // ship finishes its patrol off-screen and any rock it already dropped
+    // finishes falling naturally instead of both vanishing mid-air the
+    // instant the tier changes.
     void setActive(bool active) {
-        if (active == _enabled) return;
         _enabled = active;
-        if (active) {
+        if (active && !_enemies[0].active) {
             spawnEnemy(0, ArcadeConfig::LANDSCAPE_WIDTH + 20);
-            _activeEnemies = 1;
-        } else {
-            _activeEnemies = 0;
-            for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
-            for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
         }
+        _activeEnemies = 1;
     }
 
     void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
                 AudioEngine &audio, bool &playerHit) {
-        if (!_enabled) return;
         for (int i = 0; i < _activeEnemies; i++) {
             if (!_enemies[i].active) continue;
 
@@ -131,11 +128,16 @@ public:
             _enemies[i].bobPhase += 0.05f;
 
             if (_enemies[i].x < -20) {
-                spawnEnemy(i, ArcadeConfig::LANDSCAPE_WIDTH + random(10, 60));
+                // Only respawn while still enabled — once disabled, let it
+                // retire for good instead of looping back in.
+                if (_enabled) spawnEnemy(i, ArcadeConfig::LANDSCAPE_WIDTH + random(10, 60));
+                else          _enemies[i].active = false;
                 continue;
             }
 
-            if (millis() >= _enemies[i].nextDropTime) {
+            // Stop dropping new rocks once disabled; existing ones (below)
+            // keep falling/colliding until they resolve on their own.
+            if (_enabled && millis() >= _enemies[i].nextDropTime) {
                 spawnRock(_enemies[i].x, _enemies[i].y + 6);
                 _enemies[i].nextDropTime = millis() + random(1400, 3000);
             }
