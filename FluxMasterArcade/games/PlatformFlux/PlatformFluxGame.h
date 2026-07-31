@@ -159,7 +159,7 @@ private:
     void triggerPlayerDeath(AudioEngine &audio) {
         _particles.triggerExplosion(_player.getX() + RUNNER_WIDTH / 2.0f,
                                      _player.getY() + RUNNER_HEIGHT / 2.0f);
-        audio.playSound(200, 250);
+        audio.playDeathSound();
     }
 
 public:

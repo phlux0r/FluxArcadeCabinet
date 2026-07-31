@@ -27,6 +27,7 @@
 //   /audio/gameend.wav
 //   /audio/explosion.wav
 //   /audio/jump.wav        (Platform Flux — falls back to a tone blip)
+//   /audio/death.wav       (Platform Flux — falls back to a tone blip)
 //
 // FALLBACK: PROGMEM 8kHz 8-bit arrays used when SD unavailable.
 //           Also streamed from the audio task.
@@ -317,6 +318,9 @@ private:
     // ---- Deferred WAV-open-failed fallback (see playJumpSound) ----
     bool          _jumpFallbackPending = false;
     unsigned long _jumpFallbackCheckAt = 0;
+    // ---- Deferred WAV-open-failed fallback (see playDeathSound) ----
+    bool          _deathFallbackPending = false;
+    unsigned long _deathFallbackCheckAt = 0;
 
     // ---- Tone / melody state (Core 1 only) ----
     bool          _toneActive     = false;
@@ -517,6 +521,20 @@ public:
         }
     }
 
+    // Drop a WAV at /audio/death.wav to override — falls back to a short
+    // descending tone if the SD card isn't present, or if it is but that
+    // specific file is missing/fails to open (same deferred-check pattern
+    // as playJumpSound).
+    void playDeathSound() {
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/death.wav");
+            _deathFallbackPending = true;
+            _deathFallbackCheckAt = millis() + 60;
+        } else {
+            playDeathBlip();
+        }
+    }
+
     // -------------------------------------------------------------------------
     // TONE MODE — Core 1, update() driven
     // Does not play if WAV/sample is active
@@ -570,6 +588,12 @@ public:
         playMelody(n, d, 2);
     }
 
+    void playDeathBlip() {
+        static const int n[] = {500, 350, 220};
+        static const int d[] = {100, 100, 200};
+        playMelody(n, d, 3);
+    }
+
     // -------------------------------------------------------------------------
     // UPDATE — call every frame from render loop (Core 1)
     // Only drives tone/melody. WAV streaming is handled by audio task.
@@ -585,6 +609,10 @@ public:
         if (_jumpFallbackPending && now >= _jumpFallbackCheckAt) {
             _jumpFallbackPending = false;
             if (_audioState.wavDurationMs == 0) playJumpBlip();
+        }
+        if (_deathFallbackPending && now >= _deathFallbackCheckAt) {
+            _deathFallbackPending = false;
+            if (_audioState.wavDurationMs == 0) playDeathBlip();
         }
 
         if (!_i2sReady || _audioState.playing) return;
