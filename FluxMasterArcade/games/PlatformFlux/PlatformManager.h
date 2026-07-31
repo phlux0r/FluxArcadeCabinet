@@ -12,12 +12,15 @@
 // pool-and-recycle pattern. Segments spawn off the right edge and recycle
 // once they scroll past the left edge.
 //
-// Alternates terrain MODE by tier rather than purely stacking hazards:
+// Alternates terrain MODE by tier rather than purely stacking hazards (see
+// ArcadeConfig's tier constants for the authoritative list):
 //   tier 0/1 - solid ground (contiguous, stepped "stairs" elevation),
-//              fire pits unlock at tier 1
-//   tier 2/3 - floating platforms with gaps; moving platforms at tier 3
-//   tier 4+  - solid ground again, now with spike traps (tier 4) and
-//              rolling boulders (handled by a separate manager, tier 5)
+//              fire pits unlock from tier 0 onward
+//   tier 2-4 - floating platforms with gaps; moving platforms at tier 3;
+//              the flying enemy makes an early appearance at tier 4
+//   tier 5+  - solid ground again, now with spike traps (tier 5) and
+//              rolling boulders (handled by a separate manager, tier 6);
+//              the flying enemy is off here and returns for good at tier 7
 //
 // The run opens with a stretch of flat, contiguous ground (no gaps, no
 // height change, no hazards) so the player has time to get used to the
@@ -56,7 +59,7 @@ private:
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
     }
 
-    // tier 0/1 and tier 4+ are solid-ground terrain; tier 2/3 are floating
+    // tier 0/1 and tier 5+ are solid-ground terrain; tier 2-4 are floating
     // platforms with gaps. See class comment for the full progression.
     bool isGroundTier(int tier) const {
         return tier <= 1 || tier >= ArcadeConfig::RUNNER_GROUND2_TIER_START;
@@ -110,7 +113,16 @@ private:
         if (newY < minY) newY = minY;
         if (newY > maxY) newY = maxY;
 
-        bool wantFirePit = (_tier == 1) && (random(0, 6) == 0);
+        // Eligible from tier 0 (right after the flat intro) through tier 1 —
+        // earlier than before, and only ever rolled when the approach is at
+        // (or very near) baseline ground height. Restricting to a flat
+        // approach removes any ambiguity between "how high is the ground
+        // I'm standing on" and "where exactly is the pit," which could read
+        // as surviving a pit that was actually still comfortably jumpable
+        // from an elevated stair step.
+        bool wantFirePit = (_tier <= 1) &&
+                           (_lastGroundY >= groundLevel() - 6) &&
+                           (random(0, 4) == 0);
         bool wantSpike   = !wantFirePit &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
                            (random(0, 4) == 0);
@@ -407,7 +419,7 @@ public:
             if (_pool[i].firePitBefore) {
                 int fireX = (int)(_pool[i].x - _pool[i].firePitGapWidth);
                 int fireW = (int)_pool[i].firePitGapWidth;
-                int fireY = groundLevel();
+                int fireY = _pool[i].y; // == groundLevel() by construction (see spawnGroundSegment)
                 bool flicker = (millis() / 100) % 2 == 0;
                 uint16_t fireColor = flicker ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_RED;
                 canvas.fillRect(fireX, fireY + ArcadeConfig::PLATFORM_THICKNESS - 3,

@@ -215,18 +215,22 @@ struct ArcadeConfig {
 
     // Hazard/terrain progression tiers (see PlatformManager::_tier).
     // Alternates terrain mode rather than purely stacking additively:
-    //   tier 1 - solid ground, fire pits
-    //   tier 2 - floating platforms, static gaps
-    //   tier 3 - floating platforms, + moving platforms
-    //   tier 4 - solid ground again, stairs (stepped elevation) + spikes
-    //   tier 5 - solid ground, + rolling boulders
-    //   tier 6 - solid ground, + the single flying enemy (ships)
-    // Never more than one flying enemy at a time.
+    //   tier 0/1 - solid ground, fire pits (both tiers eligible, not just 1)
+    //   tier 2   - floating platforms, static gaps
+    //   tier 3   - floating platforms, + moving platforms
+    //   tier 4   - floating platforms, + the flying enemy (early preview)
+    //   tier 5   - solid ground again, stairs (stepped elevation) + spikes,
+    //              no ships
+    //   tier 6   - solid ground, + rolling boulders, still no ships
+    //   tier 7   - solid ground, + the flying enemy returns
+    // Never more than one flying enemy at a time; it's active only at
+    // tier 4 and tier 7+ (see FlyingEnemyManager::setActive).
     static const int   RUNNER_MOVING_TIER         = 3;
-    static const int   RUNNER_GROUND2_TIER_START  = 4;   // second solid-ground phase begins
-    static const int   RUNNER_SPIKE_TIER          = 4;
-    static const int   RUNNER_BOULDER_TIER        = 5;
-    static const int   RUNNER_ENEMY_TIER          = 6;
+    static const int   RUNNER_EARLY_SHIP_TIER     = 4;   // ships' first, early appearance
+    static const int   RUNNER_GROUND2_TIER_START  = 5;   // second solid-ground phase begins
+    static const int   RUNNER_SPIKE_TIER          = 5;
+    static const int   RUNNER_BOULDER_TIER        = 6;
+    static const int   RUNNER_ENEMY_TIER          = 7;   // ships return for good
 
     // Spike trap timing — retracted (safe) -> rising (telegraph) -> erupted
     // (dangerous) -> retracts, repeating. Only the erupted phase can hurt

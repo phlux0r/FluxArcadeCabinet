@@ -31,7 +31,6 @@ private:
 
     int _score     = 0;
     int _highScore = 0;
-    int _lastEnemyUnlockTier = 0;
     float _playerXOffset = 0.0f;
 
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
@@ -144,7 +143,6 @@ private:
 
     void startNewGame(AudioEngine &audio) {
         _score = 0;
-        _lastEnemyUnlockTier = 0;
         _particles.clearAll();
         _platforms.initGame();
         _enemies.initGame();
@@ -219,17 +217,18 @@ public:
             _platforms.update();
             _platforms.advanceDifficulty();
 
-            // Terrain/hazard progression (see PlatformManager class comment):
-            // tier 1 ground+fire pits -> tier 2/3 floating platforms (gaps,
-            // then moving) -> tier 4 ground again with stairs+spikes ->
-            // tier 5 + rolling boulders -> tier 6 + the single flying enemy.
-            // FlyingEnemyManager is hard-capped at 1 enemy, so there's never
-            // more than one ship on screen.
+            // Terrain/hazard progression (see PlatformManager class comment
+            // and ArcadeConfig's RUNNER_*_TIER constants for the full map):
+            // tier 0/1 ground+fire pits -> tier 2 platform gaps -> tier 3
+            // + moving platforms -> tier 4 + flying enemy (early preview)
+            // -> tier 5 ground again with stairs+spikes, no ships -> tier 6
+            // + rolling boulders, still no ships -> tier 7 ships return.
+            // The enemy is capped at 1 and toggles on/off with tier rather
+            // than unlocking once, so it can step aside for tiers 5-6.
             int tier = _platforms.getTier();
-            if (tier >= ArcadeConfig::RUNNER_ENEMY_TIER && _lastEnemyUnlockTier < 1) {
-                _enemies.unlockNextEnemy();
-                _lastEnemyUnlockTier = 1;
-            }
+            bool shipsActive = (tier == ArcadeConfig::RUNNER_EARLY_SHIP_TIER) ||
+                               (tier >= ArcadeConfig::RUNNER_ENEMY_TIER);
+            _enemies.setActive(shipsActive);
 
             if (input.btnAPressed && _player.jump()) audio.playJumpSound();
 

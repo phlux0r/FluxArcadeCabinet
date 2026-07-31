@@ -42,6 +42,7 @@ private:
     Enemy _enemies[MAX_ENEMIES];
     Rock  _rocks[MAX_ROCKS];
     int   _activeEnemies;
+    bool  _enabled;
 
     void spawnEnemy(int index, float startX) {
         _enemies[index].x            = startX;
@@ -86,30 +87,43 @@ private:
     }
 
 public:
-    FlyingEnemyManager() : _activeEnemies(0) {
+    FlyingEnemyManager() : _activeEnemies(0), _enabled(false) {
         for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
         for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
     }
 
-    // No enemies at run start — they unlock later as the difficulty tier
-    // rises, via unlockNextEnemy(), so the opening stretch stays hazard-free.
+    // No enemies at run start — they turn on later as the difficulty tier
+    // requires, via setActive(), so the opening stretch stays hazard-free.
     void initGame() {
         _activeEnemies = 0;
+        _enabled       = false;
         for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
         for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
     }
 
-    // Called from PlatformFluxGame when a distance-based difficulty tier
-    // unlocks the next enemy slot; keeps unlock timing in the game, not here.
-    void unlockNextEnemy() {
-        if (_activeEnemies < MAX_ENEMIES) {
-            spawnEnemy(_activeEnemies, ArcadeConfig::LANDSCAPE_WIDTH + 20);
-            _activeEnemies++;
+    // Called from PlatformFluxGame every frame with whether the flying
+    // enemy should be present at the current tier — unlike a one-shot
+    // unlock, this can turn back off (the enemy makes an early appearance
+    // at RUNNER_EARLY_SHIP_TIER, then steps aside for the ground-hazard
+    // tiers before returning for good at RUNNER_ENEMY_TIER). Turning off
+    // clears any enemy and rocks in flight rather than leaving them
+    // stranded/frozen mid-air into a tier that's not supposed to have them.
+    void setActive(bool active) {
+        if (active == _enabled) return;
+        _enabled = active;
+        if (active) {
+            spawnEnemy(0, ArcadeConfig::LANDSCAPE_WIDTH + 20);
+            _activeEnemies = 1;
+        } else {
+            _activeEnemies = 0;
+            for (int i = 0; i < MAX_ENEMIES; i++) _enemies[i].active = false;
+            for (int i = 0; i < MAX_ROCKS; i++)   _rocks[i].active   = false;
         }
     }
 
     void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
                 AudioEngine &audio, bool &playerHit) {
+        if (!_enabled) return;
         for (int i = 0; i < _activeEnemies; i++) {
             if (!_enemies[i].active) continue;
 
