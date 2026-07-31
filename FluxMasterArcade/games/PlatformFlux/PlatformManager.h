@@ -215,6 +215,23 @@ public:
         return groundYAt(playerX, playerRight, 0, 0) == -1;
     }
 
+    // Looks ahead at the already-generated pool (not just what's visible) for
+    // a fire pit about to scroll on-screen, so a hazard-aware power-up can be
+    // placed just before it instead of spawning at a purely random moment.
+    // Returns the pit's left edge X (in current scroll-space) via outX.
+    bool upcomingFirePitX(float &outX) const {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (!_pool[i].active || !_pool[i].firePitBefore) continue;
+            float pitStart = _pool[i].x - _pool[i].firePitGapWidth;
+            if (pitStart > ArcadeConfig::LANDSCAPE_WIDTH &&
+                pitStart < ArcadeConfig::LANDSCAPE_WIDTH + 70) {
+                outX = pitStart;
+                return true;
+            }
+        }
+        return false;
+    }
+
     float getScrollSpeed() const { return _scrollSpeed; }
     int   getTier() const { return _tier; }
     unsigned long getDistance() const { return _distance; }

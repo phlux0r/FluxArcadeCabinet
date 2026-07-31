@@ -10,6 +10,7 @@
 #include "PlatformManager.h"
 #include "FlyingEnemyManager.h"
 #include "RunnerPowerUpManager.h"
+#include "LevitationPowerUpManager.h"
 #include "assets/TitleScreen.h"
 
 #include <Preferences.h>
@@ -20,6 +21,7 @@ private:
     PlatformManager       _platforms;
     FlyingEnemyManager    _enemies;
     RunnerPowerUpManager  _powerUp;
+    LevitationPowerUpManager _levitationPowerUp;
     ParticleManager       _particles;
 
     Preferences      _prefs;
@@ -94,31 +96,38 @@ private:
 
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(30, 6);
+        canvas.setCursor(30, 3);
         canvas.print("--== HOW TO PLAY ==--");
 
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(6, 22);
+        canvas.setCursor(6, 16);
         canvas.print("[JOY] SHIFT FWD/BACK");
-        canvas.setCursor(6, 34);
+        canvas.setCursor(6, 26);
         canvas.print("[BTN A] JUMP");
 
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(6, 52);
+        canvas.setCursor(6, 40);
         canvas.print("WATCH FOR:");
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(10, 66);
+        canvas.setCursor(10, 52);
         canvas.print("PLATFORMS & GAPS");
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(10, 78);
+        canvas.setCursor(10, 62);
         canvas.print("MOVING PLATFORMS");
         canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
-        canvas.setCursor(10, 90);
+        canvas.setCursor(10, 72);
         canvas.print("FLYING ENEMY + ROCKS");
         canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
-        canvas.setCursor(10, 102);
+        canvas.setCursor(10, 82);
         canvas.print("FIRE PITS");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor(6, 96);
+        canvas.print("STAR: BRIEF INVINCIBLE");
+        canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
+        canvas.setCursor(6, 106);
+        canvas.print("DIAMOND: FLY 10s");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
         canvas.setCursor(24, 118);
@@ -132,6 +141,7 @@ private:
         _platforms.initGame();
         _enemies.initGame();
         _powerUp.reset();
+        _levitationPowerUp.reset();
         _playerXOffset = 0.0f;
         _player.reset((float)ArcadeConfig::RUNNER_BASE_X, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
         _uiDirty = true;
@@ -222,6 +232,20 @@ public:
                                         (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
             _player.setX((float)ArcadeConfig::RUNNER_BASE_X + _playerXOffset);
 
+            // While levitating, joyX (otherwise unused in this game) drives
+            // free vertical movement instead of gravity/ground collision.
+            if (_player.isLevitating()) {
+                _player.moveVertical(input.joyX * ArcadeConfig::RUNNER_LEVITATE_SPEED);
+                if (millis() % 120 < 20) {
+                    _particles.spawnFire(_player.getX() + RUNNER_WIDTH / 2.0f,
+                                         _player.getY() + RUNNER_HEIGHT,
+                                         0.0f, 0.3f, ArcadeConfig::COLOR_ION_BLUE);
+                }
+            }
+            // If levitation just ended, physics below resumes falling
+            // naturally from wherever the player currently is.
+            _player.updateLevitation();
+
             float px = _player.getX(), pRight = px + RUNNER_WIDTH;
             float py = _player.getY(), pBottom = py + RUNNER_HEIGHT;
             int ground = _platforms.groundYAt(px, pRight, py, pBottom);
@@ -231,8 +255,15 @@ public:
             _player.updateAnimation();
             _player.updateInvincibility();
 
-            _powerUp.maybeSpawn(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
+            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
             _powerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
+
+            float firePitX;
+            bool hasFirePitAhead = _platforms.upcomingFirePitX(firePitX);
+            _levitationPowerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT - 8,
+                                          hasFirePitAhead, firePitX);
+            _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
+
             _enemies.update(_platforms.getScrollSpeed(), _player, _particles, audio, playerHit);
 
             // Falling off the bottom of the screen is always fatal — invincibility
@@ -269,6 +300,7 @@ public:
             _platforms.render(canvas);
             _particles.render(canvas, 11);
             _powerUp.render(canvas);
+            _levitationPowerUp.render(canvas);
             _enemies.render(canvas);
             _player.render(canvas);
 

@@ -26,6 +26,8 @@ private:
     unsigned long _nextFrameTime;
     bool  _invincible;
     unsigned long _invincibleEndTime;
+    bool  _levitating;
+    unsigned long _levitationEndTime;
 
     const uint16_t* frameData(int frame) const {
         switch (frame) {
@@ -38,7 +40,8 @@ private:
 public:
     PlayerRunner() : _x(30.0f), _y(0.0f), _vy(0.0f), _onGround(true),
                      _currentFrame(0), _nextFrameTime(0),
-                     _invincible(false), _invincibleEndTime(0) {}
+                     _invincible(false), _invincibleEndTime(0),
+                     _levitating(false), _levitationEndTime(0) {}
 
     void reset(float x, float groundY) {
         _x        = x;
@@ -47,6 +50,7 @@ public:
         _onGround = true;
         _currentFrame = 0;
         _invincible = false;
+        _levitating = false;
     }
 
     void jump() {
@@ -58,7 +62,11 @@ public:
 
     // groundY is the top surface Y of whatever platform is currently beneath
     // the player (or SCREEN_HEIGHT if there is none — i.e. falling to death).
+    // No-op while levitating — gravity is suspended and moveVertical() drives
+    // position directly instead.
     void updatePhysics(float groundY) {
+        if (_levitating) return;
+
         _vy += ArcadeConfig::RUNNER_GRAVITY;
         _y  += _vy;
 
@@ -71,8 +79,35 @@ public:
         }
     }
 
+    void activateLevitation(unsigned long durationMs) {
+        _levitating        = true;
+        _levitationEndTime = millis() + durationMs;
+        _vy                = 0.0f;
+    }
+
+    // Returns true the frame levitation just ended (so the caller can decide
+    // whether the player is now stranded mid-air and should resume falling).
+    bool updateLevitation() {
+        if (_levitating && millis() >= _levitationEndTime) {
+            _levitating = false;
+            return true;
+        }
+        return false;
+    }
+
+    // Direct vertical control while levitating — bypasses gravity entirely,
+    // clamped to the same playable band AsteroidFlux's ship uses.
+    void moveVertical(float delta) {
+        if (!_levitating) return;
+        _y = constrain(_y + delta,
+                       (float)ArcadeConfig::RUNNER_LEVITATE_Y_MIN,
+                       (float)ArcadeConfig::RUNNER_LEVITATE_Y_MAX);
+    }
+
+    bool isLevitating() const { return _levitating; }
+
     void updateAnimation() {
-        if (!_onGround) {
+        if (_levitating || !_onGround) {
             _currentFrame = 2;
             return;
         }
@@ -102,6 +137,12 @@ public:
     void render(GFXcanvas16 &canvas) {
         // Blink while invincible, same visual language as AsteroidFlux's shield
         if (_invincible && (millis() / 80) % 2 == 0) return;
+
+        // Warn in the last 2s of levitation, same blink cadence
+        if (_levitating) {
+            unsigned long remaining = (_levitationEndTime > millis()) ? _levitationEndTime - millis() : 0;
+            if (remaining < 2000 && (millis() / 80) % 2 == 0) return;
+        }
 
         const uint16_t* data = frameData(_currentFrame);
         int baseX = (int)_x, baseY = (int)_y;

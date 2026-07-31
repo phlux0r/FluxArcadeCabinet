@@ -208,6 +208,14 @@ struct ArcadeConfig {
     // flying enemy -> tier 4 fire pits. Never more than one enemy at a time.
     static const int   RUNNER_ENEMY_TIER    = 3;
     static const int   RUNNER_FIREPIT_TIER  = 4;
+
+    // Levitation power-up — free vertical flight, gravity/ground suspended,
+    // still vulnerable to enemy/rock contact. Bounded to the same playable
+    // vertical band AsteroidFlux's ship uses.
+    static const unsigned long RUNNER_LEVITATE_MS  = 10000;
+    static constexpr float RUNNER_LEVITATE_SPEED   = 1.1f;
+    static const int   RUNNER_LEVITATE_Y_MIN       = UI_MARGIN_TOP + 1;
+    static const int   RUNNER_LEVITATE_Y_MAX       = LANDSCAPE_HEIGHT - 20; // - RUNNER_HEIGHT
 };
 
 // -------------------------------------------------------------------------

@@ -25,8 +25,11 @@ public:
 
     void reset() { _active = false; }
 
-    void maybeSpawn(float rightEdgeX, int groundY) {
+    // Gated to start just ahead of the flying enemy tier — there's no point
+    // handing out contact-immunity before anything can hit the player.
+    void maybeSpawn(int tier, float rightEdgeX, int groundY) {
         if (_active) return;
+        if (tier < ArcadeConfig::RUNNER_ENEMY_TIER - 1) return;
         if (random(0, 400) == 0) {
             _x      = rightEdgeX + random(20, 60);
             _y      = groundY - random(20, 40);
