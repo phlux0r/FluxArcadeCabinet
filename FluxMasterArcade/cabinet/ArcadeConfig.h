@@ -213,12 +213,39 @@ struct ArcadeConfig {
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 
-    // Hazard progression tiers (see PlatformManager::_tier). Ordered so each
-    // hazard type gets its own stretch of play before the next stacks on top:
-    // tier 1 static gaps -> tier 2 moving platforms -> tier 3 first (and only)
-    // flying enemy -> tier 4 fire pits. Never more than one enemy at a time.
-    static const int   RUNNER_ENEMY_TIER    = 3;
-    static const int   RUNNER_FIREPIT_TIER  = 4;
+    // Hazard/terrain progression tiers (see PlatformManager::_tier).
+    // Alternates terrain mode rather than purely stacking additively:
+    //   tier 1 - solid ground, fire pits
+    //   tier 2 - floating platforms, static gaps
+    //   tier 3 - floating platforms, + moving platforms
+    //   tier 4 - solid ground again, stairs (stepped elevation) + spikes
+    //   tier 5 - solid ground, + rolling boulders
+    //   tier 6 - solid ground, + the single flying enemy (ships)
+    // Never more than one flying enemy at a time.
+    static const int   RUNNER_MOVING_TIER         = 3;
+    static const int   RUNNER_GROUND2_TIER_START  = 4;   // second solid-ground phase begins
+    static const int   RUNNER_SPIKE_TIER          = 4;
+    static const int   RUNNER_BOULDER_TIER        = 5;
+    static const int   RUNNER_ENEMY_TIER          = 6;
+
+    // Spike trap timing — retracted (safe) -> rising (telegraph) -> erupted
+    // (dangerous) -> retracts, repeating. Only the erupted phase can hurt
+    // the player. Traps are only ever attached to a ground segment at
+    // generation time, off-screen ahead of the player (same discipline as
+    // every other hazard here), so "can't appear too close to the player"
+    // falls out of the existing generate-ahead-of-the-pool design rather
+    // than needing a separate distance check.
+    static const unsigned long SPIKE_SAFE_MS    = 1400;
+    static const unsigned long SPIKE_WARN_MS    = 450;
+    static const unsigned long SPIKE_DANGER_MS  = 900;
+
+    // Rolling boulder — ground-hazard version of AsteroidFlux's jagged rock,
+    // rolling along the ground toward the player instead of falling from
+    // the sky. Faster than scroll speed so it visibly closes distance.
+    static const int   BOULDER_MAX_ACTIVE       = 2;
+    static constexpr float BOULDER_SPEED_BONUS  = 1.3f;
+    static const int   BOULDER_SPAWN_MIN_MS     = 2200;
+    static const int   BOULDER_SPAWN_MAX_MS     = 4200;
 
     // Highest a ground pickup can be placed above a platform surface and
     // still be reachable by a jump. True apex (V^2/2g) is ~42px with the

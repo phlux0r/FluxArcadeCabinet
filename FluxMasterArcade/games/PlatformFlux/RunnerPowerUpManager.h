@@ -26,11 +26,12 @@ public:
 
     void reset() { _active = false; }
 
-    // Gated to start just ahead of the flying enemy tier — there's no point
-    // handing out contact-immunity before anything can hit the player.
+    // Gated to start once contact hazards actually exist — spikes/boulders
+    // arrive well before the flying enemy now, so this keys off the second
+    // ground-hazard phase rather than the (now much later) enemy tier.
     void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms) {
         if (_active) return;
-        if (tier < ArcadeConfig::RUNNER_ENEMY_TIER - 1) return;
+        if (tier < ArcadeConfig::RUNNER_GROUND2_TIER_START) return;
         if (random(0, 400) == 0) {
             _x = rightEdgeX + random(20, 60);
             // Clear whatever platform (if any) ends up under this X so the

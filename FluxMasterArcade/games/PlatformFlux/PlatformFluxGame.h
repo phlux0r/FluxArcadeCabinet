@@ -11,6 +11,7 @@
 #include "FlyingEnemyManager.h"
 #include "RunnerPowerUpManager.h"
 #include "LevitationPowerUpManager.h"
+#include "RollingBoulderManager.h"
 #include "assets/TitleScreen.h"
 
 #include <Preferences.h>
@@ -22,6 +23,7 @@ private:
     FlyingEnemyManager    _enemies;
     RunnerPowerUpManager  _powerUp;
     LevitationPowerUpManager _levitationPowerUp;
+    RollingBoulderManager _boulders;
     ParticleManager       _particles;
 
     Preferences      _prefs;
@@ -96,41 +98,47 @@ private:
 
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(30, 3);
+        canvas.setCursor(30, 2);
         canvas.print("--== HOW TO PLAY ==--");
 
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(6, 16);
+        canvas.setCursor(6, 13);
         canvas.print("[JOY] SHIFT FWD/BACK");
-        canvas.setCursor(6, 26);
+        canvas.setCursor(6, 23);
         canvas.print("[BTN A] JUMP");
 
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(6, 40);
-        canvas.print("WATCH FOR:");
+        canvas.setCursor(6, 35);
+        canvas.print("HAZARDS:");
 
+        canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+        canvas.setCursor(10, 45);
+        canvas.print("FIRE PITS");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(10, 52);
+        canvas.setCursor(10, 55);
         canvas.print("PLATFORMS & GAPS");
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(10, 62);
+        canvas.setCursor(10, 65);
         canvas.print("MOVING PLATFORMS");
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(10, 75);
+        canvas.print("STAIRS & SPIKE TRAPS");
+        canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+        canvas.setCursor(10, 85);
+        canvas.print("ROLLING BOULDERS");
         canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
-        canvas.setCursor(10, 72);
+        canvas.setCursor(10, 95);
         canvas.print("FLYING ENEMY + ROCKS");
-        canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
-        canvas.setCursor(10, 82);
-        canvas.print("FIRE PITS");
 
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(6, 96);
-        canvas.print("STAR: BRIEF INVINCIBLE");
+        canvas.setCursor(6, 104);
+        canvas.print("STAR: INVINCIBLE");
         canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
-        canvas.setCursor(6, 106);
+        canvas.setCursor(6, 112);
         canvas.print("DIAMOND: FLY 10s");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(24, 118);
+        canvas.setCursor(24, 120);
         canvas.print("[BTN A] TO START");
     }
 
@@ -140,6 +148,7 @@ private:
         _particles.clearAll();
         _platforms.initGame();
         _enemies.initGame();
+        _boulders.initGame();
         _powerUp.reset();
         _levitationPowerUp.reset();
         _playerXOffset = 0.0f;
@@ -210,11 +219,12 @@ public:
             _platforms.update();
             _platforms.advanceDifficulty();
 
-            // Hazard progression: static gaps (tier 1) -> moving platforms
-            // (tier 2, handled inside PlatformManager) -> the single flying
-            // enemy (tier 3) -> fire pits (tier 4, also inside
-            // PlatformManager). FlyingEnemyManager is hard-capped at 1
-            // enemy, so there's never more than one ship on screen.
+            // Terrain/hazard progression (see PlatformManager class comment):
+            // tier 1 ground+fire pits -> tier 2/3 floating platforms (gaps,
+            // then moving) -> tier 4 ground again with stairs+spikes ->
+            // tier 5 + rolling boulders -> tier 6 + the single flying enemy.
+            // FlyingEnemyManager is hard-capped at 1 enemy, so there's never
+            // more than one ship on screen.
             int tier = _platforms.getTier();
             if (tier >= ArcadeConfig::RUNNER_ENEMY_TIER && _lastEnemyUnlockTier < 1) {
                 _enemies.unlockNextEnemy();
@@ -265,6 +275,15 @@ public:
             _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate, _platforms);
 
             _enemies.update(_platforms.getScrollSpeed(), _player, _particles, audio, playerHit);
+            _boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, audio, playerHit);
+
+            // Spike traps: contact damage, same invincibility rules as
+            // enemies/boulders (levitating above one is naturally safe —
+            // spikeHitsPlayer only counts feet near ground level).
+            if (_platforms.spikeHitsPlayer(px, pRight, pBottom) && !_player.isInvincible()) {
+                _particles.spawnExplosion(px + RUNNER_WIDTH / 2.0f, pBottom, ArcadeConfig::COLOR_WHITE, 6);
+                playerHit = true;
+            }
 
             // Falling off the bottom of the screen is always fatal — invincibility
             // only protects against enemy/rock contact, never a bottomless pit.
@@ -302,6 +321,7 @@ public:
             _powerUp.render(canvas);
             _levitationPowerUp.render(canvas);
             _enemies.render(canvas);
+            _boulders.render(canvas, _platforms);
             _player.render(canvas);
 
             if (uiNeedsUpdate || _uiDirty) {

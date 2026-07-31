@@ -8,27 +8,40 @@
 
 // =============================================================================
 // PLATFORM MANAGER
-// Pool of scrolling platform segments, modeled on AsteroidManager's
+// Pool of scrolling ground/platform segments, modeled on AsteroidManager's
 // pool-and-recycle pattern. Segments spawn off the right edge and recycle
-// once they scroll past the left edge, with gap/width/height chosen from
-// the current difficulty tier.
+// once they scroll past the left edge.
 //
-// The run opens with a stretch of flat, contiguous platforms (no gaps, no
-// height change, no bobbing) so the player has time to get used to the
-// controls before any jump is required.
+// Alternates terrain MODE by tier rather than purely stacking hazards:
+//   tier 0/1 - solid ground (contiguous, stepped "stairs" elevation),
+//              fire pits unlock at tier 1
+//   tier 2/3 - floating platforms with gaps; moving platforms at tier 3
+//   tier 4+  - solid ground again, now with spike traps (tier 4) and
+//              rolling boulders (handled by a separate manager, tier 5)
+//
+// The run opens with a stretch of flat, contiguous ground (no gaps, no
+// height change, no hazards) so the player has time to get used to the
+// controls before anything is asked of them.
 // =============================================================================
 class PlatformManager {
 private:
+    enum SpikePhase { SPIKE_SAFE, SPIKE_WARN, SPIKE_DANGER };
+
     struct Platform {
         float x;
         int   y;       // top surface Y
         int   width;
         bool  active;
         bool  isMoving;
+        bool  isGroundSegment; // solid-to-floor stone fill vs. thin floating slab
         float baseY;
         float bobPhase;
         bool  firePitBefore;   // fire pit rendered in the gap just before this platform
         float firePitGapWidth; // gap width — region [x - firePitGapWidth, x) scrolls with x
+        bool       hasSpike;
+        float      spikeOffsetX; // offset from x, scrolls with the segment
+        SpikePhase spikePhase;
+        unsigned long spikePhaseEnd;
     };
 
     static const int POOL_SIZE = 6;
@@ -37,9 +50,16 @@ private:
     int      _tier;
     unsigned long _distance;
     int      _introPlatformsLeft;
+    int      _lastGroundY;   // running elevation for stepped ground generation
 
     int groundLevel() const {
         return ArcadeConfig::LANDSCAPE_HEIGHT - 8;
+    }
+
+    // tier 0/1 and tier 4+ are solid-ground terrain; tier 2/3 are floating
+    // platforms with gaps. See class comment for the full progression.
+    bool isGroundTier(int tier) const {
+        return tier <= 1 || tier >= ArcadeConfig::RUNNER_GROUND2_TIER_START;
     }
 
     // Darkens a RGB565 color for mortar lines — same base hue, roughly
@@ -52,9 +72,9 @@ private:
         return (r << 11) | (g << 5) | b;
     }
 
-    // Two courses of offset bricks within the slab's fixed thickness —
-    // a repeating pattern drawn over the existing fill color, not a
-    // different texture, so static/moving platform colors stay the same.
+    // Two courses of offset bricks across the slab's top band — a repeating
+    // pattern drawn over the existing fill color, not a different texture,
+    // so static/moving/ground colors stay whatever the caller filled with.
     void drawBrickPattern(GFXcanvas16 &canvas, int x, int y, int width, uint16_t baseColor) {
         uint16_t mortar = darken(baseColor);
         static const int BRICK_W = 10;
@@ -73,11 +93,71 @@ private:
         }
     }
 
+    // Solid-ground segment: contiguous with the previous one (no gap) unless
+    // this segment is chosen to carry a fire pit, in which case a real,
+    // anti-bridge-safe gap is inserted before it (same fall-through death
+    // as a platform-mode gap, just a ground-mode re-skin). Elevation steps
+    // by a small amount each segment — always within the player's ground
+    // tolerance, so stairs are walkable without ever requiring a jump.
+    void spawnGroundSegment(int index, float startX) {
+        int width = random(35, 60);
+
+        int stepDir = random(0, 3) - 1;      // -1, 0, or 1
+        int stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
+        int newY = _lastGroundY + stepDir * stepAmt;
+        int minY = groundLevel() - 50;
+        int maxY = groundLevel();
+        if (newY < minY) newY = minY;
+        if (newY > maxY) newY = maxY;
+
+        bool wantFirePit = (_tier == 1) && (random(0, 6) == 0);
+        bool wantSpike   = !wantFirePit &&
+                           (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
+                           (random(0, 4) == 0);
+
+        if (wantFirePit) {
+            // Same jump-range-derived gap sizing as platform-mode gaps.
+            float airtimeFrames = 2.0f * ArcadeConfig::RUNNER_JUMP_VELOCITY / ArcadeConfig::RUNNER_GRAVITY;
+            int   safeReach      = (int)(_scrollSpeed * airtimeFrames * 0.85f);
+            int   minGap = ArcadeConfig::PLATFORM_MIN_GAP;
+            int   maxGap = minGap + max(3, safeReach - minGap);
+            float gapWidth = (float)random(minGap, maxGap);
+
+            _pool[index].x               = startX + gapWidth;
+            _pool[index].firePitBefore   = true;
+            _pool[index].firePitGapWidth = gapWidth;
+            // Land back at baseline after a pit so its shape reads cleanly,
+            // rather than mixing a stair step into the same spot.
+            newY = groundLevel();
+        } else {
+            _pool[index].x             = startX; // contiguous — no gap
+            _pool[index].firePitBefore = false;
+        }
+        _lastGroundY = newY;
+
+        _pool[index].width          = width;
+        _pool[index].active         = true;
+        _pool[index].isMoving       = false;
+        _pool[index].isGroundSegment = true;
+        _pool[index].baseY          = (float)newY;
+        _pool[index].y              = newY;
+        _pool[index].bobPhase       = 0.0f;
+
+        _pool[index].hasSpike = wantSpike;
+        if (wantSpike) {
+            _pool[index].spikeOffsetX  = width * 0.5f;
+            _pool[index].spikePhase    = SPIKE_SAFE;
+            // Stagger start phase so traps aren't all synchronized.
+            _pool[index].spikePhaseEnd = millis() + random(0, ArcadeConfig::SPIKE_SAFE_MS);
+        }
+    }
+
     void spawnPlatform(int index, float startX) {
         _pool[index].firePitBefore = false;
+        _pool[index].hasSpike      = false;
 
         if (_introPlatformsLeft > 0) {
-            // Flat, contiguous run — no gap, no height change, no bobbing.
+            // Flat, contiguous run — no gap, no height change, no hazards.
             _introPlatformsLeft--;
             _pool[index].x        = startX;
             _pool[index].width    = random(40, 65);
@@ -85,14 +165,22 @@ private:
             _pool[index].y        = groundLevel();
             _pool[index].active   = true;
             _pool[index].isMoving = false;
+            _pool[index].isGroundSegment = true;
+            _lastGroundY = groundLevel();
             return;
         }
 
-        // Moving platforms unlock from tier 2 onward. Decided before the gap
-        // so the gap leading into a mover can be given extra safety margin —
-        // its landing surface bobs, so the timing window is tighter than a
-        // static platform at the same distance.
-        bool landingIsMoving = (_tier >= 2) && (random(0, 4) == 0);
+        if (isGroundTier(_tier)) {
+            spawnGroundSegment(index, startX);
+            return;
+        }
+
+        // ---- Floating-platform mode (tier 2/3) ----
+        // Moving platforms unlock at RUNNER_MOVING_TIER. Decided before the
+        // gap so the gap leading into a mover can be given extra safety
+        // margin — its landing surface bobs, so the timing window is
+        // tighter than a static platform at the same distance.
+        bool landingIsMoving = (_tier >= ArcadeConfig::RUNNER_MOVING_TIER) && (random(0, 4) == 0);
 
         // Gap is derived from actual jump range, not a flat/tier-scaled
         // constant — a fixed max that grows with tier can end up wider than
@@ -115,6 +203,7 @@ private:
         _pool[index].x       = startX + random(minGap, maxGap);
         _pool[index].width   = width;
         _pool[index].active  = true;
+        _pool[index].isGroundSegment = false;
 
         // Height varies more as tiers progress; stays reachable by jump.
         int maxRise = min(30, 10 + _tier * 3);
@@ -123,22 +212,12 @@ private:
 
         _pool[index].isMoving = landingIsMoving;
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
-
-        // Fire pits unlock from tier 4 onward — purely a re-skin of an
-        // ordinary gap (same fall-through mechanic) restricted to ground-level
-        // stretches, so no new collision logic is needed, just a visual cue
-        // that this particular gap is one to respect.
-        if (_tier >= ArcadeConfig::RUNNER_FIREPIT_TIER &&
-            _pool[index].baseY == groundLevel() &&
-            random(0, 5) == 0) {
-            _pool[index].firePitBefore   = true;
-            _pool[index].firePitGapWidth = _pool[index].x - startX;
-        }
     }
 
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
-                         _tier(0), _distance(0), _introPlatformsLeft(0) {
+                         _tier(0), _distance(0), _introPlatformsLeft(0),
+                         _lastGroundY(0) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
@@ -147,6 +226,7 @@ public:
         _tier               = 0;
         _distance           = 0;
         _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
+        _lastGroundY        = groundLevel();
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -155,7 +235,9 @@ public:
         _pool[0].y        = groundLevel();
         _pool[0].active   = true;
         _pool[0].isMoving = false;
+        _pool[0].isGroundSegment = true;
         _pool[0].firePitBefore = false;
+        _pool[0].hasSpike = false;
 
         float cursor = (float)_pool[0].width;
         for (int i = 1; i < POOL_SIZE; i++) {
@@ -182,13 +264,14 @@ public:
     }
 
     void update() {
-        // First pass: scroll everything and find the true rightmost edge
-        // across the whole pool. Recycling must never use an edge computed
-        // from only part of the pool — doing so let a recycled platform
-        // spawn using a stale (too-small) edge and land mid-screen on top
-        // of a platform that hadn't been scanned yet, which both looked
-        // like an extra block appearing out of nowhere and could silently
-        // paper over what should have been a real gap.
+        // First pass: scroll everything, advance bob/spike state, and find
+        // the true rightmost edge across the whole pool. Recycling must
+        // never use an edge computed from only part of the pool — doing so
+        // let a recycled platform spawn using a stale (too-small) edge and
+        // land mid-screen on top of a platform that hadn't been scanned
+        // yet, which both looked like an extra block appearing out of
+        // nowhere and could silently paper over what should have been a
+        // real gap.
         float rightmostEdge = 0;
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
@@ -197,6 +280,23 @@ public:
             if (_pool[i].isMoving) {
                 _pool[i].bobPhase += 0.04f;
                 _pool[i].y = (int)(_pool[i].baseY + sinf(_pool[i].bobPhase) * ArcadeConfig::PLATFORM_BOB_AMPLITUDE);
+            }
+
+            if (_pool[i].hasSpike && millis() >= _pool[i].spikePhaseEnd) {
+                switch (_pool[i].spikePhase) {
+                    case SPIKE_SAFE:
+                        _pool[i].spikePhase    = SPIKE_WARN;
+                        _pool[i].spikePhaseEnd = millis() + ArcadeConfig::SPIKE_WARN_MS;
+                        break;
+                    case SPIKE_WARN:
+                        _pool[i].spikePhase    = SPIKE_DANGER;
+                        _pool[i].spikePhaseEnd = millis() + ArcadeConfig::SPIKE_DANGER_MS;
+                        break;
+                    case SPIKE_DANGER:
+                        _pool[i].spikePhase    = SPIKE_SAFE;
+                        _pool[i].spikePhaseEnd = millis() + ArcadeConfig::SPIKE_SAFE_MS;
+                        break;
+                }
             }
 
             float edge = _pool[i].x + _pool[i].width;
@@ -221,7 +321,8 @@ public:
             if (playerRight <= _pool[i].x || playerX >= _pool[i].x + _pool[i].width) continue;
             // Only count platforms the player is at/above (landing from a fall,
             // not clipping through from below). Generous tolerance so a
-            // bobbing platform doesn't dip the player through its own top.
+            // bobbing platform — or a stair step up — doesn't dip the
+            // player through its own top.
             if (playerBottom <= _pool[i].y + 10) {
                 if (best == -1 || _pool[i].y < best) best = _pool[i].y;
             }
@@ -231,6 +332,19 @@ public:
 
     bool isOverPit(float playerX, float playerRight) const {
         return groundYAt(playerX, playerRight, 0, 0) == -1;
+    }
+
+    // True if the player's footprint overlaps a spike currently in its
+    // erupted (dangerous) phase and their feet are low enough to touch it
+    // (jumping clears it — see the height check).
+    bool spikeHitsPlayer(float playerX, float playerRight, float playerBottom) const {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (!_pool[i].active || !_pool[i].hasSpike || _pool[i].spikePhase != SPIKE_DANGER) continue;
+            float sx = _pool[i].x + _pool[i].spikeOffsetX;
+            if (playerRight <= sx - 6 || playerX >= sx + 6) continue;
+            if (playerBottom >= _pool[i].y - 8) return true;
+        }
+        return false;
     }
 
     // Topmost (smallest-Y) platform surface whose X range overlaps
@@ -273,14 +387,21 @@ public:
     void render(GFXcanvas16 &canvas) {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
-            uint16_t color = _pool[i].isMoving ? ArcadeConfig::COLOR_CYAN
-                                                : ArcadeConfig::COLOR_GREEN;
-            // Fixed-thickness slab, not a pillar down to the screen bottom —
-            // keeps moving platforms a constant visual size as they bob,
-            // instead of appearing to grow/shrink and swallow the player.
-            canvas.fillRect((int)_pool[i].x, _pool[i].y,
-                            _pool[i].width, ArcadeConfig::PLATFORM_THICKNESS,
-                            color);
+
+            uint16_t color;
+            int fillHeight;
+            if (_pool[i].isGroundSegment) {
+                color      = ArcadeConfig::COLOR_GREY;   // stone/earth, distinct from floating platforms
+                fillHeight = ArcadeConfig::LANDSCAPE_HEIGHT - _pool[i].y;
+            } else {
+                color      = _pool[i].isMoving ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_GREEN;
+                // Fixed-thickness slab, not a pillar down to the screen bottom —
+                // keeps moving platforms a constant visual size as they bob,
+                // instead of appearing to grow/shrink and swallow the player.
+                fillHeight = ArcadeConfig::PLATFORM_THICKNESS;
+            }
+
+            canvas.fillRect((int)_pool[i].x, _pool[i].y, _pool[i].width, fillHeight, color);
             drawBrickPattern(canvas, (int)_pool[i].x, _pool[i].y, _pool[i].width, color);
 
             if (_pool[i].firePitBefore) {
@@ -293,6 +414,19 @@ public:
                                 fireW, 3, fireColor);
                 for (int fx = fireX; fx < fireX + fireW; fx += 3) {
                     canvas.drawPixel(fx + (flicker ? 1 : 0), fireY - 1, ArcadeConfig::COLOR_YELLOW);
+                }
+            }
+
+            if (_pool[i].hasSpike) {
+                int sx = (int)(_pool[i].x + _pool[i].spikeOffsetX);
+                int baseY = _pool[i].y;
+                if (_pool[i].spikePhase == SPIKE_WARN) {
+                    // Telegraph: a thin rising nub, not yet dangerous.
+                    canvas.drawFastVLine(sx, baseY - 3, 3, ArcadeConfig::COLOR_YELLOW);
+                    canvas.drawFastVLine(sx + 5, baseY - 2, 2, ArcadeConfig::COLOR_YELLOW);
+                } else if (_pool[i].spikePhase == SPIKE_DANGER) {
+                    canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 11, ArcadeConfig::COLOR_WHITE);
+                    canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 11, ArcadeConfig::COLOR_WHITE);
                 }
             }
         }
