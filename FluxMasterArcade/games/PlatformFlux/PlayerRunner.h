@@ -137,10 +137,6 @@ public:
     bool  isFalling() const { return _vy > 0.0f; }
 
     void render(GFXcanvas16 &canvas) {
-        // Invincibility: vanish-blink, same visual language as AsteroidFlux's
-        // shield — reads as "protected/flickering," not a danger cue.
-        if (_invincible && (millis() / 80) % 2 == 0) return;
-
         // Levitation running out: distinct from invincibility on purpose —
         // this is a warning (about to start falling), not a shield, so
         // instead of vanishing it flashes the sprite red rather than hiding it.
@@ -149,6 +145,14 @@ public:
             unsigned long remaining = (_levitationEndTime > millis()) ? _levitationEndTime - millis() : 0;
             warnFlash = remaining < 2000 && (millis() / 80) % 2 == 0;
         }
+
+        // Invincibility: vanish-blink, same visual language as AsteroidFlux's
+        // shield. Both blinks share the same 80ms phase clock, so if both
+        // effects happened to be active at once, the vanish check used to
+        // run first and return before the red-tint code was ever reached —
+        // the warning silently never showed while invincibility was active.
+        // The warning takes priority now: it never gets swallowed by vanish.
+        if (!warnFlash && _invincible && (millis() / 80) % 2 == 0) return;
 
         const uint16_t* data = frameData(_currentFrame);
         int baseX = (int)_x, baseY = (int)_y;
