@@ -62,6 +62,7 @@ private:
     int      _introPlatformsLeft;
     int      _lastGroundY;   // running elevation for stepped ground generation
     int      _firePitsPlaced; // this loop's count so far, during the tier 0/1 window
+    float    _distanceSinceLastSpike; // px generated since the last spike, enforces min spacing
     int      _loop;              // how many full tier 1-7 cycles have completed
     unsigned long _cycleDistance; // _distance wrapped to the current loop
     float    _scrollSpeedCap;    // per-loop scroll speed ceiling, rises each loop
@@ -203,9 +204,17 @@ private:
         bool runningOut   = wantMorePits && (_cycleDistance + 200 >= tier2Start);
         bool mustForce    = eligibleTier && runningOut;
         bool wantFirePit  = eligibleTier && (mustForce || random(0, 3) == 0);
+
+        // Spikes need at least 4 player-sprite-widths of clearance since
+        // the last one — otherwise back-to-back rolls on adjacent segments
+        // could place two spikes close enough together to be unfair.
+        _distanceSinceLastSpike += width;
+        bool spikeSpacingOK = _distanceSinceLastSpike >= RUNNER_WIDTH * 4;
         bool wantSpike    = !wantFirePit &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
+                           spikeSpacingOK &&
                            (random(0, 4) == 0);
+        if (wantSpike) _distanceSinceLastSpike = 0.0f;
 
         if (wantFirePit) {
             _firePitsPlaced++;
@@ -310,7 +319,8 @@ private:
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
-                         _lastGroundY(0), _firePitsPlaced(0), _loop(0),
+                         _lastGroundY(0), _firePitsPlaced(0),
+                         _distanceSinceLastSpike(9999.0f), _loop(0),
                          _cycleDistance(0),
                          _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
@@ -323,6 +333,7 @@ public:
         _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
         _lastGroundY        = groundLevel();
         _firePitsPlaced     = 0;
+        _distanceSinceLastSpike = 9999.0f;
         _loop               = 0;
         _cycleDistance      = 0;
         _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED;

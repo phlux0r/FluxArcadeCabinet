@@ -33,7 +33,7 @@ private:
 
     void spawnBoulder(int index) {
         _boulders[index].x         = ArcadeConfig::LANDSCAPE_WIDTH + random(10, 40);
-        _boulders[index].radius    = 6.0f;
+        _boulders[index].radius    = 4.5f; // one size smaller than the original 6.0
         _boulders[index].angle     = random(0, 360);
         _boulders[index].spinSpeed = random(6, 12);
         _boulders[index].active    = true;
