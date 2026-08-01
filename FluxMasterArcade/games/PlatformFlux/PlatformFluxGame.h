@@ -142,6 +142,10 @@ private:
     }
 
     void startNewGame(AudioEngine &audio) {
+        // Cut off whatever's still playing (e.g. the game-over sound, if
+        // "play again" was pressed before it finished) so it doesn't keep
+        // running into the new game.
+        audio.mute();
         _score = 0;
         _particles.clearAll();
         _platforms.initGame();

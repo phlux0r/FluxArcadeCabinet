@@ -701,6 +701,12 @@ public:
         _toneActive    = false;
         _melodyPlaying = false;
         i2s_zero_dma_buffer(I2S_PORT);
+        // Cancel any pending WAV-open-failed fallback checks too — otherwise
+        // one could still fire its tone later (e.g. mid-new-game) for a
+        // sound that was deliberately cut off, not one that failed to open.
+        _jumpFallbackPending     = false;
+        _deathFallbackPending    = false;
+        _gameOverFallbackPending = false;
     }
 
     void stopAll() { mute(); }
