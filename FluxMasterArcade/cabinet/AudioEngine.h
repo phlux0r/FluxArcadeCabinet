@@ -26,6 +26,8 @@
 //   /audio/gamestart.wav
 //   /audio/gameend.wav
 //   /audio/explosion.wav
+//   /audio/jump.wav        (Platform Flux — falls back to a tone blip)
+//   /audio/death.wav       (Platform Flux — falls back to a tone blip)
 //
 // FALLBACK: PROGMEM 8kHz 8-bit arrays used when SD unavailable.
 //           Also streamed from the audio task.
@@ -313,6 +315,16 @@ private:
     bool _i2sReady   = false;
     TaskHandle_t _taskHandle = nullptr;
 
+    // ---- Deferred WAV-open-failed fallback (see playJumpSound) ----
+    bool          _jumpFallbackPending = false;
+    unsigned long _jumpFallbackCheckAt = 0;
+    // ---- Deferred WAV-open-failed fallback (see playDeathSound) ----
+    bool          _deathFallbackPending = false;
+    unsigned long _deathFallbackCheckAt = 0;
+    // ---- Deferred WAV-open-failed fallback (see playGameOverToneSound) ----
+    bool          _gameOverFallbackPending = false;
+    unsigned long _gameOverFallbackCheckAt = 0;
+
     // ---- Tone / melody state (Core 1 only) ----
     bool          _toneActive     = false;
     int           _toneFreq       = 0;
@@ -497,6 +509,54 @@ public:
         else playLandingSuccess();
     }
 
+    // Drop a WAV at /audio/jump.wav to override — falls back to a short
+    // rising two-note blip if the SD card isn't present, or if it is but
+    // that specific file is missing/fails to open. The open result isn't
+    // known synchronously (WAV streaming runs on its own task and opening
+    // over SPI can take a while, especially if it's contending with
+    // display traffic), so this is polled from update() with a generous
+    // deadline rather than checked once at a fixed short delay — a single
+    // too-early check was concluding "failed" while the file was still
+    // legitimately opening, firing the fallback tone on top of the WAV
+    // once it did start.
+    void playJumpSound() {
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/jump.wav");
+            _jumpFallbackPending  = true;
+            _jumpFallbackCheckAt  = millis() + 300;
+        } else {
+            playJumpBlip();
+        }
+    }
+
+    // Drop a WAV at /audio/death.wav to override — falls back to a short
+    // descending tone if the SD card isn't present, or if it is but that
+    // specific file is missing/fails to open (same polled-deadline pattern
+    // as playJumpSound).
+    void playDeathSound() {
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/death.wav");
+            _deathFallbackPending = true;
+            _deathFallbackCheckAt = millis() + 300;
+        } else {
+            playDeathBlip();
+        }
+    }
+
+    // Reuses the shared /audio/gameend.wav path (same convention as
+    // AsteroidFlux's playGameOverSound) but falls back to a tone melody
+    // instead of requiring a PROGMEM sample — same polled-deadline pattern
+    // as playJumpSound/playDeathSound.
+    void playGameOverToneSound() {
+        if (SD.cardType() != CARD_NONE) {
+            playWAV("/audio/gameend.wav");
+            _gameOverFallbackPending = true;
+            _gameOverFallbackCheckAt = millis() + 300;
+        } else {
+            playGameOverBlip();
+        }
+    }
+
     // -------------------------------------------------------------------------
     // TONE MODE — Core 1, update() driven
     // Does not play if WAV/sample is active
@@ -544,14 +604,67 @@ public:
     void playThrustTick()       { playTone(180,   20); }
     void playSound(int f, int d){ playTone(f, d); }  // compat alias
 
+    void playJumpBlip() {
+        static const int n[] = {700, 1050};
+        static const int d[] = { 35,   45};
+        playMelody(n, d, 2);
+    }
+
+    void playDeathBlip() {
+        static const int n[] = {500, 350, 220};
+        static const int d[] = {100, 100, 200};
+        playMelody(n, d, 3);
+    }
+
+    void playGameOverBlip() {
+        static const int n[] = {392, 330, 262, 196};
+        static const int d[] = {150, 150, 150, 350};
+        playMelody(n, d, 4);
+    }
+
     // -------------------------------------------------------------------------
     // UPDATE — call every frame from render loop (Core 1)
     // Only drives tone/melody. WAV streaming is handled by audio task.
     // -------------------------------------------------------------------------
     void update() {
-        if (!_i2sReady || _audioState.playing) return;
-
         unsigned long now = millis();
+
+        // Polled check: did the jump/death WAV actually start? wavDurationMs
+        // is only set once the header is successfully parsed, and stays set
+        // (not cleared on natural playback end) until the next WAV request
+        // resets it — so it reliably distinguishes "never opened" from
+        // "played and already finished," unlike the transient playing flag.
+        // Polled every frame rather than checked once at a fixed delay:
+        // opening the file over SPI can legitimately take longer than a
+        // short fixed wait, especially under display-traffic contention, so
+        // a too-early single check was misreading "still opening" as
+        // "failed" and firing the fallback tone alongside the real WAV.
+        if (_jumpFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _jumpFallbackPending = false; // WAV opened fine — no fallback needed
+            } else if (now >= _jumpFallbackCheckAt) {
+                _jumpFallbackPending = false;
+                playJumpBlip();
+            }
+        }
+        if (_deathFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _deathFallbackPending = false;
+            } else if (now >= _deathFallbackCheckAt) {
+                _deathFallbackPending = false;
+                playDeathBlip();
+            }
+        }
+        if (_gameOverFallbackPending) {
+            if (_audioState.wavDurationMs != 0) {
+                _gameOverFallbackPending = false;
+            } else if (now >= _gameOverFallbackCheckAt) {
+                _gameOverFallbackPending = false;
+                playGameOverBlip();
+            }
+        }
+
+        if (!_i2sReady || _audioState.playing) return;
 
         if (_melodyPlaying) {
             if (now >= _nextNoteMs) {
@@ -588,6 +701,12 @@ public:
         _toneActive    = false;
         _melodyPlaying = false;
         i2s_zero_dma_buffer(I2S_PORT);
+        // Cancel any pending WAV-open-failed fallback checks too — otherwise
+        // one could still fire its tone later (e.g. mid-new-game) for a
+        // sound that was deliberately cut off, not one that failed to open.
+        _jumpFallbackPending     = false;
+        _deathFallbackPending    = false;
+        _gameOverFallbackPending = false;
     }
 
     void stopAll() { mute(); }

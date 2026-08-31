@@ -175,6 +175,99 @@ struct ArcadeConfig {
     // initLevel() adds (level * 10), so this yields 240s at level 1
     // (previously 500 -> 510s at level 1).
     static const int MAZE_TIME_LEFT       = 230;
+
+    // =========================================================================
+    // PLATFORM FLUX — GAME CONSTANTS
+    // =========================================================================
+    static constexpr float RUNNER_GRAVITY            = 0.35f;
+    // Raised from 4.6 — at RUNNER_BASE_SCROLL_SPEED, the old velocity gave
+    // barely any margin over PLATFORM_MIN_GAP once gap sizing is derived
+    // from actual jump range (see PlatformManager::spawnPlatform), making
+    // even minimum-width gaps feel like they required frame-perfect jumps.
+    static constexpr float RUNNER_JUMP_VELOCITY       = 5.4f;
+    static constexpr float RUNNER_BASE_SCROLL_SPEED   = 0.9f;
+    static constexpr float RUNNER_SPEED_STEP          = 0.12f;
+    static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
+    static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
+    static const int   RUNNER_INVINCIBLE_MS       = 6000;
+
+    // Joystick-controlled horizontal drift around the runner's base X.
+    // Rotation-1 games read joyY for on-screen horizontal, same swap
+    // AsteroidFlux uses for its physical orientation.
+    static const int   RUNNER_BASE_X          = 30;
+    static const int   RUNNER_X_MIN_OFFSET    = -14;
+    static const int   RUNNER_X_MAX_OFFSET    = 20;
+    static constexpr float RUNNER_X_MOVE_SPEED = 1.0f;
+
+    // Platform generation — how the run opens and how gaps/movement scale.
+    // Shortened from 5 — real terrain (and fire pits) now starts around
+    // displayed score ~30-35 instead of ~60+, per request.
+    static const int   PLATFORM_INTRO_COUNT    = 2;    // flat, gap-free platforms at run start
+    // Must stay wider than the runner sprite (18px) — groundYAt() does a
+    // simple per-platform AABB overlap test, so a gap narrower than the
+    // sprite lets the player's rect straddle both platforms' edges at once
+    // and always find something to stand on, bridging the gap without ever
+    // falling. +4px margin so it's reliably wider, not just barely.
+    static const int   PLATFORM_MIN_GAP        = 22;
+    // Max gap is derived dynamically from jump range in
+    // PlatformManager::spawnPlatform (depends on current scroll speed),
+    // not a fixed constant here.
+    static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
+    static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
+
+    // Hazard/terrain progression tiers (see PlatformManager::_tier).
+    // Alternates terrain mode rather than purely stacking additively:
+    //   tier 0/1 - solid ground, fire pits (both tiers eligible, not just 1)
+    //   tier 2   - floating platforms, static gaps
+    //   tier 3   - floating platforms, + moving platforms
+    //   tier 4   - floating platforms, + the flying enemy (early preview)
+    //   tier 5   - solid ground again, stairs (stepped elevation) + spikes,
+    //              no ships
+    //   tier 6   - solid ground, + rolling boulders, still no ships
+    //   tier 7   - solid ground, + the flying enemy returns
+    // Never more than one flying enemy at a time; it's active only at
+    // tier 4 and tier 7+ (see FlyingEnemyManager::setActive).
+    static const int   RUNNER_MOVING_TIER         = 3;
+    static const int   RUNNER_EARLY_SHIP_TIER     = 4;   // ships' first, early appearance
+    static const int   RUNNER_GROUND2_TIER_START  = 5;   // second solid-ground phase begins
+    static const int   RUNNER_SPIKE_TIER          = 5;
+    static const int   RUNNER_BOULDER_TIER        = 6;
+    static const int   RUNNER_ENEMY_TIER          = 7;   // ships return for good
+
+    // Spike trap timing — retracted (safe) -> rising (telegraph) -> erupted
+    // (dangerous) -> retracts, repeating. Only the erupted phase can hurt
+    // the player. Traps are only ever attached to a ground segment at
+    // generation time, off-screen ahead of the player (same discipline as
+    // every other hazard here), so "can't appear too close to the player"
+    // falls out of the existing generate-ahead-of-the-pool design rather
+    // than needing a separate distance check.
+    static const unsigned long SPIKE_SAFE_MS    = 1400;
+    static const unsigned long SPIKE_WARN_MS    = 450;
+    static const unsigned long SPIKE_DANGER_MS  = 900;
+
+    // Rolling boulder — ground-hazard version of AsteroidFlux's jagged rock,
+    // rolling along the ground toward the player instead of falling from
+    // the sky. Faster than scroll speed so it visibly closes distance.
+    static const int   BOULDER_MAX_ACTIVE       = 2;
+    static constexpr float BOULDER_SPEED_BONUS  = 1.3f;
+    static const int   BOULDER_SPAWN_MIN_MS     = 2200;
+    static const int   BOULDER_SPAWN_MAX_MS     = 4200;
+
+    // Highest a ground pickup can be placed above a platform surface and
+    // still be reachable by a jump. True apex (V^2/2g) is ~42px with the
+    // current jump velocity; this stays comfortably under that so a pickup
+    // never requires frame-perfect timing to reach — the earlier version
+    // used a fixed band up near the top of the screen regardless of jump
+    // height, which could place one out of reach entirely.
+    static const int   RUNNER_MAX_REACHABLE_RISE = 28;
+
+    // Levitation power-up — free vertical flight, gravity/ground suspended,
+    // still vulnerable to enemy/rock contact. Bounded to the same playable
+    // vertical band AsteroidFlux's ship uses.
+    static const unsigned long RUNNER_LEVITATE_MS  = 10000;
+    static constexpr float RUNNER_LEVITATE_SPEED   = 1.1f;
+    static const int   RUNNER_LEVITATE_Y_MIN       = UI_MARGIN_TOP + 1;
+    static const int   RUNNER_LEVITATE_Y_MAX       = LANDSCAPE_HEIGHT - 20; // - RUNNER_HEIGHT
 };
 
 // -------------------------------------------------------------------------
@@ -185,7 +278,8 @@ enum CabinetState {
     STATE_LAUNCHER_MENU,
     STATE_ASTEROID_FLUX,
     STATE_LANDER_FLUX,
-    STATE_MAZE_FLUX
+    STATE_MAZE_FLUX,
+    STATE_PLATFORM_FLUX
     // STATE_NEW_GAME  <-- add future games here
 };
 
