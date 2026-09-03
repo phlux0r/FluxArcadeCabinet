@@ -51,7 +51,11 @@
 static const i2s_port_t I2S_PORT          = I2S_NUM_0;
 static const int        I2S_DMA_BUF_LEN   = 1024;   // Larger buffer = more headroom
 static const int        I2S_DMA_BUF_COUNT = 8;
-static const int        TONE_SAMPLES_PER_UPDATE = 700;
+// Max samples writeToneSamples() can produce in one update() call. Actual
+// count is computed from real elapsed time (see _lastToneWriteUs), not a
+// fixed value — this is just the buffer's ceiling, sized well above a
+// worst-case slow frame so a catch-up burst never gets truncated.
+static const int        TONE_SAMPLES_PER_UPDATE = 2048;
 
 // Audio task config
 static const int        AUDIO_TASK_STACK  = 8192;  // 8KB — file I/O needs headroom
@@ -331,6 +335,10 @@ private:
     unsigned long _toneEndMs      = 0;
     uint32_t      _sampleCounter  = 0;
     uint32_t      _halfPeriod     = 0;
+    // Real time of the last tone sample write — writeToneSamples() produces
+    // exactly enough samples to cover the elapsed time since this, rather
+    // than a fixed count per update() call (see TONE_SAMPLES_PER_UPDATE).
+    unsigned long _lastToneWriteUs = 0;
 
     const int*    _melodyFreqs    = nullptr;
     const int*    _melodyDurations= nullptr;
@@ -568,6 +576,7 @@ public:
         _sampleCounter = 0;
         _toneActive    = true;
         _toneEndMs     = millis() + durationMs;
+        _lastToneWriteUs = micros();
     }
 
     void playMelody(const int* freqs, const int* durs, int len) {
@@ -664,7 +673,15 @@ public:
             }
         }
 
-        if (!_i2sReady || _audioState.playing) return;
+        // A WAV occupying the audio task (or I2S not ready yet) means no
+        // tone samples get written this call — reset the clock so that
+        // whenever tone playback does resume, elapsed time is measured
+        // from that point, not stretched back across however long the WAV
+        // played (which would otherwise demand an oversized catch-up burst).
+        if (!_i2sReady || _audioState.playing) {
+            _lastToneWriteUs = micros();
+            return;
+        }
 
         if (_melodyPlaying) {
             if (now >= _nextNoteMs) {
@@ -683,6 +700,7 @@ public:
                 _toneActive    = (freq != NOTE_REST);
                 _toneEndMs     = now + (unsigned long)(dur * 0.85f);
                 _nextNoteMs    = now + dur;
+                _lastToneWriteUs = micros(); // fresh note — don't carry over the previous note's timing
             }
         }
 
@@ -691,7 +709,24 @@ public:
                 _toneActive = false;
                 writeSilence();
             } else {
-                writeToneSamples(TONE_SAMPLES_PER_UPDATE, 8000);
+                // Produce exactly as many samples as real time has actually
+                // elapsed since the last write, instead of a fixed count per
+                // update() call. The fixed-700-samples-per-call version
+                // assumed a steady ~16ms frame period; 700 samples is only
+                // ~15.9ms of audio at 44100Hz, so it was systematically
+                // under-feeding the DMA buffer by a fraction of a ms every
+                // single frame — which drains a very real (if generously
+                // sized) buffer over a few seconds and produces exactly the
+                // periodic stutter reported. Any frame that runs long (a
+                // slow render, SPI contention, etc.) made the shortfall
+                // worse, not better.
+                unsigned long nowUs = micros();
+                unsigned long elapsedUs = nowUs - _lastToneWriteUs;
+                _lastToneWriteUs = nowUs;
+                uint32_t samples = (uint32_t)((uint64_t)elapsedUs * ArcadeConfig::I2S_SAMPLE_RATE / 1000000ULL);
+                if (samples < 1) samples = 1;
+                if (samples > TONE_SAMPLES_PER_UPDATE) samples = TONE_SAMPLES_PER_UPDATE;
+                writeToneSamples(samples, 8000);
             }
         }
     }
