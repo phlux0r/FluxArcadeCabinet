@@ -6,6 +6,8 @@
 
 class PlayerMaze {
 public:
+    enum Facing { FACE_DOWN, FACE_UP, FACE_LEFT, FACE_RIGHT };
+
     int x = 0;
     int y = 0;
     bool interact = false;
@@ -13,6 +15,9 @@ public:
     int  lives        = 3;
     bool alive        = true;
     bool speedBoost   = false;
+
+    Facing facing     = FACE_DOWN; // which way the sprite is drawn facing
+    bool   stepToggle = false;     // alternates each successful move, for a walk wiggle
 
 private:
     unsigned long _lastMoveMs    = 0;
@@ -27,6 +32,8 @@ public:
         alive = true;
         speedBoost = false;
         interact = false;
+        facing = FACE_DOWN;
+        stepToggle = false;
         _lastMoveMs = 0;
         _speedBoostEnd = 0;
     }
@@ -47,7 +54,6 @@ public:
 
         unsigned long now = millis();
         int delay = speedBoost ? MOVE_DELAY_BOOST_MS : MOVE_DELAY_MS;
-        if (now - _lastMoveMs < (unsigned long)delay) return;
 
         int nx = x, ny = y;
         uint8_t wall = 0;
@@ -58,11 +64,23 @@ public:
         else if (joyRight) { nx++; wall = WALL_E; }
         else return;
 
+        // Face the direction actually being attempted (screen-space, not
+        // the input label — this cabinet's joystick reads inverted here,
+        // same as elsewhere) even if the move itself is about to be
+        // rejected below, so bumping into a wall still turns the sprite
+        // to face it instead of leaving it facing the old direction.
+        if      (ny > y) facing = FACE_DOWN;
+        else if (ny < y) facing = FACE_UP;
+        else if (nx > x) facing = FACE_RIGHT;
+        else if (nx < x) facing = FACE_LEFT;
+
+        if (now - _lastMoveMs < (unsigned long)delay) return;
         if (nx < 0 || nx >= maze.width || ny < 0 || ny >= maze.height) return;
         if (maze.hasWall(x, y, wall)) return;
 
         x = nx; y = ny;
         _lastMoveMs = now;
+        stepToggle = !stepToggle;
     }
 };
 

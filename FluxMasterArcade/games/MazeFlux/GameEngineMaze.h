@@ -466,11 +466,30 @@ private:
             canvas.drawRect(sx+2, sy+1, 4, 6, ArcadeConfig::COLOR_GREEN);
         }
 
-        // Player
+        // Player — small body block with a facing nub (cyan) on whichever
+        // edge matches the direction last moved/attempted, plus two feet
+        // pixels that alternate stance each successful step for a walking
+        // wiggle instead of a static arrow.
         {
             int ppx = _player.x * tile - camPixX;
             int ppy = _player.y * tile - camPixY;
-            canvas.fillTriangle(ppx+4, ppy+1, ppx+1, ppy+7, ppx+7, ppy+7, ArcadeConfig::COLOR_WHITE);
+
+            canvas.fillRect(ppx + 2, ppy + 2, 4, 4, ArcadeConfig::COLOR_WHITE);
+
+            switch (_player.facing) {
+                case PlayerMaze::FACE_UP:    canvas.drawFastHLine(ppx + 3, ppy + 1, 2, ArcadeConfig::COLOR_CYAN); break;
+                case PlayerMaze::FACE_DOWN:  canvas.drawFastHLine(ppx + 3, ppy + 6, 2, ArcadeConfig::COLOR_CYAN); break;
+                case PlayerMaze::FACE_LEFT:  canvas.drawFastVLine(ppx + 1, ppy + 3, 2, ArcadeConfig::COLOR_CYAN); break;
+                case PlayerMaze::FACE_RIGHT: canvas.drawFastVLine(ppx + 6, ppy + 3, 2, ArcadeConfig::COLOR_CYAN); break;
+            }
+
+            if (_player.stepToggle) {
+                canvas.drawPixel(ppx + 2, ppy + 7, ArcadeConfig::COLOR_WHITE);
+                canvas.drawPixel(ppx + 5, ppy + 7, ArcadeConfig::COLOR_WHITE);
+            } else {
+                canvas.drawPixel(ppx + 3, ppy + 7, ArcadeConfig::COLOR_WHITE);
+                canvas.drawPixel(ppx + 4, ppy + 7, ArcadeConfig::COLOR_WHITE);
+            }
         }
 
         // HUD
