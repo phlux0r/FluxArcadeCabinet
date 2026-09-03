@@ -12,6 +12,7 @@ private:
 public:
     void init(AudioEngine &audio) override {
         _engine.init(audio);
+        audio.playLanderStartSound(); // shared game-select jingle, same as Lander/Runner
     }
 
     bool update(GFXcanvas16 &canvas,

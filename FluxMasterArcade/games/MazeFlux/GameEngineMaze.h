@@ -607,7 +607,6 @@ public:
 
         initLevel();
         _player.lives = 3;
-        audio.playTone(523, 100);
     }
 
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
