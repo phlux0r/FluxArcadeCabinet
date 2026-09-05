@@ -175,6 +175,7 @@ public:
         _attractSlide       = SLIDE_SPLASH;
         _attractSlideTimer  = millis();
         _btnBWasHeld        = true;
+        audio.playLanderStartSound(); // shared game-select jingle, same as Lander/Maze
     }
 
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
