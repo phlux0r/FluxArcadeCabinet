@@ -59,8 +59,8 @@ private:
     // (pitch/yaw), pulled back along the aim's own forward vector so it
     // tracks smoothly instead of swinging around a screen-fixed point.
     static const int32_t SHIP_Y      = -60;
-    static const int32_t CHASE_DIST  = 420;
-    static const int32_t CHASE_HEIGHT = 140;
+    static const int32_t CHASE_DIST  = 560;
+    static const int32_t CHASE_HEIGHT = 170;
 
     // Floor grid — purely a spatial reference ("a world" to fly over) so the
     // aim has a horizon to read against; it doesn't interact with gameplay.
@@ -167,12 +167,12 @@ private:
         // Player ship: a simple fuselage + wings, fixed at the world origin
         // (the "turret" position everything else — spawn offsets, collision
         // — is measured against).
-        _shipHull = Primitives::createCube(120, 70, 280, &_shipMat);
+        _shipHull = Primitives::createCube(70, 40, 170, &_shipMat);
         _shipHull->setPosition(0, SHIP_Y, 0);
         _scene->addObject(_shipHull);
 
-        _shipWings = Primitives::createCube(320, 22, 90, &_shipMat);
-        _shipWings->setPosition(0, SHIP_Y, -40);
+        _shipWings = Primitives::createCube(190, 14, 55, &_shipMat);
+        _shipWings->setPosition(0, SHIP_Y, -25);
         _scene->addObject(_shipWings);
 
         _floor = Primitives::createGrid(FLOOR_WIDTH, FLOOR_DEPTH, FLOOR_ROWS, FLOOR_COLS,
@@ -181,16 +181,24 @@ private:
         _scene->addObject(_floor);
     }
 
-    // Aim-derived forward vector, used only to place the chase camera — a
-    // simple, self-consistent approximation rather than a bit-exact match
-    // to Jet's own fixed-point rotation matrix (not needed here: nothing
-    // hit-tests against it, it just has to move smoothly with the aim).
+    // Aim-derived forward vector, used to place the chase camera so it
+    // stays rigidly behind the ship as the aim swings, rather than
+    // orbiting independently of what the camera is actually looking at.
+    // Derived directly from Jet's own camera rotation matrix (the same
+    // composition ParticleSystem::render() builds from
+    // Camera::getRotationMatrix(), with roll=0): the world-space vector
+    // that maps to view-space (0,0,1) — i.e. "straight ahead" — works out
+    // to (-cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw)). An
+    // earlier version guessed the X term's sign instead of deriving it,
+    // which made the camera's position and its actual look direction
+    // disagree — the ship visibly drifted off-centre while turning and
+    // could leave the frustum entirely at extreme angles.
     void updateCamera() {
         float yawRad   = radians(_yawDeg);
         float pitchRad = radians(_pitchDeg);
-        float fx = sinf(yawRad) * cosf(pitchRad);
+        float fx = -cosf(pitchRad) * sinf(yawRad);
         float fy = sinf(pitchRad);
-        float fz = cosf(yawRad) * cosf(pitchRad);
+        float fz = cosf(pitchRad) * cosf(yawRad);
 
         int32_t camX = (int32_t)(0        - fx * CHASE_DIST);
         int32_t camY = (int32_t)(SHIP_Y   - fy * CHASE_DIST + CHASE_HEIGHT);
