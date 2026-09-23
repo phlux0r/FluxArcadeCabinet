@@ -134,6 +134,9 @@
 // Platform detection
 // ---------------------------------------------------------------------------
 
-#if defined(ESP_PLATFORM)
+// PlatformIO's Arduino/ESP32 build already predefines ESP32 on the command
+// line, so guard the definition — the template's unconditional #define
+// causes a harmless but noisy "ESP32 redefined" warning on every Jet file.
+#if defined(ESP_PLATFORM) && !defined(ESP32)
 #define ESP32
 #endif
