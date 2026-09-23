@@ -73,11 +73,15 @@ private:
             canvas.print(_games[i].name);
         }
 
-        // Nav hint
+        // Nav hint — positioned relative to the last game row (38 + (n-1)*15,
+        // 12px tall) with a 2px gap, so it never overlaps as games are added
+        // instead of colliding once the list grows past what fit at the old
+        // fixed y=100.
+        int navY = 38 + (_gameCount - 1) * 15 + 10 + 2;
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(36, 100);
+        canvas.setCursor(36, navY);
         canvas.print("[JOY] MOVE");
-        canvas.setCursor(36, 110);
+        canvas.setCursor(36, navY + 10);
         canvas.print("[BTN A] GO");
 
         // Volume strip (moved up 20px)
