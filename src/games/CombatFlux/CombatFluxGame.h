@@ -26,7 +26,7 @@ private:
     static const int   MAX_ENEMIES   = 3;
     static const int32_t SPAWN_Z     = 3600;   // enemies appear here...
     static const int32_t KILL_Z      = 260;    // ...and hurt the player once they reach here
-    static const int32_t ENEMY_SPEED = 26;     // world units/frame, closing
+    static const int32_t ENEMY_SPEED = 9;      // world units/frame, closing
     static const int32_t ENEMY_BASE  = 260;
     static const int32_t ENEMY_HEIGHT = 340;
     static const int32_t SPAWN_X_RANGE = 1300;
@@ -59,7 +59,7 @@ private:
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
     Renderer::AmbientLight     _amb{ Renderer::Color{55, 60, 85} };
-    Renderer::Material         _enemyMat{ 0xFAC0 /* orange */, nullptr, nullptr, false, 255, 255, 60 };
+    Renderer::Material         _enemyMat{ ArcadeConfig::COLOR_ORANGE, nullptr, nullptr, false, 255, 255, 60 };
     Renderer::ParticleSystem   _particles{ (float)JET32_WORLD_SCALE };
 
     float _yawDeg   = 0.0f;
@@ -101,7 +101,10 @@ private:
         _camera.farPlane  = SPAWN_Z + 400;
         _scene->setCamera(&_camera);
 
-        _enemyMat.shadingMode = Renderer::ShadingMode::GOURAUD;
+        // UNLIT: raw material colour, fully bright regardless of face angle —
+        // easier to spot than lit shading on a screen this small, at the
+        // cost of the enemies reading a bit flatter.
+        _enemyMat.shadingMode = Renderer::ShadingMode::UNLIT;
 
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);
