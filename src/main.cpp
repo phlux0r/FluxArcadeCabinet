@@ -10,6 +10,7 @@
 //   5. Add a case to the switch in loop()
 // =============================================================================
 
+#include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
@@ -30,6 +31,7 @@
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
+#include "games/CombatFlux/CombatFluxGame.h"
 
 // Launcher
 #include "launcher/LauncherMenu.h"
@@ -58,6 +60,7 @@ AsteroidFluxGame asteroidGame;
 LanderFluxGame   landerGame;
 MazeFluxGame     mazeGame;
 PlatformFluxGame platformGame;
+CombatFluxGame   combatGame;
 
 // =============================================================================
 // LAUNCHER
@@ -70,6 +73,7 @@ const GameEntry gameRegistry[] = {
     { "Lander",    STATE_LANDER_FLUX   },
     { "Maze", STATE_MAZE_FLUX },
     { "Runner",  STATE_PLATFORM_FLUX },
+    { "3D Combat",  STATE_COMBAT_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
@@ -211,6 +215,9 @@ void loop() {
                         platformGame.setTFT(tft);
                         launchGame(&platformGame);
                         break;
+                    case STATE_COMBAT_FLUX:
+                        launchGame(&combatGame);
+                        break;
                     default: returnToLauncher(); break;
                 }
             }
@@ -244,6 +251,14 @@ void loop() {
             bool running = platformGame.update(canvasLandscape, state, audio);
             // Platform Flux flushes its own canvas internally (landscape),
             // same pattern as Asteroid Flux.
+            if (!running) returnToLauncher();
+            break;
+        }
+
+        case STATE_COMBAT_FLUX: {
+            bool running = combatGame.update(canvasLandscape, state, audio);
+            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
+                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
             if (!running) returnToLauncher();
             break;
         }

@@ -1,7 +1,7 @@
-# Arduino IDE temporary build folders
-build/
-bin/
-.tmp/
+# PlatformIO build/dependency folders
+.pio/
+.pioenvs/
+.piolibdeps/
 
 # Local configuration files
 .vscode/
