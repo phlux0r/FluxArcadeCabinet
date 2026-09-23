@@ -87,14 +87,19 @@ private:
     // to) are built lazily on the first update() call rather than in init().
     Renderer::Scene*  _scene = nullptr;
     Renderer::Camera  _camera;
-    Renderer::Object* _shipHull  = nullptr;
-    Renderer::Object* _shipWings = nullptr;
-    Renderer::Object* _floor     = nullptr;
+    Renderer::Object* _shipWing    = nullptr;
+    Renderer::Object* _shipShadow  = nullptr;
+    Renderer::Object* _shipCockpit = nullptr;
+    Renderer::Object* _shipNose    = nullptr;
+    Renderer::Object* _floor       = nullptr;
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
     Renderer::AmbientLight     _amb{ Renderer::Color{55, 60, 85} };
     Renderer::Material         _enemyMat{ ArcadeConfig::COLOR_ORANGE, nullptr, nullptr, false, 255, 255, 60 };
-    Renderer::Material         _shipMat{ ArcadeConfig::COLOR_CYAN };
+    Renderer::Material         _shipWingMat{ ArcadeConfig::COLOR_CYAN };
+    Renderer::Material         _shipShadowMat{ 0x0007 /* near-black navy */ };
+    Renderer::Material         _shipCockpitMat{ ArcadeConfig::COLOR_ION_BLUE, nullptr, nullptr, false, 255, 255, 40 };
+    Renderer::Material         _shipNoseMat{ ArcadeConfig::COLOR_AMBER };
     Renderer::Material         _floorMat{ ArcadeConfig::COLOR_ION_BLUE };
     Renderer::ParticleSystem   _particles{ (float)JET32_WORLD_SCALE };
 
@@ -139,8 +144,14 @@ private:
 
         // UNLIT: raw material colour, fully bright regardless of face angle —
         // easier to spot than lit shading on a screen this small.
-        _enemyMat.shadingMode = Renderer::ShadingMode::UNLIT;
-        _shipMat.shadingMode  = Renderer::ShadingMode::UNLIT;
+        _enemyMat.shadingMode      = Renderer::ShadingMode::UNLIT;
+        _shipWingMat.shadingMode   = Renderer::ShadingMode::UNLIT;
+        _shipShadowMat.shadingMode = Renderer::ShadingMode::UNLIT;
+        _shipNoseMat.shadingMode   = Renderer::ShadingMode::UNLIT;
+        // The cockpit is the one lit (GOURAUD) piece, so it picks up a bit
+        // of natural per-face shading instead of reading completely flat —
+        // it never rotates, so the lighting on it is constant, not fiddly.
+        _shipCockpitMat.shadingMode = Renderer::ShadingMode::GOURAUD;
         // WIREFRAME reads far more clearly than a filled checker did at this
         // resolution once distance fog is involved — a filled floor washed
         // out to a flat colour; the grid lines stay legible.
@@ -164,16 +175,45 @@ private:
             _enemies[i].obj = obj;
         }
 
-        // Player ship: a simple fuselage + wings, fixed at the world origin
-        // (the "turret" position everything else — spawn offsets, collision
-        // — is measured against).
-        _shipHull = Primitives::createCube(70, 40, 170, &_shipMat);
-        _shipHull->setPosition(0, SHIP_Y, 0);
-        _scene->addObject(_shipHull);
+        // Player ship, fixed at the world origin (the "turret" position
+        // everything else — spawn offsets, collision — is measured
+        // against). Modelled after a reference screenshot of Jet's own
+        // Wipeout-style demo: a flat swept delta wing, a shadowed
+        // underside for a cheap belly/depth cue, a raised cockpit spine,
+        // and a small warm-coloured nose accent peeking out front.
+        //
+        // Primitives has no plain wedge/triangle helper, so the wing and
+        // its shadow are hand-authored via Object::addVertex/addTriangle
+        // (the same calls Primitives::create* itself uses internally).
+        // NO_CULLING sidesteps needing to get the triangle winding exactly
+        // right for backface culling on a single-sided custom mesh.
+        _shipWing = new Renderer::Object();
+        _shipWing->addVertex(Renderer::Object::Vertex{ Vector3{0, 0, 190} });     // nose
+        _shipWing->addVertex(Renderer::Object::Vertex{ Vector3{-190, 0, -90} });  // left wingtip
+        _shipWing->addVertex(Renderer::Object::Vertex{ Vector3{190, 0, -90} });   // right wingtip
+        _shipWing->addTriangle(0, 1, 2, &_shipWingMat);
+        _shipWing->cullingMode = Renderer::CullingMode::NO_CULLING;
+        _shipWing->calculateBoundingBox();
+        _shipWing->setPosition(0, SHIP_Y, 0);
+        _scene->addObject(_shipWing);
 
-        _shipWings = Primitives::createCube(190, 14, 55, &_shipMat);
-        _shipWings->setPosition(0, SHIP_Y, -25);
-        _scene->addObject(_shipWings);
+        _shipShadow = new Renderer::Object();
+        _shipShadow->addVertex(Renderer::Object::Vertex{ Vector3{0, 0, 140} });
+        _shipShadow->addVertex(Renderer::Object::Vertex{ Vector3{-130, 0, -70} });
+        _shipShadow->addVertex(Renderer::Object::Vertex{ Vector3{130, 0, -70} });
+        _shipShadow->addTriangle(0, 1, 2, &_shipShadowMat);
+        _shipShadow->cullingMode = Renderer::CullingMode::NO_CULLING;
+        _shipShadow->calculateBoundingBox();
+        _shipShadow->setPosition(0, SHIP_Y - 25, -10);
+        _scene->addObject(_shipShadow);
+
+        _shipCockpit = Primitives::createCube(70, 55, 130, &_shipCockpitMat);
+        _shipCockpit->setPosition(0, SHIP_Y + 30, 30);
+        _scene->addObject(_shipCockpit);
+
+        _shipNose = Primitives::createPyramid(60, 24, &_shipNoseMat);
+        _shipNose->setPosition(0, SHIP_Y + 5, 95);
+        _scene->addObject(_shipNose);
 
         _floor = Primitives::createGrid(FLOOR_WIDTH, FLOOR_DEPTH, FLOOR_ROWS, FLOOR_COLS,
                                         &_floorMat, &_floorMat);
