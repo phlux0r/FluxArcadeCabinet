@@ -4,21 +4,26 @@
 #include "../../games/IGame.h"
 #include "../../cabinet/ArcadeConfig.h"
 #include <Preferences.h>
+#include <math.h>
 
 #include <Jet.hpp>
 
 // =============================================================================
-// 3D COMBAT FLUX — a first-person turret shooter rendered with Jet
+// 3D COMBAT FLUX — a third-person space shooter rendered with Jet
 // (https://github.com/CubeCoders/Jet), the cabinet's first 3D game.
 //
-// The camera sits fixed at the cockpit (world origin) and only rotates; low-
-// poly fighters spawn far down +Z and close in along it. A fixed reticle
-// sits at screen centre and BTN A fires a hitscan through Jet's own
-// screen-space picking (Scene::setPickQueries/getPickResults) rather than
-// re-deriving the camera's projection by hand.
+// The player's ship sits at a fixed position (it's a turret, not a flying
+// ship — there's no forward travel); aiming with the joystick swings both
+// the ship's facing and a chase camera pulled back behind and above it.
+// Low-poly enemies of mixed shapes spawn far down +Z and close in. A fixed
+// reticle sits at screen centre and BTN A fires a hitscan through Jet's own
+// screen-space picking (Scene::setPickQueries/getPickResults).
 //
-// Endless score-attack: an enemy that reaches the cockpit unshot just
-// despawns — there's no lives/game-over state, only BTN A (hold 2s) to quit.
+// Because the ship never moves, dodging isn't a mechanic — whether an
+// enemy is ever on a collision course is decided by its spawn offset, and
+// the only counterplay is shooting it down before it arrives. An enemy
+// that closes in without coming near the ship just passes by harmlessly;
+// one that does collide ends the run.
 //
 // Jet's per-frontend render config lives in include/JetConfig.hpp at the
 // project root (see that file for why the numbers here are what they are).
@@ -28,12 +33,18 @@ class CombatFluxGame : public IGame {
 private:
     static const int   MAX_ENEMIES   = 3;
     static const int32_t SPAWN_Z     = 3600;   // enemies appear here...
-    static const int32_t KILL_Z      = 260;    // ...and despawn once they reach here, unshot or not
+    static const int32_t KILL_Z      = 260;    // ...and are checked for a hit once they reach here
     static const int32_t ENEMY_SPEED = 9;      // world units/frame, closing
     static const int32_t ENEMY_BASE  = 260;
     static const int32_t ENEMY_HEIGHT = 340;
     static const int32_t SPAWN_X_RANGE = 1300;
     static const int32_t SPAWN_Y_RANGE = 750;
+
+    // Squared collision radius (ship + enemy combined) tested against the
+    // ship's fixed position when an enemy reaches KILL_Z. Playtest-tunable —
+    // this trades off how often an enemy is actually a threat vs. just a
+    // target of opportunity.
+    static const int32_t COLLISION_RADIUS = 450;
 
     static constexpr float AIM_SPEED    = 1.6f;   // deg/frame at full joystick deflection
     static constexpr float YAW_LIMIT    = 34.0f;
@@ -41,6 +52,15 @@ private:
 
     static const unsigned long RESPAWN_MIN_MS = 500;
     static const unsigned long RESPAWN_MAX_MS = 1500;
+    static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
+
+    // Ship + chase camera. The ship sits at a fixed world position; the
+    // camera is re-derived from it every frame using the current aim
+    // (pitch/yaw), pulled back along the aim's own forward vector so it
+    // tracks smoothly instead of swinging around a screen-fixed point.
+    static const int32_t SHIP_Y      = -60;
+    static const int32_t CHASE_DIST  = 420;
+    static const int32_t CHASE_HEIGHT = 140;
 
     // Floor grid — purely a spatial reference ("a world" to fly over) so the
     // aim has a horizon to read against; it doesn't interact with gameplay.
@@ -51,7 +71,7 @@ private:
     static const int32_t FLOOR_ROWS   = 6;
     static const int32_t FLOOR_COLS   = 6;
 
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING };
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
     struct Enemy {
@@ -63,17 +83,19 @@ private:
 
     // Jet scene state. The Scene itself needs a framebuffer pointer, which
     // only exists once update() hands us the launcher's canvas, so it (and
-    // the enemy/floor meshes, which Scene::addObject borrows a pointer to)
-    // are built lazily on the first update() call rather than in init().
+    // the enemy/ship/floor meshes, which Scene::addObject borrows a pointer
+    // to) are built lazily on the first update() call rather than in init().
     Renderer::Scene*  _scene = nullptr;
     Renderer::Camera  _camera;
-    Renderer::Object* _floor = nullptr;
+    Renderer::Object* _shipHull  = nullptr;
+    Renderer::Object* _shipWings = nullptr;
+    Renderer::Object* _floor     = nullptr;
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
     Renderer::AmbientLight     _amb{ Renderer::Color{55, 60, 85} };
     Renderer::Material         _enemyMat{ ArcadeConfig::COLOR_ORANGE, nullptr, nullptr, false, 255, 255, 60 };
-    Renderer::Material         _floorMatA{ 0x2104 /* dark navy */ };
-    Renderer::Material         _floorMatB{ 0x39C8 /* lighter blue-grey */ };
+    Renderer::Material         _shipMat{ ArcadeConfig::COLOR_CYAN };
+    Renderer::Material         _floorMat{ ArcadeConfig::COLOR_ION_BLUE };
     Renderer::ParticleSystem   _particles{ (float)JET32_WORLD_SCALE };
 
     float _yawDeg   = 0.0f;
@@ -84,6 +106,7 @@ private:
     bool _uiDirty   = true;
 
     bool _btnBWasHeld = false;
+    unsigned long _gameOverEnteredMs = 0;
 
     Preferences _prefs;
 
@@ -109,32 +132,72 @@ private:
         _scene->setBackcolor(0x0011);
         _scene->setClearBuffer(true);
 
-        _camera.setPosition(0, 0, 0);
         _camera.setFOV(72, canvas.width());
         _camera.nearPlane = 64;
-        _camera.farPlane  = SPAWN_Z + 400;
+        _camera.farPlane  = SPAWN_Z + CHASE_DIST + 400;
         _scene->setCamera(&_camera);
 
         // UNLIT: raw material colour, fully bright regardless of face angle —
-        // easier to spot than lit shading on a screen this small, at the
-        // cost of the enemies reading a bit flatter.
+        // easier to spot than lit shading on a screen this small.
         _enemyMat.shadingMode = Renderer::ShadingMode::UNLIT;
-        _floorMatA.shadingMode = Renderer::ShadingMode::UNLIT;
-        _floorMatB.shadingMode = Renderer::ShadingMode::UNLIT;
+        _shipMat.shadingMode  = Renderer::ShadingMode::UNLIT;
+        // WIREFRAME reads far more clearly than a filled checker did at this
+        // resolution once distance fog is involved — a filled floor washed
+        // out to a flat colour; the grid lines stay legible.
+        _floorMat.shadingMode = Renderer::ShadingMode::WIREFRAME;
 
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);
 
-        for (auto &e : _enemies) {
-            e.obj = Primitives::createPyramid(ENEMY_BASE, ENEMY_HEIGHT, &_enemyMat);
-            e.obj->enabled = false;
-            _scene->addObject(e.obj);
+        // Enemies cycle through a fixed shape per slot rather than swapping
+        // meshes at spawn time, so silhouette variety costs nothing at
+        // runtime — each slot just always looks like what it looks like.
+        for (int i = 0; i < MAX_ENEMIES; ++i) {
+            Renderer::Object* obj;
+            switch (i % 3) {
+                case 0:  obj = Primitives::createPyramid(ENEMY_BASE, ENEMY_HEIGHT, &_enemyMat); break;
+                case 1:  obj = Primitives::createCube(ENEMY_BASE, ENEMY_BASE, ENEMY_BASE, &_enemyMat); break;
+                default: obj = Primitives::createCapsule(ENEMY_BASE / 2, ENEMY_HEIGHT, 6, &_enemyMat); break;
+            }
+            obj->enabled = false;
+            _scene->addObject(obj);
+            _enemies[i].obj = obj;
         }
 
+        // Player ship: a simple fuselage + wings, fixed at the world origin
+        // (the "turret" position everything else — spawn offsets, collision
+        // — is measured against).
+        _shipHull = Primitives::createCube(120, 70, 280, &_shipMat);
+        _shipHull->setPosition(0, SHIP_Y, 0);
+        _scene->addObject(_shipHull);
+
+        _shipWings = Primitives::createCube(320, 22, 90, &_shipMat);
+        _shipWings->setPosition(0, SHIP_Y, -40);
+        _scene->addObject(_shipWings);
+
         _floor = Primitives::createGrid(FLOOR_WIDTH, FLOOR_DEPTH, FLOOR_ROWS, FLOOR_COLS,
-                                        &_floorMatA, &_floorMatB);
+                                        &_floorMat, &_floorMat);
         _floor->setPosition(0, FLOOR_Y, FLOOR_Z_CTR);
         _scene->addObject(_floor);
+    }
+
+    // Aim-derived forward vector, used only to place the chase camera — a
+    // simple, self-consistent approximation rather than a bit-exact match
+    // to Jet's own fixed-point rotation matrix (not needed here: nothing
+    // hit-tests against it, it just has to move smoothly with the aim).
+    void updateCamera() {
+        float yawRad   = radians(_yawDeg);
+        float pitchRad = radians(_pitchDeg);
+        float fx = sinf(yawRad) * cosf(pitchRad);
+        float fy = sinf(pitchRad);
+        float fz = cosf(yawRad) * cosf(pitchRad);
+
+        int32_t camX = (int32_t)(0        - fx * CHASE_DIST);
+        int32_t camY = (int32_t)(SHIP_Y   - fy * CHASE_DIST + CHASE_HEIGHT);
+        int32_t camZ = (int32_t)(0        - fz * CHASE_DIST);
+
+        _camera.setPosition(camX, camY, camZ);
+        _camera.setRotation((int32_t)_pitchDeg, (int32_t)_yawDeg, 0);
     }
 
     void resetEnemies() {
@@ -154,23 +217,38 @@ private:
         e.alive = true;
     }
 
-    // Enemy despawns either way once it reaches KILL_Z — shot down (sparks,
-    // score, tone) or simply flown past (silent, no penalty).
     void retireEnemy(Enemy &e, AudioEngine &audio, bool killedByPlayer) {
+        Renderer::Vec3f pos{ (float)e.obj->position.x,
+                             (float)e.obj->position.y,
+                             (float)e.obj->position.z };
+        if (killedByPlayer) _particles.emitSparks(pos, Renderer::Vec3f{0, 1, 0}, 420.0f, 20);
+
         e.alive = false;
         e.obj->enabled = false;
         e.respawnAt = millis() + random((long)RESPAWN_MIN_MS, (long)RESPAWN_MAX_MS);
 
         if (killedByPlayer) {
-            Renderer::Vec3f pos{ (float)e.obj->position.x,
-                                 (float)e.obj->position.y,
-                                 (float)e.obj->position.z };
-            _particles.emitSparks(pos, Renderer::Vec3f{0, 1, 0}, 420.0f, 20);
             _score += 10;
             if (_score > _highScore) { _highScore = _score; saveHighScore(); }
             audio.playTone(1500, 60);
             _uiDirty = true;
         }
+    }
+
+    bool collidesWithShip(const Enemy &e) const {
+        int64_t dx = e.obj->position.x - 0;
+        int64_t dy = e.obj->position.y - SHIP_Y;
+        int64_t dz = e.obj->position.z - 0;
+        int64_t distSq = dx * dx + dy * dy + dz * dz;
+        return distSq <= (int64_t)COLLISION_RADIUS * COLLISION_RADIUS;
+    }
+
+    void triggerGameOver(AudioEngine &audio) {
+        Renderer::Vec3f shipPos{ 0, (float)SHIP_Y, 0 };
+        _particles.emitSparks(shipPos, Renderer::Vec3f{0, 1, 0}, 500.0f, 32);
+        _phase = PHASE_GAMEOVER;
+        _gameOverEnteredMs = millis();
+        audio.playTone(150, 400);
     }
 
     void startNewGame(AudioEngine &audio) {
@@ -260,6 +338,58 @@ public:
             return true;
         }
 
+        // ---- PHASE: GAME OVER ----
+        if (_phase == PHASE_GAMEOVER) {
+            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+            canvas.setTextColor(ArcadeConfig::COLOR_RED);
+            canvas.setTextSize(2);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4 - 12, 15);
+            canvas.print("GAME OVER");
+
+            canvas.setTextSize(1);
+            canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 45);
+            canvas.print("SCORE: "); canvas.print(_score);
+
+            if (_score >= _highScore && _score > 0) {
+                canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
+                canvas.print("NEW HIGH SCORE!!");
+            } else {
+                canvas.setTextColor(ArcadeConfig::COLOR_GREY);
+                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
+                canvas.print("BEST: "); canvas.print(_highScore);
+            }
+
+            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+            canvas.setCursor(20, 90);
+            canvas.print("[BTN A] PLAY AGAIN");
+            canvas.setCursor(20, 103);
+            canvas.print("[BTN B] QUIT");
+
+            unsigned long elapsed = millis() - _gameOverEnteredMs;
+            if (elapsed > (GAMEOVER_TIMEOUT_MS - 10000UL)) {
+                int secsLeft = (int)((GAMEOVER_TIMEOUT_MS - elapsed) / 1000UL) + 1;
+                canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+                canvas.setCursor(20, 116);
+                canvas.print("AUTO: "); canvas.print(secsLeft); canvas.print("s");
+            }
+
+            if (input.btnAPressed) {
+                startNewGame(audio);
+                return true;
+            }
+            if (input.btnBPressed) {
+                audio.mute();
+                return false;
+            }
+            if (elapsed > GAMEOVER_TIMEOUT_MS) {
+                _phase = PHASE_ATTRACT;
+                _btnBWasHeld = false;
+            }
+            return true;
+        }
+
         // ---- PHASE: PLAYING ----
 
         // Aim. The joystick is physically mounted rotated relative to this
@@ -270,10 +400,10 @@ public:
         _yawDeg   += input.joyY * AIM_SPEED;
         _pitchDeg = constrain(_pitchDeg, -PITCH_LIMIT, PITCH_LIMIT);
         _yawDeg   = constrain(_yawDeg,   -YAW_LIMIT,   YAW_LIMIT);
-        _camera.setRotation((int32_t)_pitchDeg, (int32_t)_yawDeg, 0);
+        updateCamera();
 
-        // Advance enemies: spawn, close in, or despawn once they pass the
-        // player (shot or not — see retireEnemy).
+        // Advance enemies: spawn, close in, and either collide with the
+        // fixed-position ship (game over) or pass by harmlessly.
         for (auto &e : _enemies) {
             if (!e.alive) {
                 if ((long)(millis() - e.respawnAt) >= 0) spawnEnemy(e);
@@ -283,9 +413,15 @@ public:
             e.obj->rotate(0, 3, 0);  // slow tumble, purely cosmetic
 
             if (e.obj->position.z <= KILL_Z) {
+                if (collidesWithShip(e)) {
+                    triggerGameOver(audio);
+                    break;
+                }
                 retireEnemy(e, audio, /*killedByPlayer=*/false);
             }
         }
+
+        if (_phase != PHASE_PLAYING) return true;  // triggerGameOver fired this frame
 
         const int pickX = canvas.width() / 2;
         const int pickY = 11 + (canvas.height() - 11) / 2;
