@@ -56,7 +56,8 @@ private:
     // built lazily on the first update() call rather than in init().
     Renderer::Scene*  _scene = nullptr;
     Renderer::Camera  _camera;
-    Renderer::DirectionalLight _sun{ Renderer::Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
+    // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
+    Renderer::DirectionalLight _sun{ Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
     Renderer::AmbientLight     _amb{ Renderer::Color{55, 60, 85} };
     Renderer::Material         _enemyMat{ 0xFAC0 /* orange */, nullptr, nullptr, false, 255, 255, 60 };
     Renderer::ParticleSystem   _particles{ (float)JET32_WORLD_SCALE };
