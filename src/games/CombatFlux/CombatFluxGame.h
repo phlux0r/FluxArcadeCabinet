@@ -184,20 +184,23 @@ private:
     // Aim-derived forward vector, used to place the chase camera so it
     // stays rigidly behind the ship as the aim swings, rather than
     // orbiting independently of what the camera is actually looking at.
-    // Derived directly from Jet's own camera rotation matrix (the same
-    // composition ParticleSystem::render() builds from
-    // Camera::getRotationMatrix(), with roll=0): the world-space vector
-    // that maps to view-space (0,0,1) — i.e. "straight ahead" — works out
-    // to (-cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw)). An
-    // earlier version guessed the X term's sign instead of deriving it,
-    // which made the camera's position and its actual look direction
-    // disagree — the ship visibly drifted off-centre while turning and
-    // could leave the frustum entirely at extreme angles.
+    //
+    // Cross-checked two ways against Jet's actual source (not re-derived
+    // blind a third time):
+    //  1. Camera::getRotationMatrix() computes cos/sin of the *negated*
+    //     angle ("angleXf = -rotation.x * ...") before building the matrix
+    //     ParticleSystem::render() uses — a sign flip an earlier version
+    //     of this comment missed, which is why that attempt still drifted.
+    //  2. Camera::lookAt() computes rotation FROM a direction vector via
+    //     pitch = -atan2(dir.y, horizontalLen), yaw = atan2(dir.x, dir.z).
+    //     Inverting that algebraically gives the same forward vector as
+    //     (1) once the negated-angle correction is applied. Both agree on:
+    //       forward = (cos(pitch)*sin(yaw), -sin(pitch), cos(pitch)*cos(yaw))
     void updateCamera() {
         float yawRad   = radians(_yawDeg);
         float pitchRad = radians(_pitchDeg);
-        float fx = -cosf(pitchRad) * sinf(yawRad);
-        float fy = sinf(pitchRad);
+        float fx = cosf(pitchRad) * sinf(yawRad);
+        float fy = -sinf(pitchRad);
         float fz = cosf(pitchRad) * cosf(yawRad);
 
         int32_t camX = (int32_t)(0        - fx * CHASE_DIST);
