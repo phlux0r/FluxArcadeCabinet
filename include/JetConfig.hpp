@@ -1,8 +1,9 @@
 // JetConfig.hpp — Flux Arcade Cabinet's Jet configuration.
 //
-// PlatformIO adds this project's include/ directory to every compilation
-// unit's include path (src/ and every lib_deps library, Jet included), which
-// is how Jet's per-frontend "#include \"JetConfig.hpp\"" resolves to this
+// platformio.ini forces this project's include/ directory onto Jet's own
+// include path with an explicit -Iinclude build flag — PlatformIO's library
+// dependency finder does not do this for a lib_deps library on its own. That
+// -I is how Jet's per-frontend "#include \"JetConfig.hpp\"" resolves to this
 // file instead of Jet's own JetConfig.example.hpp — see Jet's README,
 // "Getting started".
 //
