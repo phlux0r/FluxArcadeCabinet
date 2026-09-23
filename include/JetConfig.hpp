@@ -111,8 +111,19 @@
 #define zBrightNear  ( 200 * JET32_WORLD_SCALE)
 #define zBrightScale 48
 
-#define depthFogFar  (8192 * JET32_WORLD_SCALE)
-#define depthFogNear (6144 * JET32_WORLD_SCALE)
+// These are in raw world units, NOT scaled by JET32_WORLD_SCALE like the
+// template's defaults. The template's (8192 * 4) = 32768 put the fog band
+// six times further out than either game's entire world is wide (~5000
+// units), so DEPTH_ALPHA_BLEND never did anything at all.
+//
+// Sized to the actual play distances instead. The far value matters: Tank
+// Flux's ground mesh is re-centred on the tank in discrete steps, which
+// guarantees only ~2625 units of ground ahead in the worst case, so the fog
+// has to finish inside that or the mesh's far edge becomes visible. The
+// resulting ~2500-unit draw distance also suits both games — enemies emerge
+// from haze rather than popping in at full size.
+#define depthFogNear 1700
+#define depthFogFar  2500
 
 // ---------------------------------------------------------------------------
 // Checkerboard rendering (desktop / high-res targets)

@@ -153,10 +153,14 @@ private:
         // of natural per-face shading instead of reading completely flat —
         // it never rotates, so the lighting on it is constant, not fiddly.
         _shipCockpitMat.shadingMode = Renderer::ShadingMode::GOURAUD;
-        // WIREFRAME reads far more clearly than a filled checker did at this
-        // resolution once distance fog is involved — a filled floor washed
-        // out to a flat colour; the grid lines stay legible.
-        _floorMat.shadingMode = Renderer::ShadingMode::WIREFRAME;
+        // This floor renders as a plain solid slab. It was set to WIREFRAME
+        // on the assumption that would draw grid lines, but Jet declares
+        // ShadingMode::WIREFRAME in its enum without implementing it anywhere
+        // in the rasterizer, so the mode silently falls through to a solid
+        // fill. Left as UNLIT rather than reworked into a real checkerboard
+        // (see TankFluxGame.h for that) because Tank Flux is intended to
+        // replace this game.
+        _floorMat.shadingMode = Renderer::ShadingMode::UNLIT;
 
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);

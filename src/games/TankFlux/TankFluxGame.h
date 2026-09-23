@@ -37,6 +37,13 @@ private:
     static const int32_t GROUND_SIZE  = 9000;
     static const int32_t GROUND_CELLS = 12;
     static const int32_t GROUND_CELL  = GROUND_SIZE / GROUND_CELLS;
+    // The checkerboard alternates per cell, so the mesh has to be re-centred
+    // in TWO-cell steps — snapping by one would flip the parity and swap
+    // every square's colour as you drove across the boundary.
+    static const int32_t GROUND_SNAP  = GROUND_CELL * 2;
+    // createGrid lays vertices from -size/2 to (cells-1)*spacing - size/2,
+    // so the mesh isn't centred on its own origin; this re-centres it.
+    static const int32_t GROUND_BIAS  = GROUND_CELL / 2;
 
     // --- Tank ----------------------------------------------------------------
     static const int32_t EYE_HEIGHT  = 120;
@@ -47,7 +54,7 @@ private:
     // physically mounted rotated relative to a landscape (rotation 1) game,
     // so X/Y read swapped, same as AsteroidFluxGame. If driving or turning
     // comes out backwards on hardware, flip the relevant sign here.
-    static constexpr float DRIVE_SIGN = 1.0f;
+    static constexpr float DRIVE_SIGN = -1.0f;   // flipped after playtest
     static constexpr float TURN_SIGN  = 1.0f;
 
     static constexpr float TURN_RATE    = 2.2f;   // deg/frame at full deflection
@@ -110,13 +117,28 @@ private:
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 235 };
     Renderer::AmbientLight     _amb{ Renderer::Color{60, 66, 90} };
-    Renderer::Material _groundMat{ ArcadeConfig::COLOR_ION_BLUE };
+    // Ground is a two-tone checkerboard, not a wireframe grid: Jet declares
+    // ShadingMode::WIREFRAME in its enum but never implements it anywhere in
+    // the rasterizer, so a "wireframe" material silently renders as a solid
+    // fill. (Rasterizer::wireframeMode is real, but it's a global debug
+    // toggle that forces a black background, which would throw away the
+    // sky/ground split below.) Colours are assigned in ensureSceneReady.
+    Renderer::Material _groundMatA;
+    Renderer::Material _groundMatB;
     // Obstacles are the one lit (GOURAUD) surface: their faces shade
     // differently as you drive around them, which is a real depth cue in a
     // first-person game where the camera is constantly moving.
     Renderer::Material _obstacleMat{ 0x5B0C /* slate */, nullptr, nullptr, false, 255, 255, 30 };
     Renderer::Material _kitMat{ ArcadeConfig::COLOR_GREEN };
     Renderer::ParticleSystem _particles{ (float)JET32_WORLD_SCALE };
+
+    // Per-row background colours: sky above the horizon, ground below, which
+    // Scene uses for the frame clear. With pitch locked at 0 the true horizon
+    // sits at exactly screenHeight/2 every frame (a ground point at infinite
+    // distance projects there), so a fixed split is always correct — and it
+    // means the world still reads as ground below the horizon even past the
+    // far edge of the ground mesh.
+    uint16_t _skyGround[ArcadeConfig::LANDSCAPE_HEIGHT];
 
     // --- Tank state ----------------------------------------------------------
     float _x = 0.0f, _z = 0.0f;
@@ -144,6 +166,37 @@ private:
         _prefs.end();
     }
 
+    static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+        return (uint16_t)((r << 11) | (g << 5) | b);
+    }
+
+    // floorf rather than integer truncation: truncation rounds toward zero,
+    // which makes the cell straddling the origin twice as wide and lets the
+    // mesh sit off-centre near spawn.
+    static int32_t snapTo(float v, int32_t period) {
+        return (int32_t)floorf(v / (float)period) * period;
+    }
+
+    void buildSkyGround(int h) {
+        const int horizon = h / 2;
+        for (int y = 0; y < h; ++y) {
+            if (y < horizon) {
+                // Deep blue overhead fading to pale haze at the horizon.
+                float t = (float)y / (float)horizon;
+                _skyGround[y] = rgb565((uint8_t)(2  + t * 13.0f),
+                                       (uint8_t)(8  + t * 34.0f),
+                                       (uint8_t)(18 + t * 13.0f));
+            } else {
+                // Ground hazes out toward the horizon and darkens close in,
+                // so the checkerboard mesh has something to sit against.
+                float t = (float)(y - horizon) / (float)(h - horizon);
+                _skyGround[y] = rgb565((uint8_t)(7  - t * 4.0f),
+                                       (uint8_t)(16 - t * 9.0f),
+                                       (uint8_t)(9  - t * 5.0f));
+            }
+        }
+    }
+
     static int32_t obstacleRadius(const ObstacleDef &o) {
         // Effective circular footprint for a square-ish block; a little under
         // its half-diagonal so you can just scrape past a corner.
@@ -155,15 +208,23 @@ private:
 
         _scene = new Renderer::Scene(canvas.getBuffer(), nullptr,
                                      canvas.width(), canvas.height());
-        _scene->setBackcolor(0x0011);   // faint dark blue "sky"
         _scene->setClearBuffer(true);
+        buildSkyGround(canvas.height());
+        _scene->backgroundGradientColors = _skyGround;
 
         _camera.setFOV(70, canvas.width());
         _camera.nearPlane = 48;
         _camera.farPlane  = 5200;
         _scene->setCamera(&_camera);
 
-        _groundMat.shadingMode   = Renderer::ShadingMode::WIREFRAME;
+        // Two ground tones that differ enough to actually read as a
+        // checkerboard at this resolution — an earlier attempt in Combat Flux
+        // used two near-identical navies and the floor looked like one flat
+        // slab. Kept greener than the obstacles' slate so obstacles pop.
+        _groundMatA.color = rgb565(5, 16, 7);
+        _groundMatB.color = rgb565(9, 26, 11);
+        _groundMatA.shadingMode  = Renderer::ShadingMode::UNLIT;
+        _groundMatB.shadingMode  = Renderer::ShadingMode::UNLIT;
         _obstacleMat.shadingMode = Renderer::ShadingMode::GOURAUD;
         _kitMat.shadingMode      = Renderer::ShadingMode::UNLIT;
 
@@ -172,7 +233,7 @@ private:
 
         _ground = Primitives::createGrid(GROUND_SIZE, GROUND_SIZE,
                                          GROUND_CELLS, GROUND_CELLS,
-                                         &_groundMat, &_groundMat);
+                                         &_groundMatA, &_groundMatB);
         _scene->addObject(_ground);
 
         for (int i = 0; i < OBSTACLE_COUNT; ++i) {
@@ -238,13 +299,14 @@ private:
         _camera.setPosition((int32_t)_x, EYE_HEIGHT, (int32_t)_z);
         _camera.setRotation(0, (int32_t)_headingDeg, 0);
 
-        // Keep the ground grid centred on the tank, snapped to whole cells.
-        // The pattern repeats with exactly that period, so the snap is
-        // invisible and the ground reads as infinite without paying for a
+        // Keep the ground mesh centred on the tank, snapped to the checker
+        // period. The pattern repeats exactly over that period, so the snap
+        // is invisible and the ground reads as infinite without paying for a
         // mesh big enough to cover the whole arena at this cell density.
-        int32_t gx = ((int32_t)_x / GROUND_CELL) * GROUND_CELL;
-        int32_t gz = ((int32_t)_z / GROUND_CELL) * GROUND_CELL;
-        _ground->setPosition(gx, 0, gz);
+        // Worst case this leaves ~2625 units of ground ahead of the tank,
+        // which is why the fog in JetConfig.hpp is set to finish inside that.
+        _ground->setPosition(snapTo(_x, GROUND_SNAP) + GROUND_BIAS, 0,
+                             snapTo(_z, GROUND_SNAP) + GROUND_BIAS);
     }
 
     void updateKits(AudioEngine &audio) {
