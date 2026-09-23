@@ -17,6 +17,9 @@
 // screen-space picking (Scene::setPickQueries/getPickResults) rather than
 // re-deriving the camera's projection by hand.
 //
+// Endless score-attack: an enemy that reaches the cockpit unshot just
+// despawns — there's no lives/game-over state, only BTN A (hold 2s) to quit.
+//
 // Jet's per-frontend render config lives in include/JetConfig.hpp at the
 // project root (see that file for why the numbers here are what they are).
 // =============================================================================
@@ -25,7 +28,7 @@ class CombatFluxGame : public IGame {
 private:
     static const int   MAX_ENEMIES   = 3;
     static const int32_t SPAWN_Z     = 3600;   // enemies appear here...
-    static const int32_t KILL_Z      = 260;    // ...and hurt the player once they reach here
+    static const int32_t KILL_Z      = 260;    // ...and despawn once they reach here, unshot or not
     static const int32_t ENEMY_SPEED = 9;      // world units/frame, closing
     static const int32_t ENEMY_BASE  = 260;
     static const int32_t ENEMY_HEIGHT = 340;
@@ -38,9 +41,17 @@ private:
 
     static const unsigned long RESPAWN_MIN_MS = 500;
     static const unsigned long RESPAWN_MAX_MS = 1500;
-    static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
 
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
+    // Floor grid — purely a spatial reference ("a world" to fly over) so the
+    // aim has a horizon to read against; it doesn't interact with gameplay.
+    static const int32_t FLOOR_Y      = -900;
+    static const int32_t FLOOR_Z_CTR  = 3000;
+    static const int32_t FLOOR_WIDTH  = 5000;
+    static const int32_t FLOOR_DEPTH  = 7000;
+    static const int32_t FLOOR_ROWS   = 6;
+    static const int32_t FLOOR_COLS   = 6;
+
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING };
     GamePhase _phase = PHASE_ATTRACT;
 
     struct Enemy {
@@ -52,14 +63,17 @@ private:
 
     // Jet scene state. The Scene itself needs a framebuffer pointer, which
     // only exists once update() hands us the launcher's canvas, so it (and
-    // the enemy meshes, which Scene::addObject borrows a pointer to) are
-    // built lazily on the first update() call rather than in init().
+    // the enemy/floor meshes, which Scene::addObject borrows a pointer to)
+    // are built lazily on the first update() call rather than in init().
     Renderer::Scene*  _scene = nullptr;
     Renderer::Camera  _camera;
+    Renderer::Object* _floor = nullptr;
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{40, 55, 0}, Renderer::Color{255, 235, 210}, 230 };
     Renderer::AmbientLight     _amb{ Renderer::Color{55, 60, 85} };
     Renderer::Material         _enemyMat{ ArcadeConfig::COLOR_ORANGE, nullptr, nullptr, false, 255, 255, 60 };
+    Renderer::Material         _floorMatA{ 0x2104 /* dark navy */ };
+    Renderer::Material         _floorMatB{ 0x39C8 /* lighter blue-grey */ };
     Renderer::ParticleSystem   _particles{ (float)JET32_WORLD_SCALE };
 
     float _yawDeg   = 0.0f;
@@ -67,11 +81,9 @@ private:
 
     int  _score     = 0;
     int  _highScore = 0;
-    int  _lives     = 3;
     bool _uiDirty   = true;
 
     bool _btnBWasHeld = false;
-    unsigned long _gameOverEnteredMs = 0;
 
     Preferences _prefs;
 
@@ -92,7 +104,9 @@ private:
 
         _scene = new Renderer::Scene(canvas.getBuffer(), nullptr,
                                      canvas.width(), canvas.height());
-        _scene->setBackcolor(0x0000);
+        // A faint dark blue rather than pure black — cheap "sky" so the void
+        // doesn't read as broken rendering.
+        _scene->setBackcolor(0x0011);
         _scene->setClearBuffer(true);
 
         _camera.setPosition(0, 0, 0);
@@ -105,6 +119,8 @@ private:
         // easier to spot than lit shading on a screen this small, at the
         // cost of the enemies reading a bit flatter.
         _enemyMat.shadingMode = Renderer::ShadingMode::UNLIT;
+        _floorMatA.shadingMode = Renderer::ShadingMode::UNLIT;
+        _floorMatB.shadingMode = Renderer::ShadingMode::UNLIT;
 
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);
@@ -114,6 +130,11 @@ private:
             e.obj->enabled = false;
             _scene->addObject(e.obj);
         }
+
+        _floor = Primitives::createGrid(FLOOR_WIDTH, FLOOR_DEPTH, FLOOR_ROWS, FLOOR_COLS,
+                                        &_floorMatA, &_floorMatB);
+        _floor->setPosition(0, FLOOR_Y, FLOOR_Z_CTR);
+        _scene->addObject(_floor);
     }
 
     void resetEnemies() {
@@ -133,32 +154,30 @@ private:
         e.alive = true;
     }
 
-    void destroyEnemy(Enemy &e, AudioEngine &audio, bool killedByPlayer) {
-        Renderer::Vec3f pos{ (float)e.obj->position.x,
-                             (float)e.obj->position.y,
-                             (float)e.obj->position.z };
-        _particles.emitSparks(pos, Renderer::Vec3f{0, 1, 0}, 420.0f, 20);
-
+    // Enemy despawns either way once it reaches KILL_Z — shot down (sparks,
+    // score, tone) or simply flown past (silent, no penalty).
+    void retireEnemy(Enemy &e, AudioEngine &audio, bool killedByPlayer) {
         e.alive = false;
         e.obj->enabled = false;
         e.respawnAt = millis() + random((long)RESPAWN_MIN_MS, (long)RESPAWN_MAX_MS);
 
         if (killedByPlayer) {
+            Renderer::Vec3f pos{ (float)e.obj->position.x,
+                                 (float)e.obj->position.y,
+                                 (float)e.obj->position.z };
+            _particles.emitSparks(pos, Renderer::Vec3f{0, 1, 0}, 420.0f, 20);
             _score += 10;
+            if (_score > _highScore) { _highScore = _score; saveHighScore(); }
             audio.playTone(1500, 60);
-        } else {
-            _lives--;
-            audio.playTone(220, 180);
+            _uiDirty = true;
         }
-        _uiDirty = true;
     }
 
     void startNewGame(AudioEngine &audio) {
-        _score   = 0;
-        _lives   = 3;
-        _yawDeg  = 0.0f;
+        _score    = 0;
+        _yawDeg   = 0.0f;
         _pitchDeg = 0.0f;
-        _uiDirty = true;
+        _uiDirty  = true;
         resetEnemies();
         for (auto &p : _particles.pool) p.active = false;
         _phase = PHASE_PLAYING;
@@ -176,12 +195,8 @@ private:
         canvas.print("SCORE:"); canvas.print(_score);
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 2 - 10, 1);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 60, 1);
         canvas.print("HI:"); canvas.print(_highScore);
-
-        canvas.setTextColor(ArcadeConfig::COLOR_RED);
-        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 40, 1);
-        canvas.print(_lives); canvas.print(" UP");
     }
 
     void drawReticle(GFXcanvas16 &canvas, int cx, int cy) {
@@ -245,71 +260,20 @@ public:
             return true;
         }
 
-        // ---- PHASE: GAME OVER ----
-        if (_phase == PHASE_GAMEOVER) {
-            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-            canvas.setTextColor(ArcadeConfig::COLOR_RED);
-            canvas.setTextSize(2);
-            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4 - 12, 15);
-            canvas.print("GAME OVER");
-
-            canvas.setTextSize(1);
-            canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 45);
-            canvas.print("SCORE: "); canvas.print(_score);
-
-            if (_score >= _highScore && _score > 0) {
-                canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
-                canvas.print("NEW HIGH SCORE!!");
-            } else {
-                canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
-                canvas.print("BEST: "); canvas.print(_highScore);
-            }
-
-            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-            canvas.setCursor(20, 90);
-            canvas.print("[BTN A] PLAY AGAIN");
-            canvas.setCursor(20, 103);
-            canvas.print("[BTN B] QUIT");
-
-            unsigned long elapsed = millis() - _gameOverEnteredMs;
-            if (elapsed > (GAMEOVER_TIMEOUT_MS - 10000UL)) {
-                int secsLeft = (int)((GAMEOVER_TIMEOUT_MS - elapsed) / 1000UL) + 1;
-                canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-                canvas.setCursor(20, 116);
-                canvas.print("AUTO: "); canvas.print(secsLeft); canvas.print("s");
-            }
-
-            if (input.btnAPressed) {
-                startNewGame(audio);
-                return true;
-            }
-            if (input.btnBPressed) {
-                audio.mute();
-                return false;
-            }
-            if (elapsed > GAMEOVER_TIMEOUT_MS) {
-                _phase = PHASE_ATTRACT;
-                _btnBWasHeld = false;
-            }
-            return true;
-        }
-
         // ---- PHASE: PLAYING ----
 
         // Aim. The joystick is physically mounted rotated relative to this
         // landscape orientation, so X/Y are swapped here the same way
-        // AsteroidFluxGame swaps them for its ship movement.
-        _pitchDeg -= input.joyX * AIM_SPEED;
+        // AsteroidFluxGame swaps them for its ship movement. Pitch sign was
+        // flipped after playtesting felt backwards on the vertical axis.
+        _pitchDeg += input.joyX * AIM_SPEED;
         _yawDeg   += input.joyY * AIM_SPEED;
         _pitchDeg = constrain(_pitchDeg, -PITCH_LIMIT, PITCH_LIMIT);
         _yawDeg   = constrain(_yawDeg,   -YAW_LIMIT,   YAW_LIMIT);
         _camera.setRotation((int32_t)_pitchDeg, (int32_t)_yawDeg, 0);
 
-        // Advance enemies: spawn, close in, or damage the player if they
-        // reach the cockpit unshot.
+        // Advance enemies: spawn, close in, or despawn once they pass the
+        // player (shot or not — see retireEnemy).
         for (auto &e : _enemies) {
             if (!e.alive) {
                 if ((long)(millis() - e.respawnAt) >= 0) spawnEnemy(e);
@@ -318,14 +282,8 @@ public:
             e.obj->translate(0, 0, -ENEMY_SPEED);
             e.obj->rotate(0, 3, 0);  // slow tumble, purely cosmetic
 
-            if (_phase == PHASE_PLAYING && e.obj->position.z <= KILL_Z) {
-                destroyEnemy(e, audio, /*killedByPlayer=*/false);
-                if (_lives <= 0) {
-                    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
-                    _phase = PHASE_GAMEOVER;
-                    _gameOverEnteredMs = millis();
-                    audio.playTone(150, 400);
-                }
+            if (e.obj->position.z <= KILL_Z) {
+                retireEnemy(e, audio, /*killedByPlayer=*/false);
             }
         }
 
@@ -338,13 +296,13 @@ public:
         _particles.update(1.0f / 60.0f);
         _particles.render(_scene, &_camera, canvas.width(), canvas.height());
 
-        if (input.btnAPressed && _phase == PHASE_PLAYING) {
+        if (input.btnAPressed) {
             const Renderer::PickResult *r = _scene->getPickResults();
             bool hitEnemy = false;
             if (r[0].hit) {
                 for (auto &e : _enemies) {
                     if (e.alive && e.obj == r[0].object) {
-                        destroyEnemy(e, audio, /*killedByPlayer=*/true);
+                        retireEnemy(e, audio, /*killedByPlayer=*/true);
                         hitEnemy = true;
                         break;
                     }
