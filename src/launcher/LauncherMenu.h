@@ -59,12 +59,14 @@ private:
                             i / ArcadeConfig::PORTRAIT_WIDTH, px);
         }
 
-        // Game list
+        // Game list — rows packed tighter (12px pitch, 10px tall highlight,
+        // was 15/12) so a 5th entry still lands inside the background
+        // art's baked-in menu rectangle instead of spilling past it.
         for (int i = 0; i < _gameCount; i++) {
-            int yPos = 38 + (i * 15);
+            int yPos = 38 + (i * 12);
             if (i == _selection) {
                 uint16_t rowColor = _blinkState ? ArcadeConfig::COLOR_GREEN : 0x03E0;
-                canvas.fillRect(26, yPos - 2, 76, 12, rowColor);
+                canvas.fillRect(26, yPos - 2, 76, 10, rowColor);
                 canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
             } else {
                 canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
@@ -73,11 +75,13 @@ private:
             canvas.print(_games[i].name);
         }
 
-        // Nav hint — positioned relative to the last game row (38 + (n-1)*15,
-        // 12px tall) with a 2px gap, so it never overlaps as games are added
+        // Nav hint — positioned relative to the last game row (38 + (n-1)*12,
+        // 10px tall) with a 2px gap, so it never overlaps as games are added
         // instead of colliding once the list grows past what fit at the old
-        // fixed y=100.
-        int navY = 38 + (_gameCount - 1) * 15 + 10 + 2;
+        // fixed y=100. With the tighter row pitch this lands back at ~y=96
+        // for 5 games — close to the original fixed position that fit the
+        // background art's rectangle before this game was added.
+        int navY = 38 + (_gameCount - 1) * 12 + 8 + 2;
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
         canvas.setCursor(36, navY);
         canvas.print("[JOY] MOVE");

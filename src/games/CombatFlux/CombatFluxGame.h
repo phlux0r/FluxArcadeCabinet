@@ -112,6 +112,7 @@ private:
 
     bool _btnBWasHeld = false;
     unsigned long _gameOverEnteredMs = 0;
+    unsigned long _laserFlashUntil = 0;   // millis() deadline; drawn while in the future
 
     Preferences _prefs;
 
@@ -334,6 +335,19 @@ private:
         canvas.drawPixel(cx, cy, ArcadeConfig::COLOR_WHITE);
     }
 
+    // A brief 2D tracer from the bottom of the 3D viewport up to the
+    // reticle, drawn for a few frames after firing (hit or miss — this is
+    // a muzzle flash, not a projectile that travels). 2D rather than a
+    // real 3D beam object: the reticle's hit test is already screen-space
+    // picking, so a screen-space line matches it exactly with no risk of
+    // the beam visually missing what it actually hit.
+    void drawLaser(GFXcanvas16 &canvas, int cx, int cy) {
+        int bottomY = canvas.height() - 2;
+        canvas.drawLine(cx - 1, bottomY, cx, cy, ArcadeConfig::COLOR_MAGENTA);
+        canvas.drawLine(cx + 1, bottomY, cx, cy, ArcadeConfig::COLOR_MAGENTA);
+        canvas.drawLine(cx,     bottomY, cx, cy, ArcadeConfig::COLOR_WHITE);
+    }
+
 public:
     CombatFluxGame() {}
 
@@ -484,6 +498,7 @@ public:
         _particles.render(_scene, &_camera, canvas.width(), canvas.height());
 
         if (input.btnAPressed) {
+            _laserFlashUntil = millis() + 90;
             const Renderer::PickResult *r = _scene->getPickResults();
             bool hitEnemy = false;
             if (r[0].hit) {
@@ -499,6 +514,7 @@ public:
         }
 
         drawHUD(canvas);
+        if ((long)(_laserFlashUntil - millis()) > 0) drawLaser(canvas, pickX, pickY);
         drawReticle(canvas, pickX, pickY);
 
         return true;
