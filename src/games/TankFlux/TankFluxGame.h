@@ -84,6 +84,12 @@ private:
     static constexpr float FWD_SPEED    = 26.0f;  // world units/frame
     static constexpr float REV_SPEED    = 14.0f;  // reverse is deliberately slower
     static constexpr float SPEED_SMOOTH = 0.2f;   // 0=no response, 1=instant
+    // Hold BTN B: joyX strafes sideways instead of driving forward/back.
+    // Same sign-flip caveat as DRIVE_SIGN above — flip here if strafe comes
+    // out backwards on hardware. Turning (joyY) is untouched, so you can
+    // strafe and adjust aim at the same time.
+    static constexpr float STRAFE_SIGN  = 1.0f;
+    static constexpr float STRAFE_SPEED = 20.0f;  // world units/frame
 
     // --- Health / repair kits ------------------------------------------------
     static const int HEALTH_MAX = 100;
@@ -950,16 +956,30 @@ private:
         while (_headingDeg >= 360.0f) _headingDeg -= 360.0f;
         while (_headingDeg <    0.0f) _headingDeg += 360.0f;
 
-        float drive  = DRIVE_SIGN * input.joyX;
-        float target = drive * (drive >= 0.0f ? FWD_SPEED : REV_SPEED);
-        _speed += (target - _speed) * SPEED_SMOOTH;
-
         float headRad = radians(_headingDeg);
         float fx = sinf(headRad);
         float fz = cosf(headRad);
 
-        float nx = _x + fx * _speed;
-        float nz = _z + fz * _speed;
+        float nx, nz;
+        if (input.btnB) {
+            // Strafe mode: joyX moves along the tank's right vector
+            // (perpendicular to heading, same (cos h, -sin h) used for the
+            // enemy track strips) instead of driving forward/back. Reuses
+            // _speed/SPEED_SMOOTH so strafing eases in/out exactly like
+            // normal driving does, just along a different axis.
+            float strafeDrive = STRAFE_SIGN * input.joyX;
+            float target = strafeDrive * STRAFE_SPEED;
+            _speed += (target - _speed) * SPEED_SMOOTH;
+            float rx = fz, rz = -fx;
+            nx = _x + rx * _speed;
+            nz = _z + rz * _speed;
+        } else {
+            float drive  = DRIVE_SIGN * input.joyX;
+            float target = drive * (drive >= 0.0f ? FWD_SPEED : REV_SPEED);
+            _speed += (target - _speed) * SPEED_SMOOTH;
+            nx = _x + fx * _speed;
+            nz = _z + fz * _speed;
+        }
         resolveObstacleCollision(nx, nz);
         _x = nx;
         _z = nz;
@@ -1469,18 +1489,25 @@ public:
         ensureSceneReady(canvas);
 
         // --- Button B: require release first, then hold 2s to exit ---
+        // Skipped during PHASE_PLAYING: holding B there strafes instead
+        // (see updateDriving()), and this 2s hold-to-exit would otherwise
+        // yank the player to the launcher mid-strafe. Still available from
+        // ATTRACT to back out before starting; GAMEOVER already has its
+        // own explicit single-press "[BTN B] QUIT".
         static unsigned long btnBHoldStart = 0;
-        if (_btnBWasHeld) {
-            if (!input.btnB) _btnBWasHeld = false;
-        } else if (input.btnB) {
-            if (btnBHoldStart == 0) btnBHoldStart = millis();
-            if (millis() - btnBHoldStart > 2000) {
+        if (_phase != PHASE_PLAYING) {
+            if (_btnBWasHeld) {
+                if (!input.btnB) _btnBWasHeld = false;
+            } else if (input.btnB) {
+                if (btnBHoldStart == 0) btnBHoldStart = millis();
+                if (millis() - btnBHoldStart > 2000) {
+                    btnBHoldStart = 0;
+                    audio.mute();
+                    return false;
+                }
+            } else {
                 btnBHoldStart = 0;
-                audio.mute();
-                return false;
             }
-        } else {
-            btnBHoldStart = 0;
         }
 
         // ---- PHASE: ATTRACT ----
