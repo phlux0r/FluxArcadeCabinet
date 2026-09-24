@@ -36,27 +36,36 @@ class TankFluxGame : public IGame {
 private:
     // --- Arena ---------------------------------------------------------------
     static const int32_t ARENA_HALF   = 3000;   // playable area is +/- this in X and Z
-    // Sized so the fog can be pushed out far enough to see enemies as more
-    // than grey stipple; the fog band has to finish inside the ground the
-    // snapping guarantees, so a longer draw distance needs a bigger mesh.
+    // The ground is ONE static mesh covering the whole bounded arena, built
+    // once at world origin and never repositioned. An earlier version
+    // re-centred it on the tank in discrete steps — a trick carried over
+    // from a design where the play space scrolled endlessly, which isn't
+    // true here: the arena is bounded, obstacles and repair kits already
+    // sit at fixed world coordinates, so a mesh sized to cover the whole
+    // arena plus the fog band needs no repositioning at all. That also
+    // fixed a real correctness problem the recentring approach had: hills
+    // (hillHeight()) and the river both need to agree on what "the same
+    // point in the world" means, which a mesh that moves under them could
+    // not guarantee.
     //
-    // Cell COUNT is kept as low as that constraint allows, because the
-    // ground dominates the triangle count and every queued triangle costs
-    // ~100 bytes in Jet's render queue — which is a single contiguous
-    // allocation, and the thing that ran the heap out of contiguous space.
-    // The requirement is (CELLS-1)*cell/2 - 2*cell >= depthFogFar; at 12
-    // cells of 1100 that leaves 3850 against a 3600 fog, for 242 triangles
-    // instead of 338.
-    static const int32_t GROUND_SIZE  = 13200;
-    static const int32_t GROUND_CELLS = 12;
-    static const int32_t GROUND_CELL  = GROUND_SIZE / GROUND_CELLS;
-    // The checkerboard alternates per cell, so the mesh has to be re-centred
-    // in TWO-cell steps — snapping by one would flip the parity and swap
-    // every square's colour as you drove across the boundary.
-    static const int32_t GROUND_SNAP  = GROUND_CELL * 2;
-    // createGrid lays vertices from -size/2 to (cells-1)*spacing - size/2,
-    // so the mesh isn't centred on its own origin; this re-centres it.
-    static const int32_t GROUND_BIAS  = GROUND_CELL / 2;
+    // Sizing: from the worst case (a tank in one corner looking straight out
+    // through the opposite side) the mesh needs a half-extent of at least
+    // ARENA_HALF + depthFogFar plus margin = 3000 + 3600 + margin. Cell
+    // COUNT, not physical size, drives triangle count — the ground still
+    // dominates it, and every queued triangle costs ~100 bytes in Jet's
+    // render queue, a single contiguous allocation that has already run this
+    // hardware out of contiguous heap space once. So the size below is
+    // generous (real headroom past the minimum) while CELLS stays low.
+    static const int32_t GROUND_SIZE  = 14400;   // half-extent 7200
+    static const int32_t GROUND_CELLS = 12;      // 242 triangles
+
+    // River: a fixed landmark strip, not tied to the tank's position the
+    // way the terrain is. RIVER_Y sits a few units above the terrain's own
+    // surface (which itself varies by hillHeight()) so the two meshes never
+    // go exactly coplanar and flicker against each other.
+    static const int32_t RIVER_Y       = 6;
+    static const int32_t RIVER_WIDTH   = 260;
+    static const int32_t RIVER_SEGMENTS = 8;
 
     // --- Tank ----------------------------------------------------------------
     static const int32_t EYE_HEIGHT  = 120;
@@ -142,19 +151,22 @@ private:
     // --- Obstacles -----------------------------------------------------------
     // Hand-placed rather than random: a fixed arena is learnable, so players
     // can come to know where cover is instead of re-reading the map each run.
-    struct ObstacleDef { int32_t x, z, size; uint8_t pyramid; };
-    static const int OBSTACLE_COUNT = 10;
+    enum ObstacleShape : uint8_t { SHAPE_CUBE, SHAPE_PYRAMID, SHAPE_ROCK };
+    struct ObstacleDef { int32_t x, z, size; ObstacleShape shape; };
+    static const int OBSTACLE_COUNT = 12;
     static constexpr ObstacleDef OBSTACLES[OBSTACLE_COUNT] = {
-        { -1500,   800, 440, 0 },
-        {   900,  1500, 380, 1 },
-        {  1900,  -400, 500, 0 },
-        {  -600, -1600, 360, 1 },
-        { -2200, -1100, 420, 0 },
-        {  2100,  1900, 340, 1 },
-        {   200,  2300, 460, 0 },
-        { -1900,  2000, 360, 1 },
-        {  1300, -1900, 420, 0 },
-        {  -300,  -600, 300, 1 },
+        { -1500,   800, 440, SHAPE_CUBE    },
+        {   900,  1500, 380, SHAPE_PYRAMID },
+        {  1900,  -400, 500, SHAPE_ROCK    },
+        {  -600, -1600, 360, SHAPE_PYRAMID },
+        { -2200, -1100, 420, SHAPE_ROCK    },
+        {  2100,  1900, 340, SHAPE_PYRAMID },
+        {   200,  2300, 460, SHAPE_CUBE    },
+        { -1900,  2000, 360, SHAPE_ROCK    },
+        {  1300, -1900, 420, SHAPE_CUBE    },
+        {  -300,  -600, 300, SHAPE_PYRAMID },
+        {  2600, -1400, 260, SHAPE_ROCK    },
+        { -2500,  1500, 300, SHAPE_ROCK    },
     };
 
     struct RepairDef { int32_t x, z; };
@@ -214,6 +226,7 @@ private:
     Renderer::Scene*  _scene  = nullptr;
     Renderer::Camera  _camera;
     Renderer::Object* _ground = nullptr;
+    Renderer::Object* _river  = nullptr;
     Renderer::Object* _obstacleObjs[OBSTACLE_COUNT] = { nullptr };
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
     Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 235 };
@@ -226,13 +239,25 @@ private:
     // sky/ground split below.) Colours are assigned in ensureSceneReady.
     Renderer::Material _groundMatA;
     Renderer::Material _groundMatB;
-    // Obstacles are the one lit (GOURAUD) surface: their faces shade
-    // differently as you drive around them, which is a real depth cue in a
-    // first-person game where the camera is constantly moving.
-    // Warm tan rather than slate: the ground is green-grey and the sky is
-    // blue, so a warm hue is the one thing on screen that can't be mistaken
-    // for either. Colour assigned in ensureSceneReady.
-    Renderer::Material _obstacleMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 30 };
+    // Colour assigned in ensureSceneReady.
+    Renderer::Material _riverMat;
+    // Obstacles are lit (GOURAUD): their faces shade differently as you
+    // drive around them, a real depth cue in a first-person game where the
+    // camera is constantly moving. One material per shape rather than one
+    // shared material, purely for colour variety — all still warm-toned,
+    // since the ground is green-grey and the sky is blue, so warm is the
+    // one hue on screen that can't be mistaken for either. Colours assigned
+    // in ensureSceneReady.
+    Renderer::Material _obstacleCubeMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 30 };
+    Renderer::Material _obstaclePyramidMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 30 };
+    // "Rocks" are irregular cubes, not round primitives: createCapsule costs
+    // 96 triangles at segments=6 (checked directly, not assumed) against a
+    // cube's 12, and segments=3 — the enforced minimum — produces an
+    // open-ended tube with no end caps at all (latSegments = 90/angleStep
+    // truncates to 0). Not affordable at any usable resolution on this
+    // hardware, so irregular proportions + rotation do the visual work
+    // instead, at the same triangle cost as any other obstacle.
+    Renderer::Material _obstacleRockMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 20 };
     Renderer::Material _kitMat{ ArcadeConfig::COLOR_GREEN };
     // Two bright UNLIT tones rather than one lit material: lighting left the
     // side facing away from the sun almost black, and a target you have to
@@ -288,13 +313,6 @@ private:
         return (uint16_t)((r << 11) | (g << 5) | b);
     }
 
-    // floorf rather than integer truncation: truncation rounds toward zero,
-    // which makes the cell straddling the origin twice as wide and lets the
-    // mesh sit off-centre near spawn.
-    static int32_t snapTo(float v, int32_t period) {
-        return (int32_t)floorf(v / (float)period) * period;
-    }
-
     void buildSkyGround(int h) {
         const int horizon = h / 2;
         for (int y = 0; y < h; ++y) {
@@ -321,6 +339,114 @@ private:
         return (o.size * 3) / 5;
     }
 
+    // Cosmetic height field for the terrain — two overlaid sine waves at
+    // different frequencies/phases, chosen only to avoid an obviously
+    // periodic single-wave look.
+    //
+    // Deliberately NOT sampled anywhere else: the tank's camera stays on a
+    // fixed EYE_HEIGHT plane (updateDriving()) and collision is a flat 2D
+    // distance test (blockedFor()), so a hill tall enough to matter can
+    // still visibly poke through the tank's fixed driving height near it.
+    // Amplitude is kept modest (max ~62 units against EYE_HEIGHT=120) to
+    // keep that rare rather than eliminating it outright — a real fix would
+    // mean sampling terrain height under the tank and every enemy each
+    // frame, real added cost for what's currently a Tier-1 cosmetic pass.
+    // Worth revisiting if hills are pushed taller later.
+    static int32_t hillHeight(int32_t wx, int32_t wz) {
+        float fx = (float)wx, fz = (float)wz;
+        float h = 40.0f * sinf(fx * 0.0009f) * cosf(fz * 0.0011f)
+                + 22.0f * sinf(fx * 0.0021f + 1.7f) * sinf(fz * 0.0017f);
+        return (int32_t)h;
+    }
+
+    // Replicates Primitives::createGrid's own vertex/face layout (same
+    // spacing, same per-cell material alternation) but perturbs each
+    // vertex's Y by hillHeight() instead of leaving it flat — createGrid
+    // itself has no hook for this, so the loop is duplicated here rather
+    // than modifying the library. Normals are left pointing straight up
+    // (matching createGrid's own convention) rather than computed from the
+    // actual local slope: both ground materials are UNLIT, so no lighting
+    // calculation ever reads them — correct slope normals would be wasted
+    // work.
+    //
+    // Built once at world origin and never repositioned (see the ARENA
+    // comment on GROUND_SIZE for why), so these coordinates ARE true world
+    // coordinates — buildRiverStrip() calls the same hillHeight() at the
+    // same world positions, so the river's surface always agrees with the
+    // terrain under it rather than needing to track a moving mesh.
+    Renderer::Object* buildTerrain(int32_t width, int32_t height, int32_t rows, int32_t cols,
+                                   Renderer::Material* matA, Renderer::Material* matB) {
+        Renderer::Object* grid = new Renderer::Object();
+        int32_t hw = width / 2, hh = height / 2;
+        int32_t rowSpacing = height / rows, colSpacing = width / cols;
+
+        for (int32_t r = 0; r < rows; ++r) {
+            for (int32_t c = 0; c < cols; ++c) {
+                int32_t x = c * colSpacing - hw;
+                int32_t z = r * rowSpacing - hh;
+                grid->addVertex(Renderer::Object::Vertex{
+                    Vector3{x, hillHeight(x, z), z},
+                    Vector2{0, 0},
+                    Vector3{0, FIXED_POINT_SCALE, 0}
+                });
+            }
+        }
+        for (int32_t r = 0; r < rows - 1; ++r) {
+            for (int32_t c = 0; c < cols - 1; ++c) {
+                int32_t v0 = r * cols + c;
+                int32_t v1 = v0 + 1;
+                int32_t v2 = v1 + cols;
+                int32_t v3 = v0 + cols;
+                grid->addFace(v0, v1, v2, v3, (r + c) % 2 == 0 ? matA : matB);
+            }
+        }
+        grid->calculateBoundingBox();
+        return grid;
+    }
+
+    // A short, fixed-position decorative strip — not tied to the tank's
+    // position the way the terrain is, since it's meant to be a real arena
+    // landmark you navigate around rather than a texture that scrolls with
+    // you. Purely visual for now: no collision, no gameplay effect. Sits a
+    // few units above the terrain's own surface to avoid the two coplanar
+    // meshes flickering against each other (z-fighting) where they overlap.
+    Renderer::Object* buildRiverStrip(int32_t x0, int32_t z0, int32_t x1, int32_t z1,
+                                      int32_t width, int32_t segments,
+                                      Renderer::Material* mat) {
+        Renderer::Object* strip = new Renderer::Object();
+        float dx = (float)(x1 - x0), dz = (float)(z1 - z0);
+        float len = sqrtf(dx * dx + dz * dz);
+        float ux = dx / len, uz = dz / len;          // unit vector along the river
+        float px = -uz, pz = ux;                     // perpendicular (across the river)
+        float hw = (float)width / 2.0f;
+
+        for (int32_t i = 0; i <= segments; ++i) {
+            float t = (float)i / (float)segments;
+            float cx = (float)x0 + dx * t, cz = (float)z0 + dz * t;
+            addRiverVertex(strip, cx + px * hw, cz + pz * hw, (float)i / (float)segments);
+            addRiverVertex(strip, cx - px * hw, cz - pz * hw, (float)i / (float)segments);
+        }
+        for (int32_t i = 0; i < segments; ++i) {
+            int32_t v0 = i * 2, v1 = v0 + 1, v2 = v0 + 3, v3 = v0 + 2;
+            strip->addFace(v0, v1, v2, v3, mat);
+        }
+        strip->calculateBoundingBox();
+        return strip;
+    }
+
+    // Y follows hillHeight() at this point plus RIVER_Y, rather than a flat
+    // constant — the terrain undulates by up to ~60 units, and a river at a
+    // fixed absolute height would sink visibly below it wherever a hill
+    // rises.
+    static void addRiverVertex(Renderer::Object* strip, float x, float z, float v) {
+        int32_t ix = (int32_t)x, iz = (int32_t)z;
+        strip->addVertex(Renderer::Object::Vertex{
+            Vector3{ix, hillHeight(ix, iz) + RIVER_Y, iz},
+            Vector2{0, (uint16_t)(v * FIXED_POINT_SCALE)},
+            Vector3{0, FIXED_POINT_SCALE, 0}
+        });
+    }
+
     void ensureSceneReady(GFXcanvas16 &canvas) {
         if (_scene) return;
 
@@ -342,16 +468,22 @@ private:
         // Two ground tones that differ enough to actually read as a
         // checkerboard at this resolution — an earlier attempt in Combat Flux
         // used two near-identical navies and the floor looked like one flat
-        // slab. Kept greener than the obstacles' slate so obstacles pop.
+        // slab. Kept greener than the obstacles' warm tones so obstacles pop.
         _groundMatA.color = rgb565(5, 16, 7);
         _groundMatB.color = rgb565(9, 26, 11);
-        _obstacleMat.color     = rgb565(23, 33, 13);   // warm tan
+        _obstacleCubeMat.color    = rgb565(23, 33, 13);   // warm tan
+        _obstaclePyramidMat.color = rgb565(26, 24, 10);   // dry amber
+        _obstacleRockMat.color    = rgb565(15, 15, 12);   // grey-brown
+        _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
 
-        _groundMatA.shadingMode     = Renderer::ShadingMode::UNLIT;
-        _groundMatB.shadingMode     = Renderer::ShadingMode::UNLIT;
-        _obstacleMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
+        _groundMatA.shadingMode         = Renderer::ShadingMode::UNLIT;
+        _groundMatB.shadingMode         = Renderer::ShadingMode::UNLIT;
+        _obstacleCubeMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
+        _obstaclePyramidMat.shadingMode = Renderer::ShadingMode::GOURAUD;
+        _obstacleRockMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
+        _riverMat.shadingMode           = Renderer::ShadingMode::UNLIT;
         _enemyHullMat.shadingMode   = Renderer::ShadingMode::UNLIT;
         _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
@@ -361,24 +493,48 @@ private:
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);
 
-        _ground = Primitives::createGrid(GROUND_SIZE, GROUND_SIZE,
-                                         GROUND_CELLS, GROUND_CELLS,
-                                         &_groundMatA, &_groundMatB);
+        _ground = buildTerrain(GROUND_SIZE, GROUND_SIZE, GROUND_CELLS, GROUND_CELLS,
+                               &_groundMatA, &_groundMatB);
         _scene->addObject(_ground);
+
+        _river = buildRiverStrip(-2900, -2700, 1900, 2900, RIVER_WIDTH, RIVER_SEGMENTS, &_riverMat);
+        _river->cullingMode = Renderer::CullingMode::NO_CULLING;   // hand-authored winding, unverified
+        _scene->addObject(_river);
 
         for (int i = 0; i < OBSTACLE_COUNT; ++i) {
             const ObstacleDef &o = OBSTACLES[i];
-            // createPyramid puts its base at local y=0, but createCube centres
-            // on its origin — so only the cube needs lifting by half its
-            // height to sit on the ground instead of sunk through it.
+            // Ground is no longer flat (hillHeight()), so every obstacle's
+            // resting height is the local terrain height plus however far
+            // its own shape needs lifting to sit on top of it rather than
+            // through it. One-time cost at scene build, not per frame.
+            int32_t groundY = hillHeight(o.x, o.z);
             Renderer::Object* obj;
+            Renderer::Material* mat;
             int32_t baseY;
-            if (o.pyramid) {
-                obj = Primitives::createPyramid(o.size, (o.size * 5) / 4, &_obstacleMat);
-                baseY = 0;
-            } else {
-                obj = Primitives::createCube(o.size, (o.size * 3) / 4, o.size, &_obstacleMat);
-                baseY = (o.size * 3) / 8;
+            switch (o.shape) {
+                case SHAPE_PYRAMID:
+                    // createPyramid puts its base at local y=0.
+                    mat = &_obstaclePyramidMat;
+                    obj = Primitives::createPyramid(o.size, (o.size * 5) / 4, mat);
+                    baseY = groundY;
+                    break;
+                case SHAPE_ROCK:
+                    // "Rock" = an irregular cube (non-uniform proportions +
+                    // rotation), not a round primitive — see the material
+                    // declaration for why createCapsule isn't affordable
+                    // here. createCube centres on its own origin, so it
+                    // needs lifting by half its height.
+                    mat = &_obstacleRockMat;
+                    obj = Primitives::createCube((o.size * 9) / 10, (o.size * 11) / 20,
+                                                 (o.size * 6) / 5, mat);
+                    obj->setRotation(0, (o.x * 7 + o.z * 3) % 360, 0);  // deterministic "random" facing
+                    baseY = groundY + (o.size * 11) / 40;
+                    break;
+                default:  // SHAPE_CUBE
+                    mat = &_obstacleCubeMat;
+                    obj = Primitives::createCube(o.size, (o.size * 3) / 4, o.size, mat);
+                    baseY = groundY + (o.size * 3) / 8;
+                    break;
             }
             obj->setPosition(o.x, baseY, o.z);
             _scene->addObject(obj);
@@ -387,7 +543,8 @@ private:
 
         for (int i = 0; i < REPAIR_COUNT; ++i) {
             _kits[i].obj = Primitives::createCube(130, 130, 130, &_kitMat);
-            _kits[i].obj->setPosition(REPAIRS[i].x, 90, REPAIRS[i].z);
+            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 90,
+                                      REPAIRS[i].z);
             _scene->addObject(_kits[i].obj);
         }
 
@@ -516,15 +673,6 @@ private:
 
         _camera.setPosition((int32_t)_x, EYE_HEIGHT, (int32_t)_z);
         _camera.setRotation(0, (int32_t)_headingDeg, 0);
-
-        // Keep the ground mesh centred on the tank, snapped to the checker
-        // period. The pattern repeats exactly over that period, so the snap
-        // is invisible and the ground reads as infinite without paying for a
-        // mesh big enough to cover the whole arena at this cell density.
-        // Worst case this leaves ~2625 units of ground ahead of the tank,
-        // which is why the fog in JetConfig.hpp is set to finish inside that.
-        _ground->setPosition(snapTo(_x, GROUND_SNAP) + GROUND_BIAS, 0,
-                             snapTo(_z, GROUND_SNAP) + GROUND_BIAS);
     }
 
     // How many tanks may be on the field at once. Ramps 1 -> 2 -> 3 so the
