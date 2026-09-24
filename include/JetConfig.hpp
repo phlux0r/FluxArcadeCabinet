@@ -118,12 +118,16 @@
 //
 // Sized to the actual play distances instead. The far value matters: Tank
 // Flux's ground mesh is re-centred on the tank in discrete steps, which
-// guarantees only ~2625 units of ground ahead in the worst case, so the fog
-// has to finish inside that or the mesh's far edge becomes visible. The
-// resulting ~2500-unit draw distance also suits both games — enemies emerge
-// from haze rather than popping in at full size.
-#define depthFogNear 1700
-#define depthFogFar  2500
+// guarantees ~3856 units of ground ahead in the worst case, so the fog has
+// to finish inside that or the mesh's far edge becomes visible.
+//
+// Don't tighten this without a reason. DEPTH_ALPHA_BLEND fades by
+// screen-door stipple, so a fogged object shows the ground through its gaps
+// and reads as grey mush rather than its own colour. An earlier 1700/2500
+// band started fading enemies before they even entered their own firing
+// range, which made them near-invisible for the whole approach.
+#define depthFogNear 2500
+#define depthFogFar  3600
 
 // ---------------------------------------------------------------------------
 // Checkerboard rendering (desktop / high-res targets)

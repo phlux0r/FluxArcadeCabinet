@@ -35,8 +35,11 @@ class TankFluxGame : public IGame {
 private:
     // --- Arena ---------------------------------------------------------------
     static const int32_t ARENA_HALF   = 3000;   // playable area is +/- this in X and Z
-    static const int32_t GROUND_SIZE  = 9000;
-    static const int32_t GROUND_CELLS = 12;
+    // Sized so the fog can be pushed out far enough to see enemies as more
+    // than grey stipple; the fog band has to finish inside the ground the
+    // snapping guarantees, so a longer draw distance needs a bigger mesh.
+    static const int32_t GROUND_SIZE  = 12000;
+    static const int32_t GROUND_CELLS = 14;
     static const int32_t GROUND_CELL  = GROUND_SIZE / GROUND_CELLS;
     // The checkerboard alternates per cell, so the mesh has to be re-centred
     // in TWO-cell steps — snapping by one would flip the parity and swap
@@ -96,22 +99,36 @@ private:
     // top of you would be unavoidable damage rather than a threat to play
     // around.
     static const int32_t ENEMY_STANDOFF   = 900;
-    // Three enemies at the lower end of this range put ~60 damage a second
-    // into the air, which empties a 100-point pool in well under four
-    // seconds. Deliberately slack; easier to tighten after a playtest than
-    // to discover the game is unsurvivable.
-    static const unsigned long ENEMY_FIRE_MIN_MS = 2200;
-    static const unsigned long ENEMY_FIRE_MAX_MS = 4000;
-    static const unsigned long ENEMY_RESPAWN_MS  = 2500;
+    // Cadence at level 1; escalation tightens it (see fireDelay). Slack on
+    // purpose — the pool is only five hits deep and shells from off-screen
+    // are the hardest thing in the game to answer.
+    static const unsigned long ENEMY_FIRE_MIN_MS = 3600;
+    static const unsigned long ENEMY_FIRE_MAX_MS = 6200;
+    static const unsigned long ENEMY_FIRE_FLOOR_MS = 1900;
+    static const unsigned long ENEMY_RESPAWN_MS  = 3500;
+
+    // --- Escalation ----------------------------------------------------------
+    // The run opens with a single tank and earns its way up to three. This is
+    // both the difficulty curve and the pacing fix: three simultaneous
+    // attackers from the first second left no room to learn the arena.
+    static const int KILLS_PER_LEVEL = 4;
+    static const int MAX_LEVEL = 6;
 
     static const int MAX_ENEMY_SHELLS = 4;
-    static constexpr float ENEMY_SHELL_SPEED = 42.0f;    // slow enough to drive out of
+    // Slow enough that breaking sideways actually outruns the shell: you need
+    // to clear HIT_RADIUS before it arrives, so this is the number that
+    // decides whether "keep moving broadside" is a real defence or a
+    // suggestion.
+    static constexpr float ENEMY_SHELL_SPEED = 32.0f;
     static const int32_t   ENEMY_SHELL_RANGE = 2600;
 
     static const int HIT_DAMAGE = 20;
     static const int32_t HIT_RADIUS  = 190;   // enemy shell vs player
     static const int32_t KILL_RADIUS = 250;   // player shell vs enemy
     static const int SCORE_PER_KILL = 100;
+
+    // Covers the whole arena corner-to-corner, so nothing is ever off-dial.
+    static const int32_t RADAR_RANGE = 4300;
 
     // --- Obstacles -----------------------------------------------------------
     // Hand-placed rather than random: a fixed arena is learnable, so players
@@ -196,7 +213,12 @@ private:
     // for either. Colour assigned in ensureSceneReady.
     Renderer::Material _obstacleMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 30 };
     Renderer::Material _kitMat{ ArcadeConfig::COLOR_GREEN };
-    Renderer::Material _enemyMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 40 };
+    // Two bright UNLIT tones rather than one lit material: lighting left the
+    // side facing away from the sun almost black, and a target you have to
+    // spot at range shouldn't depend on which way it happens to be facing.
+    // Different hull/turret tones keep the silhouette readable without it.
+    Renderer::Material _enemyHullMat{ 0xFFFF };
+    Renderer::Material _enemyTurretMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
     Renderer::ParticleSystem _particles{ (float)JET32_WORLD_SCALE };
@@ -217,6 +239,8 @@ private:
     int _health = HEALTH_MAX;
     int _score = 0;
     int _highScore = 0;
+    int _kills = 0;
+    int _level = 1;
 
     unsigned long _reloadAt = 0;
     unsigned long _muzzleFlashUntil = 0;
@@ -285,7 +309,11 @@ private:
         buildSkyGround(canvas.height());
         _scene->backgroundGradientColors = _skyGround;
 
-        _camera.setFOV(70, canvas.width());
+        // Wide on purpose. At 70 a tank slid out of frame almost as soon as
+        // you started turning toward it, which made a head-on attacker
+        // impossible to track while manoeuvring. The extra peripheral vision
+        // costs some perspective distortion at the edges and is worth it.
+        _camera.setFOV(88, canvas.width());
         _camera.nearPlane = 48;
         _camera.farPlane  = 5200;
         _scene->setCamera(&_camera);
@@ -296,13 +324,15 @@ private:
         // slab. Kept greener than the obstacles' slate so obstacles pop.
         _groundMatA.color = rgb565(5, 16, 7);
         _groundMatB.color = rgb565(9, 26, 11);
-        _obstacleMat.color = rgb565(23, 33, 13);   // warm tan
-        _enemyMat.color    = rgb565(29, 13, 6);    // red-orange
+        _obstacleMat.color     = rgb565(23, 33, 13);   // warm tan
+        _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
+        _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
 
         _groundMatA.shadingMode     = Renderer::ShadingMode::UNLIT;
         _groundMatB.shadingMode     = Renderer::ShadingMode::UNLIT;
         _obstacleMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
-        _enemyMat.shadingMode       = Renderer::ShadingMode::GOURAUD;
+        _enemyHullMat.shadingMode   = Renderer::ShadingMode::UNLIT;
+        _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
         _playerShellMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyShellMat.shadingMode  = Renderer::ShadingMode::UNLIT;
@@ -343,8 +373,8 @@ private:
         // Enemy tanks: a low hull with a smaller turret box on top, so they
         // read as vehicles rather than floating crates even at fog distance.
         for (int i = 0; i < MAX_ENEMIES; ++i) {
-            _enemies[i].hull = Primitives::createCube(280, 110, 380, &_enemyMat);
-            _enemies[i].turret = Primitives::createCube(150, 90, 150, &_enemyMat);
+            _enemies[i].hull = Primitives::createCube(280, 110, 380, &_enemyHullMat);
+            _enemies[i].turret = Primitives::createCube(150, 90, 150, &_enemyTurretMat);
             _enemies[i].hull->enabled = false;
             _enemies[i].turret->enabled = false;
             _scene->addObject(_enemies[i].hull);
@@ -476,6 +506,33 @@ private:
                              snapTo(_z, GROUND_SNAP) + GROUND_BIAS);
     }
 
+    // How many tanks may be on the field at once. Ramps 1 -> 2 -> 3 so the
+    // opening is survivable while you learn where cover is.
+    int enemyCap() const {
+        if (_level <= 2) return 1;
+        if (_level <= 4) return 2;
+        return MAX_ENEMIES;
+    }
+
+    int aliveEnemies() const {
+        int n = 0;
+        for (const auto &e : _enemies) if (e.alive) ++n;
+        return n;
+    }
+
+    float enemySpeed() const {
+        return ENEMY_SPEED + (float)(_level - 1) * 0.9f;
+    }
+
+    unsigned long fireDelay() const {
+        unsigned long cut = (unsigned long)(_level - 1) * 320;
+        unsigned long lo = (ENEMY_FIRE_MIN_MS > cut + ENEMY_FIRE_FLOOR_MS)
+                         ? ENEMY_FIRE_MIN_MS - cut : ENEMY_FIRE_FLOOR_MS;
+        unsigned long hi = (ENEMY_FIRE_MAX_MS > cut + ENEMY_FIRE_FLOOR_MS)
+                         ? ENEMY_FIRE_MAX_MS - cut : ENEMY_FIRE_FLOOR_MS + 800;
+        return millis() + (unsigned long)random((long)lo, (long)hi);
+    }
+
     void spawnEnemy(Enemy &e) {
         // Spawn out on the perimeter, and not right on top of the player.
         for (int attempt = 0; attempt < 12; ++attempt) {
@@ -491,7 +548,7 @@ private:
             e.alive = true;
             e.hull->enabled = true;
             e.turret->enabled = true;
-            e.nextFireAt = millis() + random((long)ENEMY_FIRE_MIN_MS, (long)ENEMY_FIRE_MAX_MS);
+            e.nextFireAt = fireDelay();
             return;
         }
         // Every candidate was blocked or too close; try again next frame.
@@ -506,13 +563,26 @@ private:
         e.turret->enabled = false;
         e.respawnAt = millis() + ENEMY_RESPAWN_MS;
         _score += SCORE_PER_KILL;
+        _kills++;
+        int newLevel = min(MAX_LEVEL, 1 + _kills / KILLS_PER_LEVEL);
+        if (newLevel != _level) {
+            _level = newLevel;
+            audio.playTone(1900, 140);   // level-up cue
+        }
         audio.playTone(1500, 90);
     }
 
     void updateEnemies(AudioEngine &audio) {
         for (auto &e : _enemies) {
             if (!e.alive) {
-                if ((long)(millis() - e.respawnAt) >= 0) spawnEnemy(e);
+                // Hold the slot shut while at cap, pushing the timer along so
+                // a kill always buys a breather rather than being replaced
+                // the same instant.
+                if (aliveEnemies() >= enemyCap()) {
+                    e.respawnAt = millis() + ENEMY_RESPAWN_MS;
+                } else if ((long)(millis() - e.respawnAt) >= 0) {
+                    spawnEnemy(e);
+                }
                 continue;
             }
 
@@ -526,8 +596,8 @@ private:
 
             if (dist > (float)ENEMY_STANDOFF) {
                 float hr = radians(e.headingDeg);
-                float nx = e.x + sinf(hr) * ENEMY_SPEED;
-                float nz = e.z + cosf(hr) * ENEMY_SPEED;
+                float nx = e.x + sinf(hr) * enemySpeed();
+                float nz = e.z + cosf(hr) * enemySpeed();
                 if (!blockedFor(nx, nz, ENEMY_RADIUS)) {
                     e.x = nx;
                     e.z = nz;
@@ -556,7 +626,7 @@ private:
                     audio.playTone(420, 45);
                     break;
                 }
-                e.nextFireAt = millis() + random((long)ENEMY_FIRE_MIN_MS, (long)ENEMY_FIRE_MAX_MS);
+                e.nextFireAt = fireDelay();
             }
         }
     }
@@ -632,6 +702,8 @@ private:
         _speed = 0.0f;
         _health = HEALTH_MAX;
         _score = 0;
+        _kills = 0;
+        _level = 1;
         _reloadAt = 0;
         _muzzleFlashUntil = 0;
         _damageFlashUntil = 0;
@@ -645,8 +717,9 @@ private:
             _enemies[i].alive = false;
             _enemies[i].hull->enabled = false;
             _enemies[i].turret->enabled = false;
-            // Staggered so they don't all arrive at once on the first wave.
-            _enemies[i].respawnAt = millis() + 800 + (unsigned long)i * 1200;
+            // enemyCap() holds the extras back at level 1 regardless; this
+            // just gives the first arrival a moment's grace.
+            _enemies[i].respawnAt = millis() + 1200;
         }
         for (auto &p : _particles.pool) p.active = false;
         _phase = PHASE_PLAYING;
@@ -663,8 +736,12 @@ private:
         canvas.setCursor(4, 1);
         canvas.print("SCORE:"); canvas.print(_score);
 
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 2 - 6, 1);
+        canvas.print("LV"); canvas.print(_level);
+
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 60, 1);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 54, 1);
         canvas.print("HI:"); canvas.print(_highScore);
 
         // Health bar sits bottom-left, stopping short of centre so it doesn't
@@ -710,6 +787,57 @@ private:
             canvas.fillCircle(cx, tipY - 2, 5, ArcadeConfig::COLOR_YELLOW);
             canvas.fillCircle(cx, tipY - 2, 2, ArcadeConfig::COLOR_WHITE);
         }
+    }
+
+    // Rotated radar: forward is always up, so a blip's position on the dial
+    // is the direction you need to turn. Without this, an attacker that
+    // slides out of frame is simply lost — which is the single hardest
+    // thing to deal with in a first-person game on a 160x128 screen.
+    // Shows the whole arena, deliberately beyond visual range, so shells
+    // arriving out of the haze still have a visible source.
+    void drawRadar(GFXcanvas16 &canvas) {
+        const int r  = 20;
+        const int cx = canvas.width() - r - 5;
+        const int cy = canvas.height() - r - 5;
+        const float scale = (float)r / (float)RADAR_RANGE;
+
+        canvas.fillCircle(cx, cy, r, rgb565(2, 6, 4));
+        canvas.drawCircle(cx, cy, r, ArcadeConfig::COLOR_GREY);
+        // Bow marker, so "up" is unambiguous.
+        canvas.drawFastVLine(cx, cy - r, 4, ArcadeConfig::COLOR_GREY);
+
+        const float hr = radians(_headingDeg);
+        const float sh = sinf(hr), ch = cosf(hr);
+
+        auto plot = [&](float wx, float wz, uint16_t colour, bool big) {
+            float dx = wx - _x, dz = wz - _z;
+            // Into tank-local space: forward = (sin h, cos h), right = (cos h, -sin h).
+            float right   = dx * ch - dz * sh;
+            float forward = dx * sh + dz * ch;
+            float px = right * scale;
+            float py = -forward * scale;
+            // Clamp to the rim rather than dropping it, so something out of
+            // range still tells you which way it is.
+            float len = sqrtf(px * px + py * py);
+            if (len > (float)(r - 2)) {
+                float k = (float)(r - 2) / len;
+                px *= k;
+                py *= k;
+            }
+            int sx = cx + (int)px, sy = cy + (int)py;
+            if (big) canvas.fillCircle(sx, sy, 2, colour);
+            else     canvas.drawPixel(sx, sy, colour);
+        };
+
+        for (int i = 0; i < REPAIR_COUNT; ++i) {
+            if (_kits[i].active) plot((float)REPAIRS[i].x, (float)REPAIRS[i].z,
+                                      ArcadeConfig::COLOR_GREEN, false);
+        }
+        for (const auto &e : _enemies) {
+            if (e.alive) plot(e.x, e.z, ArcadeConfig::COLOR_RED, true);
+        }
+
+        canvas.drawPixel(cx, cy, ArcadeConfig::COLOR_WHITE);
     }
 
     // A red border rather than a full-screen tint: at 160x128 a full flash
@@ -829,6 +957,7 @@ public:
         drawBarrel(canvas);
         drawGunsight(canvas, canvas.width() / 2, 11 + (canvas.height() - 11) / 2);
         drawDamageFlash(canvas);
+        drawRadar(canvas);
         drawHUD(canvas);
 
         if (_health <= 0) {
