@@ -341,10 +341,13 @@ private:
     // Different hull/turret tones keep the silhouette readable without it.
     Renderer::Material _enemyHullMat{ 0xFFFF };
     Renderer::Material _enemyTurretMat{ 0xFFFF };
-    // Gun barrel: dark gunmetal rather than another bright UNLIT tone —
-    // it's a thin, secondary shape riding on the turret's own bright
-    // silhouette, not something that needs to compete for attention at
-    // range the way the hull/turret do.
+    // Bright neutral grey, not dark gunmetal: playtest feedback was that
+    // the barrel made no visible difference, and a dark UNLIT colour on
+    // this hardware/format is exactly the mistake this session already
+    // made (and fixed) for the ground and obstacles — it just disappears
+    // against the also-dark background instead of reading as a separate
+    // part. Kept neutral/cool rather than warm so it stays visually
+    // distinct from the hull's red and turret's amber.
     Renderer::Material _enemyBarrelMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
@@ -674,7 +677,7 @@ private:
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
-        _enemyBarrelMat.color  = rgb565(8, 10, 9);     // dark gunmetal grey
+        _enemyBarrelMat.color  = rgb565(22, 44, 22);   // bright neutral silver-grey
         _treeTrunkMat.color    = rgb565(15, 21, 7);    // bark brown
         _treeCanopyLoMat.color = rgb565(5, 25, 7);     // deep pine green
         _treeCanopyHiMat.color = rgb565(11, 37, 10);   // brighter sunlit tip
@@ -778,10 +781,14 @@ private:
         // (checked directly in Primitives.cpp — they share one loop), so
         // segments=4 keeps it cheap (8 triangles) at the cost of a
         // slightly faceted barrel, unnoticeable at this resolution.
+        // Radius bumped from a first-pass 12 to 20 after playtest feedback
+        // that it "didn't look much different" — a true-to-scale barrel is
+        // only 1-2 pixels wide on a 160x128 panel and all but disappears
+        // regardless of colour.
         for (int i = 0; i < MAX_ENEMIES; ++i) {
             _enemies[i].hull   = Primitives::createCube(280, 110, 380, &_enemyHullMat);
             _enemies[i].turret = Primitives::createCube(150, 90, 150, &_enemyTurretMat);
-            _enemies[i].barrel = Primitives::createCylinder(12, BARREL_LENGTH, 4, false, &_enemyBarrelMat);
+            _enemies[i].barrel = Primitives::createCylinder(20, BARREL_LENGTH, 4, false, &_enemyBarrelMat);
             _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
             _enemies[i].barrel->enabled = false;
