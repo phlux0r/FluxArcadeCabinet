@@ -107,6 +107,9 @@ private:
 
     static const int MAX_ENEMIES = 3;
     static const int32_t ENEMY_RADIUS   = 170;
+    // ~half the hull's 280 width, referenced from a low-poly tank model
+    // the user found (barrel length / hull width ratio there was ~0.62).
+    static const int32_t BARREL_LENGTH  = 170;
     static constexpr float ENEMY_SPEED      = 11.0f;
     // The turn rate cap is the whole reason enemies are beatable: it's what
     // lets you flank one that's already committed to a heading.
@@ -239,6 +242,7 @@ private:
     struct Enemy {
         Renderer::Object* hull   = nullptr;
         Renderer::Object* turret = nullptr;
+        Renderer::Object* barrel = nullptr;
         bool  alive = false;
         float x = 0, z = 0;
         float headingDeg = 0;
@@ -337,6 +341,11 @@ private:
     // Different hull/turret tones keep the silhouette readable without it.
     Renderer::Material _enemyHullMat{ 0xFFFF };
     Renderer::Material _enemyTurretMat{ 0xFFFF };
+    // Gun barrel: dark gunmetal rather than another bright UNLIT tone —
+    // it's a thin, secondary shape riding on the turret's own bright
+    // silhouette, not something that needs to compete for attention at
+    // range the way the hull/turret do.
+    Renderer::Material _enemyBarrelMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
     // Pine trees: GOURAUD like the other obstacles, so they pick up the
@@ -665,6 +674,7 @@ private:
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
+        _enemyBarrelMat.color  = rgb565(8, 10, 9);     // dark gunmetal grey
         _treeTrunkMat.color    = rgb565(15, 21, 7);    // bark brown
         _treeCanopyLoMat.color = rgb565(5, 25, 7);     // deep pine green
         _treeCanopyHiMat.color = rgb565(11, 37, 10);   // brighter sunlit tip
@@ -684,6 +694,7 @@ private:
         _riverMat.shadingMode           = Renderer::ShadingMode::UNLIT;
         _enemyHullMat.shadingMode   = Renderer::ShadingMode::UNLIT;
         _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
+        _enemyBarrelMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
         _playerShellMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyShellMat.shadingMode  = Renderer::ShadingMode::UNLIT;
@@ -756,15 +767,27 @@ private:
             _scene->addObject(_kits[i].obj);
         }
 
-        // Enemy tanks: a low hull with a smaller turret box on top, so they
-        // read as vehicles rather than floating crates even at fog distance.
+        // Enemy tanks: a low hull, a smaller turret box on top, and a gun
+        // barrel — proportions loosely referenced from a Blockbench-style
+        // low-poly tank model the user found (hull noticeably wider than
+        // the turret, a thin barrel roughly half the hull's width long),
+        // rebuilt from Jet's own primitives rather than imported: that
+        // model was 872 triangles and textured, both well outside what
+        // this hardware/JetConfig can use. createCylinder's segments
+        // parameter drives BOTH its radial sides and its vertical bands
+        // (checked directly in Primitives.cpp — they share one loop), so
+        // segments=4 keeps it cheap (8 triangles) at the cost of a
+        // slightly faceted barrel, unnoticeable at this resolution.
         for (int i = 0; i < MAX_ENEMIES; ++i) {
-            _enemies[i].hull = Primitives::createCube(280, 110, 380, &_enemyHullMat);
+            _enemies[i].hull   = Primitives::createCube(280, 110, 380, &_enemyHullMat);
             _enemies[i].turret = Primitives::createCube(150, 90, 150, &_enemyTurretMat);
-            _enemies[i].hull->enabled = false;
+            _enemies[i].barrel = Primitives::createCylinder(12, BARREL_LENGTH, 4, false, &_enemyBarrelMat);
+            _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
+            _enemies[i].barrel->enabled = false;
             _scene->addObject(_enemies[i].hull);
             _scene->addObject(_enemies[i].turret);
+            _scene->addObject(_enemies[i].barrel);
         }
 
         _playerShell.obj = Primitives::createCube(46, 46, 46, &_playerShellMat);
@@ -948,6 +971,7 @@ private:
             e.alive = true;
             e.hull->enabled = true;
             e.turret->enabled = true;
+            e.barrel->enabled = true;
             e.nextFireAt = fireDelay();
             return;
         }
@@ -961,6 +985,7 @@ private:
         e.alive = false;
         e.hull->enabled = false;
         e.turret->enabled = false;
+        e.barrel->enabled = false;
         e.respawnAt = millis() + ENEMY_RESPAWN_MS;
         _score += SCORE_PER_KILL;
         _kills++;
@@ -1020,6 +1045,22 @@ private:
             e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
             e.turret->setPosition((int32_t)e.x, 155, (int32_t)e.z);
             e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
+
+            // createCylinder's local axis is Y; rotX=90 tips it onto its
+            // side, and Object's actual composition order (checked in
+            // Scene.cpp: M = Rz*Ry*Rx, applied to local vertices — NOT the
+            // Y-then-X order Camera::transformDirection uses for a
+            // different purpose, confirmed by hand rather than assumed
+            // from that comment) then makes rotY=heading aim the now-
+            // horizontal barrel down (sin(heading), 0, cos(heading)) —
+            // this game's own forward convention everywhere else. Offset
+            // forward by half its length so it reads as bolted to the
+            // turret's front rather than centred through it.
+            float barrelHr = radians(e.headingDeg);
+            int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BARREL_LENGTH / 2));
+            int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BARREL_LENGTH / 2));
+            e.barrel->setPosition(bx, 155, bz);
+            e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
 
             if (fabsf(err) < ENEMY_AIM_TOLERANCE && dist < (float)ENEMY_FIRE_RANGE &&
                 (long)(millis() - e.nextFireAt) >= 0) {
