@@ -8,6 +8,9 @@
 
 #include <Jet.hpp>
 
+// Startup sting, same convention as AsteroidFlux/assets/gamestart.h.
+#include "assets/tank_start.h"
+
 // =============================================================================
 // TANK FLUX — a Battlezone-style first-person tank game rendered with Jet
 // (https://github.com/CubeCoders/Jet).
@@ -1146,6 +1149,17 @@ public:
         _attractSlideTimer = millis();
         _attractMusicStarted = false;
         _btnBWasHeld = true;
+        // Same call AsteroidFluxGame uses for its own startup sting
+        // (playStartupSound tries /audio/tank_start.wav on SD first, falling
+        // back to this PROGMEM sample only when there's no SD card at all)
+        // — but unlike gamestart_data, there was no existing recording to
+        // reuse, so tank_start_data is synthesized: a short filtered-noise
+        // mechanical clunk followed by a sawtooth engine-rev sweep, at the
+        // same 8kHz mono 8-bit unsigned PCM AudioEngine expects. Plays the
+        // instant the game is selected, with zero dependency on the SD
+        // loop asset the attract screen still wants (see the ATTRACT
+        // phase's isSamplePlaying() guard for why that matters here).
+        audio.playStartupSound(tank_start_data, sizeof(tank_start_data));
     }
 
     bool update(GFXcanvas16 &canvas,
@@ -1171,8 +1185,14 @@ public:
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
             // Same convention as AsteroidFluxGame — loop a WAV once,
-            // guarded so it isn't re-issued every frame.
-            if (!_attractMusicStarted) {
+            // guarded so it isn't re-issued every frame. The extra
+            // !isSamplePlaying() term is deliberately NOT in
+            // AsteroidFluxGame's own version of this same pattern: loopWAV()
+            // unconditionally stops whatever's currently playing, so
+            // without this the startup sting from init() would be cut off
+            // within one frame of ATTRACT actually starting. Once the
+            // sting finishes, this fires exactly like Asteroid's version.
+            if (!_attractMusicStarted && !audio.isSamplePlaying()) {
                 audio.loopWAV("/audio/tank_loop.wav");
                 _attractMusicStarted = true;
             }
