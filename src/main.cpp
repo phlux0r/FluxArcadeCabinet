@@ -168,6 +168,16 @@ void setup() {
 
     audio.playLaunchMelody();
 
+    // Jet's render queue is one contiguous allocation that grows by doubling,
+    // so the largest free block matters more than the total. PSRAM size is
+    // logged because this board may have 2MB sitting unused — the S3
+    // SuperMini's usual part (FH4R2) has it, and enabling it would make the
+    // whole contiguous-allocation problem go away.
+    Serial.printf("[CABINET] heap %u, largest block %u, PSRAM %u\n",
+                  (unsigned)ESP.getFreeHeap(),
+                  (unsigned)ESP.getMaxAllocHeap(),
+                  (unsigned)ESP.getPsramSize());
+
     Serial.println("[CABINET] Setup complete.");
 }
 

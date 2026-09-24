@@ -38,8 +38,16 @@ private:
     // Sized so the fog can be pushed out far enough to see enemies as more
     // than grey stipple; the fog band has to finish inside the ground the
     // snapping guarantees, so a longer draw distance needs a bigger mesh.
-    static const int32_t GROUND_SIZE  = 12000;
-    static const int32_t GROUND_CELLS = 14;
+    //
+    // Cell COUNT is kept as low as that constraint allows, because the
+    // ground dominates the triangle count and every queued triangle costs
+    // ~100 bytes in Jet's render queue — which is a single contiguous
+    // allocation, and the thing that ran the heap out of contiguous space.
+    // The requirement is (CELLS-1)*cell/2 - 2*cell >= depthFogFar; at 12
+    // cells of 1100 that leaves 3850 against a 3600 fog, for 242 triangles
+    // instead of 338.
+    static const int32_t GROUND_SIZE  = 13200;
+    static const int32_t GROUND_CELLS = 12;
     static const int32_t GROUND_CELL  = GROUND_SIZE / GROUND_CELLS;
     // The checkerboard alternates per cell, so the mesh has to be re-centred
     // in TWO-cell steps — snapping by one would flip the parity and swap
