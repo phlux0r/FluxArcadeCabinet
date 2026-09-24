@@ -262,7 +262,18 @@ private:
     // sun compresses the very brightness contrast directional shading is
     // supposed to create between a hill's lit and shadowed sides.
     Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 255 };
-    Renderer::AmbientLight     _amb{ Renderer::Color{38, 42, 58} };
+    // Rebalanced from (38,42,58) after playtest feedback that everything —
+    // ground, obstacles, trees — read as "dark purple or grey" rather than
+    // their intended hues. jetModulateRGB565 adds this colour to every
+    // face's brightness before the base-colour multiply, so it's the ONLY
+    // contribution on any face angled away from the sun (a pyramid or tree
+    // canopy has several such faces at any camera angle, unlike the mostly
+    // up-facing ground). The old ambient's blue channel (58) was its
+    // largest component, so every shadowed face — most of what a many-
+    // sided obstacle shows you at once — tinted toward blue/purple no
+    // matter what colour it actually was. Same total brightness, rebalanced
+    // toward neutral so shadow reads as "dim", not "blue".
+    Renderer::AmbientLight     _amb{ Renderer::Color{46, 44, 40} };
     // Ground is a two-tone checkerboard, not a wireframe grid: Jet declares
     // ShadingMode::WIREFRAME in its enum but never implements it anywhere in
     // the rasterizer, so a "wireframe" material silently renders as a solid
@@ -772,7 +783,31 @@ private:
         return false;
     }
 
-    bool blocked(float x, float z) const { return blockedFor(x, z, TANK_RADIUS); }
+    // Circle-vs-circle push-out, used only for the player's own movement.
+    // The old axis-separated approach (reject the X move if blocked, reject
+    // the Z move if blocked) could deadlock: driving nearly straight at an
+    // obstacle makes BOTH the pure-X and pure-Z probe land inside it every
+    // single frame, so neither axis ever moves and _speed just oscillates
+    // near zero as SPEED_SMOOTH rebuilds it and the next frame's probes
+    // knock it straight back down — "stuck against a low object" from
+    // playtest. Pushing the candidate position back out to the obstacle's
+    // boundary along the direction from its centre instead makes the tank
+    // slide along whatever it's driving into, at any approach angle.
+    void resolveObstacleCollision(float &x, float &z) const {
+        for (int i = 0; i < OBSTACLE_COUNT; ++i) {
+            float dx = x - (float)OBSTACLES[i].x;
+            float dz = z - (float)OBSTACLES[i].z;
+            float r  = (float)(TANK_RADIUS + obstacleRadius(OBSTACLES[i]));
+            float d2 = dx * dx + dz * dz;
+            if (d2 < r * r) {
+                float d = sqrtf(d2);
+                if (d < 0.0001f) { dx = r; dz = 0.0f; d = r; }  // exactly on centre
+                float push = (r - d) / d;
+                x += dx * push;
+                z += dz * push;
+            }
+        }
+    }
 
     static bool within(float ax, float az, float bx, float bz, int32_t radius) {
         float dx = ax - bx, dz = az - bz;
@@ -832,12 +867,11 @@ private:
         float fx = sinf(headRad);
         float fz = cosf(headRad);
 
-        // Axis-separated so a glancing hit slides along an obstacle instead of
-        // stopping the tank dead against it.
         float nx = _x + fx * _speed;
         float nz = _z + fz * _speed;
-        if (!blocked(nx, _z)) _x = nx; else _speed *= 0.4f;
-        if (!blocked(_x, nz)) _z = nz; else _speed *= 0.4f;
+        resolveObstacleCollision(nx, nz);
+        _x = nx;
+        _z = nz;
 
         const float limit = (float)(ARENA_HALF - TANK_RADIUS);
         _x = constrain(_x, -limit, limit);
@@ -1104,6 +1138,29 @@ private:
                                         : ArcadeConfig::COLOR_RED;
             canvas.fillRect(barX + 1, barY + 1, fillW, barH - 2, c);
         }
+    }
+
+    // A visible sun disc, projected from the same _sun direction that
+    // actually lights the world — same idea as the LensFlare in Jet's
+    // Tropical Island example, but drawn directly with plain 2D circles
+    // (matching the muzzle-flash pattern just below) rather than pulling in
+    // Jet's Sprite2D/LensFlare/pick-query machinery: this project doesn't
+    // enable TEXTURE_MAPPING or MAX_PICK_QUERIES, and a single fixed light
+    // never needs occlusion fading or a multi-element flare chain. Drawn
+    // straight onto the canvas after the 3D scene, so it paints over the
+    // sky gradient — clipped to stay above the horizon so it can't paint
+    // over ground geometry it should logically be behind.
+    void drawSun(GFXcanvas16 &canvas) {
+        Vector3 viewDir = _camera.transformDirection(_sun.worldLightDir);
+        if (viewDir.z <= 0) return;   // behind the camera
+        const float invZ = _camera.fovFactor / (float)viewDir.z;
+        const int sx = canvas.width()  / 2 + (int)(viewDir.x * invZ);
+        const int sy = canvas.height() / 2 - (int)(viewDir.y * invZ);
+        if (sy >= canvas.height() / 2 - 6) return;   // at/below the horizon
+        if (sx < -20 || sx > canvas.width() + 20) return;
+        canvas.fillCircle(sx, sy, 9, rgb565(31, 55, 24));   // pale halo
+        canvas.fillCircle(sx, sy, 5, rgb565(31, 50, 10));   // warm core
+        canvas.fillCircle(sx, sy, 2, ArcadeConfig::COLOR_WHITE);
     }
 
     void drawGunsight(GFXcanvas16 &canvas, int cx, int cy) {
@@ -1373,6 +1430,7 @@ public:
         updateShells(audio);
 
         _scene->render();
+        drawSun(canvas);
         _particles.update(1.0f / 60.0f);
         _particles.render(_scene, &_camera, canvas.width(), canvas.height());
 
