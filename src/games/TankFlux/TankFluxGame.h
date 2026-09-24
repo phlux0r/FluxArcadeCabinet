@@ -176,6 +176,26 @@ private:
         {   500, -2400 },
     };
 
+    // Decorative pines, inspired by the tiered low-poly trees in Jet's own
+    // Woodland example (github.com/CubeCoders/JetExamples/esp32-lod-billboards)
+    // — a trunk plus two stacked canopy cones, built from proven Jet
+    // primitives (see buildPineTree()). Hand-placed like OBSTACLES/REPAIRS,
+    // clear of both by 500+ units and of the river, so they read as
+    // scenery rather than a hidden collision hazard — they don't block
+    // movement or shots. Six is a deliberately modest count: 24 triangles
+    // per tree adds up fast against the render queue's heap headroom that
+    // caused the earlier bad_alloc crash.
+    struct TreeDef { int32_t x, z; };
+    static const int TREE_COUNT = 6;
+    static constexpr TreeDef TREES[TREE_COUNT] = {
+        { -1000, -2000 },
+        {  2700,  2700 },
+        { -2700,  2700 },
+        {  2700, -2700 },
+        {     0,  1250 },
+        {  2600,     0 },
+    };
+
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
@@ -283,6 +303,17 @@ private:
     Renderer::Material _enemyTurretMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
+    // Pine trees: GOURAUD like the other obstacles, so they pick up the
+    // same live _sun/_amb lighting instead of a baked colour — the two
+    // canopy tiers get slightly different greens so the step between them
+    // reads as two tiers rather than one lumpy cone, the same trick
+    // Woodland's tree generator uses per profile segment.
+    Renderer::Material _treeTrunkMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 10 };
+    Renderer::Material _treeCanopyLoMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 20 };
+    Renderer::Material _treeCanopyHiMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 20 };
+    Renderer::Object* _treeTrunks[TREE_COUNT]    = { nullptr };
+    Renderer::Object* _treeCanopyLo[TREE_COUNT]  = { nullptr };
+    Renderer::Object* _treeCanopyHi[TREE_COUNT]  = { nullptr };
     Renderer::ParticleSystem _particles{ (float)JET32_WORLD_SCALE };
 
     // Per-row background colours: sky above the horizon, ground below, which
@@ -469,6 +500,40 @@ private:
         return grid;
     }
 
+    // A cheap low-poly pine, inspired by the tiered trees in Jet's own
+    // Woodland example (github.com/CubeCoders/JetExamples/esp32-lod-billboards)
+    // — a trunk with a two-tier canopy above it — but built entirely from
+    // Jet's own proven primitives (createCube/createPyramid, the same calls
+    // the obstacles already use) rather than hand-rolled geometry, so there's
+    // no new winding/normal code to get wrong. 12 + 6 + 6 = 24 triangles per
+    // tree, against Woodland's own 60-220: this hardware doesn't have the
+    // queue headroom for their full LOD system, so there's just the one
+    // fixed representation. `trunkH`/`loH`/`hiH` are local Y extents;
+    // objects created here still need `setPosition()` by the caller.
+    void buildPineTree(int32_t x, int32_t groundY, int32_t z,
+                       Renderer::Material* trunkMat,
+                       Renderer::Material* loMat, Renderer::Material* hiMat,
+                       Renderer::Object*& outTrunk,
+                       Renderer::Object*& outLo, Renderer::Object*& outHi) {
+        const int32_t trunkW = 34, trunkH = 90;
+        const int32_t loBase = 260, loH = 190;
+        const int32_t hiBase = 150, hiH = 150;
+
+        outTrunk = Primitives::createCube(trunkW, trunkH, trunkW, trunkMat);
+        outTrunk->setPosition(x, groundY + trunkH / 2, z);
+
+        // Base overlaps a little into the trunk top so there's no gap if
+        // the trunk sways or the canopy doesn't sit perfectly flush.
+        outLo = Primitives::createPyramid(loBase, loH, loMat);
+        outLo->setPosition(x, groundY + trunkH - 10, z);
+
+        // Base sits partway up the lower cone rather than at its apex, so
+        // the two tiers read as a visible step rather than one smooth cone
+        // — the same per-tier flare Woodland's profile-sweep produces.
+        outHi = Primitives::createPyramid(hiBase, hiH, hiMat);
+        outHi->setPosition(x, groundY + trunkH - 10 + loH / 2, z);
+    }
+
     // A short, fixed-position decorative strip — not tied to the tank's
     // position the way the terrain is, since it's meant to be a real arena
     // landmark you navigate around rather than a texture that scrolls with
@@ -564,6 +629,9 @@ private:
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
+        _treeTrunkMat.color    = rgb565(15, 21, 7);    // bark brown
+        _treeCanopyLoMat.color = rgb565(5, 25, 7);     // deep pine green
+        _treeCanopyHiMat.color = rgb565(11, 37, 10);   // brighter sunlit tip
 
         // FLAT, not UNLIT: the terrain has real per-face slope normals now
         // (see buildTerrain()), and FLAT is what actually uses them to
@@ -574,6 +642,9 @@ private:
         _obstacleCubeMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
         _obstaclePyramidMat.shadingMode = Renderer::ShadingMode::GOURAUD;
         _obstacleRockMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
+        _treeTrunkMat.shadingMode       = Renderer::ShadingMode::GOURAUD;
+        _treeCanopyLoMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
+        _treeCanopyHiMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
         _riverMat.shadingMode           = Renderer::ShadingMode::UNLIT;
         _enemyHullMat.shadingMode   = Renderer::ShadingMode::UNLIT;
         _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
@@ -630,6 +701,16 @@ private:
             obj->setPosition(o.x, baseY, o.z);
             _scene->addObject(obj);
             _obstacleObjs[i] = obj;
+        }
+
+        for (int i = 0; i < TREE_COUNT; ++i) {
+            const TreeDef &t = TREES[i];
+            buildPineTree(t.x, hillHeight(t.x, t.z), t.z,
+                         &_treeTrunkMat, &_treeCanopyLoMat, &_treeCanopyHiMat,
+                         _treeTrunks[i], _treeCanopyLo[i], _treeCanopyHi[i]);
+            _scene->addObject(_treeTrunks[i]);
+            _scene->addObject(_treeCanopyLo[i]);
+            _scene->addObject(_treeCanopyHi[i]);
         }
 
         for (int i = 0; i < REPAIR_COUNT; ++i) {
@@ -907,6 +988,12 @@ private:
             if (!s.active) continue;
             if (!advanceShell(s, ENEMY_SHELL_RANGE)) continue;
             if (within(s.x, s.z, _x, _z, HIT_RADIUS)) {
+                // Player-hit feedback: sparks right at the impact point
+                // complement the existing screen flash. advanceShell()
+                // already covers shell-vs-obstacle; this was the one impact
+                // case with no particles at all.
+                _particles.emitSparks(Renderer::Vec3f{ s.x, (float)SHELL_Y, s.z },
+                                      Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 16);
                 _health -= HIT_DAMAGE;
                 _damageFlashUntil = millis() + 160;
                 killShell(s);
