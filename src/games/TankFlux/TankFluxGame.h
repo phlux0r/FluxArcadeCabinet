@@ -341,10 +341,18 @@ private:
             } else {
                 // Ground hazes out toward the horizon and darkens close in,
                 // so the checkerboard mesh has something to sit against.
+                // Raised well off near-black: with depth fog now finishing
+                // well short of this background showing through at all,
+                // this colour is still what most of the visible ground
+                // band fades toward at typical viewing distance (a low,
+                // near-horizontal view covers a lot of far terrain even a
+                // little below the horizon), so it needs to read as lit
+                // terrain haze on its own, not a dark void the checkerboard
+                // pops out of.
                 float t = (float)(y - horizon) / (float)(h - horizon);
-                _skyGround[y] = rgb565((uint8_t)(7  - t * 4.0f),
-                                       (uint8_t)(16 - t * 9.0f),
-                                       (uint8_t)(9  - t * 5.0f));
+                _skyGround[y] = rgb565((uint8_t)(16 - t * 5.0f),
+                                       (uint8_t)(34 - t * 10.0f),
+                                       (uint8_t)(19 - t * 6.0f));
             }
         }
     }
@@ -421,7 +429,25 @@ private:
                 // (rows). cross(edgeZ, edgeX) points up for a near-flat
                 // surface (verified by construction: with dy terms at 0
                 // its Y component reduces to +rowSpacing*colSpacing).
-                float e1y = (float)(y10 - y00), e2y = (float)(y01 - y00);
+                //
+                // SHADE_EXAGGERATION inflates the height deltas used ONLY
+                // for this normal calculation — the actual vertex Y below
+                // still uses the real y00/y10/y11/y01, so geometry/gameplay
+                // are untouched. Verified numerically (not guessed): at
+                // 1200-unit cell spacing, hillHeight()'s real slope tilts
+                // the true normal by under 8 degrees at its steepest, which
+                // after jetShadeBrightness's squared falloff produced a
+                // brightness range of only ~161-210 (out of 285) across the
+                // whole grid — checkerboard cells were all in the same
+                // narrow midtone band, reading as uniformly flat no matter
+                // how the material colours or ambient were tuned. An 8x
+                // exaggeration here (same technique as normal-map bump
+                // exaggeration) widens that to ~16-252, a real lit/shadow
+                // split, while the hills themselves stay exactly as subtle
+                // as before.
+                const float SHADE_EXAGGERATION = 8.0f;
+                float e1y = (float)(y10 - y00) * SHADE_EXAGGERATION;
+                float e2y = (float)(y01 - y00) * SHADE_EXAGGERATION;
                 float nx = -(float)rowSpacing * e1y;
                 float ny =  (float)rowSpacing * (float)colSpacing;
                 float nz = -(float)colSpacing * e2y;
@@ -519,8 +545,17 @@ private:
         // warm tones so obstacles keep popping against it.
         _groundMatA.color = rgb565(11, 30, 15);
         _groundMatB.color = rgb565(17, 44, 21);
-        _obstacleCubeMat.color    = rgb565(23, 33, 13);   // warm tan
-        _obstaclePyramidMat.color = rgb565(26, 24, 10);   // dry amber
+        // R:G ratios tuned so these stay tan/amber under full lighting
+        // instead of reading red: the previous values (23,33,13) and
+        // especially (26,24,10) had G too small a fraction of its own
+        // 6-bit range relative to R's fraction of its 5-bit range, so a
+        // brightly-lit face — worked out numerically against
+        // jetModulateRGB565, not guessed — converged toward a reddish-pink
+        // rather than staying warm tan/amber (this is what playtest
+        // reported as pyramids having "a red bottom": their most directly
+        // lit face).
+        _obstacleCubeMat.color    = rgb565(25, 41, 14);   // warm tan
+        _obstaclePyramidMat.color = rgb565(28, 38, 6);    // dry amber
         // Brightened after playtest feedback that rocks blended into the
         // terrain — the original (15,15,12) was close enough in luminance
         // to the dark ground (max channel ~26) to read as barely distinct.

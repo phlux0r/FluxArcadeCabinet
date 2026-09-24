@@ -116,18 +116,26 @@
 // six times further out than either game's entire world is wide (~5000
 // units), so DEPTH_ALPHA_BLEND never did anything at all.
 //
-// Sized to the actual play distances instead. The far value matters: Tank
-// Flux's ground mesh is re-centred on the tank in discrete steps, which
-// guarantees ~3856 units of ground ahead in the worst case, so the fog has
-// to finish inside that or the mesh's far edge becomes visible.
+// Sized to the actual play distances instead. Tank Flux's ground mesh is a
+// single static mesh sized to cover the whole arena (ARENA_HALF=3000) plus
+// this fog distance from any corner — see TankFluxGame.h's GROUND_SIZE
+// comment — so the far value only needs to stay under Camera::farPlane
+// (5200), not track a moving mesh edge anymore.
+//
+// Pushed out from an earlier 2500/3600: at that distance, most of the
+// visible ground band (a low, near-horizontal first-person view covers a
+// LOT of far terrain even close to the horizon) was fogging out to the
+// near-black background gradient before the lit checkerboard mesh ever
+// reached full opacity, making the world read as dark/uncoloured
+// regardless of how bright the terrain's own lighting was tuned.
 //
 // Don't tighten this without a reason. DEPTH_ALPHA_BLEND fades by
 // screen-door stipple, so a fogged object shows the ground through its gaps
 // and reads as grey mush rather than its own colour. An earlier 1700/2500
 // band started fading enemies before they even entered their own firing
 // range, which made them near-invisible for the whole approach.
-#define depthFogNear 2500
-#define depthFogFar  3600
+#define depthFogNear 3200
+#define depthFogFar  5000
 
 // ---------------------------------------------------------------------------
 // Checkerboard rendering (desktop / high-res targets)
