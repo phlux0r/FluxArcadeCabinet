@@ -183,6 +183,11 @@ private:
     static const int BOSS_SCORE = 1000;
     static const int32_t BOSS_RADIUS      = 270;
     static const int32_t BOSS_KILL_RADIUS = 400;
+    // Backstop minimum for trySpawnBoss()'s opposite-side placement — see
+    // there for why "always far" is a targeted angle, not just a distance
+    // floor on a random one.
+    static const int32_t BOSS_MIN_SPAWN_DIST = 2200;
+    static const int32_t BOSS_SPAWN_JITTER_DEG = 40;
     static const int32_t BOSS_HULL_W = 448, BOSS_HULL_H = 176, BOSS_HULL_D = 608;
     static const int32_t BOSS_TURRET_W = 240, BOSS_TURRET_H = 144;
     static const int32_t BOSS_BARREL_R = 32, BOSS_BARREL_LEN = 272;
@@ -1210,13 +1215,28 @@ private:
     // candidate was blocked — updateEnemies() retries next frame, the
     // same pattern spawnEnemy() uses for the regular pool.
     bool trySpawnBoss(AudioEngine &audio) {
+        // Always on the far side of the arena from the player, not just
+        // "reject if too close": a pure random-angle-plus-reject approach
+        // (what the regular spawnEnemy() perimeter search does) can still
+        // land within a couple hundred units of the player by chance —
+        // "scary when he's right behind you" from playtest, a boss should
+        // be seen coming. Base angle is the player's own angle from the
+        // arena centre plus 180°, with modest jitter so it isn't perfectly
+        // predictable every time. This is also the only way to GUARANTEE
+        // separation regardless of where the player is standing: a fixed
+        // minimum-distance floor would be impossible to satisfy (and loop
+        // forever) whenever the player is near the arena centre, since
+        // every point on the spawn circle is then roughly the same
+        // distance away.
+        float playerAngle = atan2f(_x, _z);   // matches bearingTo()'s atan2(dx,dz) convention
         for (int attempt = 0; attempt < 12; ++attempt) {
-            float ang = radians((float)random(0, 360));
+            float jitter = radians((float)random(-BOSS_SPAWN_JITTER_DEG, BOSS_SPAWN_JITTER_DEG + 1));
+            float ang = playerAngle + PI + jitter;
             float r   = (float)(ARENA_HALF - 500);
             float ex  = sinf(ang) * r;
             float ez  = cosf(ang) * r;
             if (blockedFor(ex, ez, BOSS_RADIUS)) continue;
-            if (within(ex, ez, _x, _z, 2000)) continue;
+            if (within(ex, ez, _x, _z, BOSS_MIN_SPAWN_DIST)) continue;
             _boss.x = ex;
             _boss.z = ez;
             _boss.headingDeg = bearingTo(ex, ez, _x, _z);
