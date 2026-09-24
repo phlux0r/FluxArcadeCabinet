@@ -236,8 +236,13 @@ private:
     Renderer::Object* _river  = nullptr;
     Renderer::Object* _obstacleObjs[OBSTACLE_COUNT] = { nullptr };
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
-    Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 235 };
-    Renderer::AmbientLight     _amb{ Renderer::Color{60, 66, 90} };
+    // Sun pushed to max intensity and ambient pulled back (was 235/60,66,90)
+    // after playtest feedback that terrain shading was invisible — a bright
+    // flat ambient floor added to every face regardless of its angle to the
+    // sun compresses the very brightness contrast directional shading is
+    // supposed to create between a hill's lit and shadowed sides.
+    Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 255 };
+    Renderer::AmbientLight     _amb{ Renderer::Color{38, 42, 58} };
     // Ground is a two-tone checkerboard, not a wireframe grid: Jet declares
     // ShadingMode::WIREFRAME in its enum but never implements it anywhere in
     // the rasterizer, so a "wireframe" material silently renders as a solid
@@ -503,8 +508,17 @@ private:
         // checkerboard at this resolution — an earlier attempt in Combat Flux
         // used two near-identical navies and the floor looked like one flat
         // slab. Kept greener than the obstacles' warm tones so obstacles pop.
-        _groundMatA.color = rgb565(5, 16, 7);
-        _groundMatB.color = rgb565(9, 26, 11);
+        //
+        // Brightened after playtest feedback that hill shading was
+        // invisible even with correct per-face normals and FLAT shading
+        // wired up (verified against Renderer.cpp's actual jetShadeBrightness
+        // — the lighting math itself was right). The real ceiling was these
+        // colours: at R=5-9/31, G=16-26/63, shading has almost no headroom
+        // to show against a base that dark regardless of how correct the
+        // normals are. Still deliberately darker/cooler than the obstacles'
+        // warm tones so obstacles keep popping against it.
+        _groundMatA.color = rgb565(11, 30, 15);
+        _groundMatB.color = rgb565(17, 44, 21);
         _obstacleCubeMat.color    = rgb565(23, 33, 13);   // warm tan
         _obstaclePyramidMat.color = rgb565(26, 24, 10);   // dry amber
         // Brightened after playtest feedback that rocks blended into the
