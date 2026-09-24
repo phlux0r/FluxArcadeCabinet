@@ -256,24 +256,43 @@ private:
     Renderer::Object* _river  = nullptr;
     Renderer::Object* _obstacleObjs[OBSTACLE_COUNT] = { nullptr };
     // Vector3 is declared at global scope in Jet (Shader.hpp), unlike Color.
-    // Sun pushed to max intensity and ambient pulled back (was 235/60,66,90)
-    // after playtest feedback that terrain shading was invisible — a bright
-    // flat ambient floor added to every face regardless of its angle to the
-    // sun compresses the very brightness contrast directional shading is
-    // supposed to create between a hill's lit and shadowed sides.
     Renderer::DirectionalLight _sun{ Vector3{35, 60, 0}, Renderer::Color{255, 240, 215}, 255 };
-    // Rebalanced from (38,42,58) after playtest feedback that everything —
-    // ground, obstacles, trees — read as "dark purple or grey" rather than
-    // their intended hues. jetModulateRGB565 adds this colour to every
-    // face's brightness before the base-colour multiply, so it's the ONLY
-    // contribution on any face angled away from the sun (a pyramid or tree
-    // canopy has several such faces at any camera angle, unlike the mostly
-    // up-facing ground). The old ambient's blue channel (58) was its
-    // largest component, so every shadowed face — most of what a many-
-    // sided obstacle shows you at once — tinted toward blue/purple no
-    // matter what colour it actually was. Same total brightness, rebalanced
-    // toward neutral so shadow reads as "dim", not "blue".
-    Renderer::AmbientLight     _amb{ Renderer::Color{46, 44, 40} };
+    // Ambient history, since this has been tuned three times now on
+    // realism-first assumptions that kept being wrong for what's actually a
+    // tiny, often-photographed-through-a-phone-camera LCD:
+    //   - 235/(60,66,90): flat and bright — hills didn't read at all.
+    //   - 255/(38,42,58): correctly let directional shading show, but the
+    //     blue-heavy tint read as "purple/grey" on any face angled away
+    //     from the sun (jetModulateRGB565 adds ambient to brightness BEFORE
+    //     the colour multiply, so it's the ONLY lighting a shadowed face
+    //     gets) — and a many-sided obstacle or tree canopy shows several
+    //     such faces at any camera angle.
+    //   - 255/(46,44,40): fixed the colour cast but was still far too dark
+    //     — hardware photos after that change still showed obstacles as
+    //     near-solid black silhouettes with the checkerboard barely
+    //     visible. A shadowed face only gets ambient*colour/255, so a
+    //     genuinely photorealistic ambient level (15-20%) just isn't
+    //     legible on this hardware/format, however correct the shading math
+    //     is. This game wants "always readable," not "physically lit."
+    // Now ~40% (100,95,85, still faintly warm/neutral rather than the old
+    // blue lean): shadowed faces stay clearly coloured, and full sun faces
+    // (diffuse alone already reaches ~250-285) still read brighter, so the
+    // directional shading that took real diagnosis to get working (see
+    // buildTerrain()'s SHADE_EXAGGERATION) doesn't vanish — it's just no
+    // longer the ONLY thing standing between a face and being black.
+    Renderer::AmbientLight     _amb{ Renderer::Color{100, 95, 85} };
+    // A second, unregistered DirectionalLight purely to get its computed
+    // worldLightDir for drawSun() — never passed to setDirectionalLight, so
+    // it has no effect on shading. Deliberately a lower elevation (22° vs
+    // _sun's 60°) than the light that actually shades the world: this
+    // camera never pitches and its vertical FOV is only ~38° each way
+    // (setFOV(88, width) on a 160x128 canvas), so a disc placed at the
+    // real 60° elevation projects off the top of the screen on every
+    // heading — not a rare framing issue, geometrically impossible to see.
+    // Tropical Island's own LensFlare example takes the same approach for
+    // the same reason: "Decoupled from the shadow/shading light so each
+    // can be tuned independently."
+    Renderer::DirectionalLight _sunVisual{ Vector3{35, 22, 0}, Renderer::Color{0, 0, 0}, 0 };
     // Ground is a two-tone checkerboard, not a wireframe grid: Jet declares
     // ShadingMode::WIREFRAME in its enum but never implements it anywhere in
     // the rasterizer, so a "wireframe" material silently renders as a solid
@@ -1151,12 +1170,13 @@ private:
     // sky gradient — clipped to stay above the horizon so it can't paint
     // over ground geometry it should logically be behind.
     void drawSun(GFXcanvas16 &canvas) {
-        Vector3 viewDir = _camera.transformDirection(_sun.worldLightDir);
+        Vector3 viewDir = _camera.transformDirection(_sunVisual.worldLightDir);
         if (viewDir.z <= 0) return;   // behind the camera
         const float invZ = _camera.fovFactor / (float)viewDir.z;
         const int sx = canvas.width()  / 2 + (int)(viewDir.x * invZ);
         const int sy = canvas.height() / 2 - (int)(viewDir.y * invZ);
         if (sy >= canvas.height() / 2 - 6) return;   // at/below the horizon
+        if (sy < 12) return;   // drawHUD's top bar (rows 0-9) paints over this anyway
         if (sx < -20 || sx > canvas.width() + 20) return;
         canvas.fillCircle(sx, sy, 9, rgb565(31, 55, 24));   // pale halo
         canvas.fillCircle(sx, sy, 5, rgb565(31, 50, 10));   // warm core
