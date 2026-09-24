@@ -186,10 +186,17 @@ private:
     enum AttractSlide { SLIDE_GAME, SLIDE_INFO };
     AttractSlide  _attractSlide      = SLIDE_GAME;
     unsigned long _attractSlideTimer = 0;
-    // No SD-based loop asset for this game yet (AsteroidFlux's attract loop
-    // is a WAV file), so the cabinet's own boot riff is re-triggered on a
-    // timer instead of looped continuously — same effect, no new asset.
-    unsigned long _riffNextAt = 0;
+    // Same convention as AsteroidFluxGame: loops a WAV from SD rather than
+    // synthesizing tones. An earlier version re-triggered the cabinet's
+    // generated-tone boot riff on a timer instead — mechanically similar
+    // (both loop), but playtest feedback was that the repeating chiptune
+    // blip read as annoying rather than as music, and that it should sound
+    // like the other games' actual audio tracks, not square-wave tones.
+    // Requires sd_assets/tank_flux/tank_loop.wav on the SD card (8kHz mono
+    // 8-bit unsigned PCM, per the README's Audio section) — silently does
+    // nothing if the file isn't there yet, the same as any other game's SD
+    // asset would.
+    bool _attractMusicStarted = false;
 
     struct RepairKit {
         Renderer::Object* obj = nullptr;
@@ -258,7 +265,11 @@ private:
     // hardware, so irregular proportions + rotation do the visual work
     // instead, at the same triangle cost as any other obstacle.
     Renderer::Material _obstacleRockMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 20 };
-    Renderer::Material _kitMat{ ArcadeConfig::COLOR_GREEN };
+    // Not COLOR_GREEN: the ground is green-toned (rgb565(5,16,7) /
+    // (9,26,11)), so a green pickup barely registered against it —
+    // playtest feedback was "repair kits look the same [as the ground]".
+    // Pure white is the one tone nothing else on screen uses.
+    Renderer::Material _kitMat{ 0xFFFF };
     // Two bright UNLIT tones rather than one lit material: lighting left the
     // side facing away from the sun almost black, and a target you have to
     // spot at range shouldn't depend on which way it happens to be facing.
@@ -347,27 +358,41 @@ private:
     // fixed EYE_HEIGHT plane (updateDriving()) and collision is a flat 2D
     // distance test (blockedFor()), so a hill tall enough to matter can
     // still visibly poke through the tank's fixed driving height near it.
-    // Amplitude is kept modest (max ~62 units against EYE_HEIGHT=120) to
-    // keep that rare rather than eliminating it outright — a real fix would
-    // mean sampling terrain height under the tank and every enemy each
-    // frame, real added cost for what's currently a Tier-1 cosmetic pass.
-    // Worth revisiting if hills are pushed taller later.
+    // A real fix would mean sampling terrain height under the tank and
+    // every enemy each frame — real added cost for what's currently a
+    // Tier-1 cosmetic pass. Worth revisiting if hills are pushed taller
+    // still.
     static int32_t hillHeight(int32_t wx, int32_t wz) {
         float fx = (float)wx, fz = (float)wz;
-        float h = 40.0f * sinf(fx * 0.0009f) * cosf(fz * 0.0011f)
-                + 22.0f * sinf(fx * 0.0021f + 1.7f) * sinf(fz * 0.0017f);
+        float h = 70.0f * sinf(fx * 0.0009f) * cosf(fz * 0.0011f)
+                + 38.0f * sinf(fx * 0.0021f + 1.7f) * sinf(fz * 0.0017f);
         return (int32_t)h;
     }
 
-    // Replicates Primitives::createGrid's own vertex/face layout (same
-    // spacing, same per-cell material alternation) but perturbs each
-    // vertex's Y by hillHeight() instead of leaving it flat — createGrid
-    // itself has no hook for this, so the loop is duplicated here rather
-    // than modifying the library. Normals are left pointing straight up
-    // (matching createGrid's own convention) rather than computed from the
-    // actual local slope: both ground materials are UNLIT, so no lighting
-    // calculation ever reads them — correct slope normals would be wasted
-    // work.
+    // Same spacing and per-cell material alternation as
+    // Primitives::createGrid, but with real per-face geometry: playtest
+    // feedback was that the hills were barely visible even though the
+    // height field was there. The root cause wasn't amplitude, it was
+    // shading — the first version kept createGrid's convention of sharing
+    // each vertex between neighbouring cells with a hardcoded straight-up
+    // normal, which is correct for a genuinely flat plane but means a
+    // slope has NO shading cue at all: UNLIT ignores normals entirely, and
+    // even lit shading with a wrong-but-uniform normal can't show a bump.
+    //
+    // Fixed properly rather than just raising the amplitude further: each
+    // cell now gets its own 4 unique vertices (no sharing across cells)
+    // with a normal computed from the actual cross product of that cell's
+    // two edges, and the material is FLAT rather than UNLIT so the
+    // renderer actually uses it. FLAT rather than GOURAUD deliberately —
+    // with per-face (not shared) vertices, every vertex of a triangle
+    // already carries the same normal, so GOURAUD's per-vertex lighting
+    // would compute an identical result at up to 3x the cost.
+    //
+    // This does duplicate vertices relative to a shared-vertex grid (~4x),
+    // but that cost lands in Object::vertices (built once, not per frame)
+    // rather than Jet's render queue, which only scales with TRIANGLE
+    // count — unchanged at 242 — and is the thing that actually ran this
+    // hardware out of contiguous heap once.
     //
     // Built once at world origin and never repositioned (see the ARENA
     // comment on GROUND_SIZE for why), so these coordinates ARE true world
@@ -380,24 +405,33 @@ private:
         int32_t hw = width / 2, hh = height / 2;
         int32_t rowSpacing = height / rows, colSpacing = width / cols;
 
-        for (int32_t r = 0; r < rows; ++r) {
-            for (int32_t c = 0; c < cols; ++c) {
-                int32_t x = c * colSpacing - hw;
-                int32_t z = r * rowSpacing - hh;
-                grid->addVertex(Renderer::Object::Vertex{
-                    Vector3{x, hillHeight(x, z), z},
-                    Vector2{0, 0},
-                    Vector3{0, FIXED_POINT_SCALE, 0}
-                });
-            }
-        }
         for (int32_t r = 0; r < rows - 1; ++r) {
             for (int32_t c = 0; c < cols - 1; ++c) {
-                int32_t v0 = r * cols + c;
-                int32_t v1 = v0 + 1;
-                int32_t v2 = v1 + cols;
-                int32_t v3 = v0 + cols;
-                grid->addFace(v0, v1, v2, v3, (r + c) % 2 == 0 ? matA : matB);
+                int32_t x0 = c * colSpacing - hw,       z0 = r * rowSpacing - hh;
+                int32_t x1 = (c + 1) * colSpacing - hw, z1 = (r + 1) * rowSpacing - hh;
+                int32_t y00 = hillHeight(x0, z0), y10 = hillHeight(x1, z0);
+                int32_t y11 = hillHeight(x1, z1), y01 = hillHeight(x0, z1);
+
+                // Two edges of the cell: along +x (columns) and along +z
+                // (rows). cross(edgeZ, edgeX) points up for a near-flat
+                // surface (verified by construction: with dy terms at 0
+                // its Y component reduces to +rowSpacing*colSpacing).
+                float e1y = (float)(y10 - y00), e2y = (float)(y01 - y00);
+                float nx = -(float)rowSpacing * e1y;
+                float ny =  (float)rowSpacing * (float)colSpacing;
+                float nz = -(float)colSpacing * e2y;
+                float len = sqrtf(nx * nx + ny * ny + nz * nz);
+                float s = (len > 0.0001f) ? ((float)FIXED_POINT_SCALE / len) : 0.0f;
+                Vector3 normal{ (int32_t)(nx * s), (int32_t)(ny * s), (int32_t)(nz * s) };
+
+                uint16_t b = (uint16_t)grid->vertices.size();
+                grid->addVertex(Renderer::Object::Vertex{ Vector3{x0, y00, z0}, Vector2{0, 0}, normal });
+                grid->addVertex(Renderer::Object::Vertex{ Vector3{x1, y10, z0}, Vector2{0, 0}, normal });
+                grid->addVertex(Renderer::Object::Vertex{ Vector3{x1, y11, z1}, Vector2{0, 0}, normal });
+                grid->addVertex(Renderer::Object::Vertex{ Vector3{x0, y01, z1}, Vector2{0, 0}, normal });
+
+                Renderer::Material* mat = (r + c) % 2 == 0 ? matA : matB;
+                grid->addFace(b, b + 1, b + 2, b + 3, mat);
             }
         }
         grid->calculateBoundingBox();
@@ -473,13 +507,21 @@ private:
         _groundMatB.color = rgb565(9, 26, 11);
         _obstacleCubeMat.color    = rgb565(23, 33, 13);   // warm tan
         _obstaclePyramidMat.color = rgb565(26, 24, 10);   // dry amber
-        _obstacleRockMat.color    = rgb565(15, 15, 12);   // grey-brown
+        // Brightened after playtest feedback that rocks blended into the
+        // terrain — the original (15,15,12) was close enough in luminance
+        // to the dark ground (max channel ~26) to read as barely distinct.
+        // Real contrast, not just a different hue.
+        _obstacleRockMat.color    = rgb565(25, 26, 21);   // light stone grey
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
 
-        _groundMatA.shadingMode         = Renderer::ShadingMode::UNLIT;
-        _groundMatB.shadingMode         = Renderer::ShadingMode::UNLIT;
+        // FLAT, not UNLIT: the terrain has real per-face slope normals now
+        // (see buildTerrain()), and FLAT is what actually uses them to
+        // shade hills instead of rendering them as a flat, uniform colour
+        // regardless of height.
+        _groundMatA.shadingMode         = Renderer::ShadingMode::FLAT;
+        _groundMatB.shadingMode         = Renderer::ShadingMode::FLAT;
         _obstacleCubeMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
         _obstaclePyramidMat.shadingMode = Renderer::ShadingMode::GOURAUD;
         _obstacleRockMat.shadingMode    = Renderer::ShadingMode::GOURAUD;
@@ -865,7 +907,7 @@ private:
     }
 
     void startNewGame(AudioEngine &audio) {
-        audio.mute();   // cut off any tail of the attract riff cleanly
+        audio.stopLoop();   // same call AsteroidFluxGame uses to end its attract loop
         _x = 0.0f;
         _z = 0.0f;
         _headingDeg = 0.0f;
@@ -1062,9 +1104,9 @@ private:
         canvas.setCursor(4, 48);
         canvas.print("[BTN B] HOLD TO QUIT");
 
-        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.setCursor(4, 66);
-        canvas.print("GREEN CUBES = REPAIR");
+        canvas.print("WHITE CUBES = REPAIR");
         canvas.setTextColor(ArcadeConfig::COLOR_RED);
         canvas.setCursor(4, 78);
         canvas.print("RED DOTS ON RADAR = FOES");
@@ -1088,7 +1130,7 @@ public:
         _phase = PHASE_ATTRACT;
         _attractSlide      = SLIDE_GAME;
         _attractSlideTimer = millis();
-        _riffNextAt         = 0;   // play immediately on first attract frame
+        _attractMusicStarted = false;
         _btnBWasHeld = true;
     }
 
@@ -1114,12 +1156,11 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            // Standard cabinet boot riff, re-triggered on a timer rather
-            // than looped continuously — there's no SD-based loop asset for
-            // this game yet, the way AsteroidFlux's attract loop is a WAV.
-            if (!audio.isMelodyPlaying() && (long)(millis() - _riffNextAt) >= 0) {
-                audio.playLaunchMelody();
-                _riffNextAt = millis() + 1500;
+            // Same convention as AsteroidFluxGame — loop a WAV once,
+            // guarded so it isn't re-issued every frame.
+            if (!_attractMusicStarted) {
+                audio.loopWAV("/audio/tank_loop.wav");
+                _attractMusicStarted = true;
             }
 
             if (millis() - _attractSlideTimer > 8000) {
@@ -1174,7 +1215,7 @@ public:
                 _phase = PHASE_ATTRACT;
                 _attractSlide      = SLIDE_GAME;
                 _attractSlideTimer = millis();
-                _riffNextAt        = 0;
+                _attractMusicStarted = false;
                 _btnBWasHeld = false;
             }
             return true;

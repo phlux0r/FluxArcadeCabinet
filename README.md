@@ -64,9 +64,11 @@ FluxArcadeCabinet/
 │   │   ├── splash.raw
 │   │   ├── explosion.wav
 │   │   └── gameend.wav
-│   └── lander_flux/
-│       ├── title.raw
-│       └── theme.wav
+│   ├── lander_flux/
+│   │   ├── title.raw
+│   │   └── theme.wav
+│   └── tank_flux/
+│       └── tank_loop.wav       # Not provided yet — attract mode is silent without it
 │
 └── src/                        # PlatformIO source root
     ├── main.cpp                # State machine orchestrator
