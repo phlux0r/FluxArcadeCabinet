@@ -242,6 +242,7 @@ private:
     int _kills = 0;
     int _level = 1;
 
+    unsigned long _heapLogAt = 0;
     unsigned long _reloadAt = 0;
     unsigned long _muzzleFlashUntil = 0;
     unsigned long _damageFlashUntil = 0;
@@ -390,6 +391,9 @@ private:
             _enemyShells[i].obj->enabled = false;
             _scene->addObject(_enemyShells[i].obj);
         }
+
+        Serial.printf("[TANK] scene built: free heap %u, largest block %u\n",
+                      (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
     }
 
     // Shortest signed difference between two headings, in degrees.
@@ -959,6 +963,18 @@ public:
         drawDamageFlash(canvas);
         drawRadar(canvas);
         drawHUD(canvas);
+
+        // Temporary: the game has been dropping back to the launcher and the
+        // only clean exit is a BTN B hold, so this is almost certainly a
+        // crash. Jet's render queue grows as more objects become visible,
+        // which is exactly what happens when a tank spawns and starts
+        // shooting — so watch whether free heap trends down before the drop.
+        if ((long)(millis() - _heapLogAt) >= 0) {
+            _heapLogAt = millis() + 2000;
+            Serial.printf("[TANK] heap %u largest %u | lvl %d alive %d hp %d\n",
+                          (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
+                          _level, aliveEnemies(), _health);
+        }
 
         if (_health <= 0) {
             if (_score > _highScore) { _highScore = _score; saveHighScore(); }
