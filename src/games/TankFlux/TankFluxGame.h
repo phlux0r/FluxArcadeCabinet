@@ -19,8 +19,9 @@
 // rather than sit in one place.
 //
 // The camera sits inside the tank and never pitches, so the aim-forward
-// vector collapses to the pitch=0 case of the convention verified against
-// Jet's own source in CombatFluxGame.h: (sin(yaw), 0, cos(yaw)).
+// vector collapses to the pitch=0 case of Jet's actual rotation
+// convention, checked directly against Camera::getRotationMatrix() and
+// Camera::lookAt() rather than assumed: (sin(yaw), 0, cos(yaw)).
 //
 // Enemy tanks turn at a capped rate, which is what makes them flankable, and
 // fire shells slow enough to drive out of the way of. Shells die on contact
@@ -165,6 +166,18 @@ private:
 
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
+
+    // Attract mode rotates between two slides, same convention as
+    // AsteroidFluxGame (SLIDE_SPLASH/SLIDE_INFO, 8s each). SLIDE_GAME is a
+    // placeholder — there's no real gameplay screenshot yet — swap
+    // renderAttractGame() for one once there's actual art to show.
+    enum AttractSlide { SLIDE_GAME, SLIDE_INFO };
+    AttractSlide  _attractSlide      = SLIDE_GAME;
+    unsigned long _attractSlideTimer = 0;
+    // No SD-based loop asset for this game yet (AsteroidFlux's attract loop
+    // is a WAV file), so the cabinet's own boot riff is re-triggered on a
+    // timer instead of looped continuously — same effect, no new asset.
+    unsigned long _riffNextAt = 0;
 
     struct RepairKit {
         Renderer::Object* obj = nullptr;
@@ -704,6 +717,7 @@ private:
     }
 
     void startNewGame(AudioEngine &audio) {
+        audio.mute();   // cut off any tail of the attract riff cleanly
         _x = 0.0f;
         _z = 0.0f;
         _headingDeg = 0.0f;
@@ -858,12 +872,75 @@ private:
         }
     }
 
+    // Placeholder "gameplay" slide — a simple flat-shaded tank icon rather
+    // than an actual screenshot, since there's no real art yet. Swap for a
+    // captured frame (same approach AsteroidFluxGame's splash bitmap uses)
+    // once one exists.
+    void renderAttractGame(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+
+        const int cx = canvas.width() / 2, cy = 70;
+        const uint16_t hull = rgb565(29, 6, 4), track = rgb565(10, 10, 10);
+        canvas.fillRect(cx - 26, cy - 8, 52, 16, hull);
+        canvas.fillRect(cx - 30, cy - 10, 6, 20, track);
+        canvas.fillRect(cx + 24, cy - 10, 6, 20, track);
+        canvas.fillRect(cx - 12, cy - 16, 24, 10, hull);
+        canvas.fillRect(cx - 2, cy - 26, 5, 14, hull);   // barrel
+
+        canvas.setFont();
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(34, 30);
+        canvas.print("TANK FLUX");
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(18, 100);
+        canvas.print("[BTN A] TO START");
+    }
+
+    void renderAttractInfo(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+        canvas.setFont();
+        canvas.setTextSize(1);
+
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(30, 6);
+        canvas.print("HOW TO PLAY");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_GREY);
+        canvas.setCursor(4, 24);
+        canvas.print("[JOY]   DRIVE / TURN");
+        canvas.setCursor(4, 36);
+        canvas.print("[BTN A] FIRE (1 SHELL)");
+        canvas.setCursor(4, 48);
+        canvas.print("[BTN B] HOLD TO QUIT");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setCursor(4, 66);
+        canvas.print("GREEN CUBES = REPAIR");
+        canvas.setTextColor(ArcadeConfig::COLOR_RED);
+        canvas.setCursor(4, 78);
+        canvas.print("RED DOTS ON RADAR = FOES");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(4, 96);
+        canvas.print("MORE TANKS EVERY FEW");
+        canvas.setCursor(4, 108);
+        canvas.print("KILLS -- SURVIVE!");
+
+        canvas.setTextColor(ArcadeConfig::COLOR_GREY);
+        canvas.setCursor(28, 120);
+        canvas.print("BEST: "); canvas.print(_highScore);
+    }
+
 public:
     TankFluxGame() {}
 
     void init(AudioEngine &audio) override {
         loadHighScore();
         _phase = PHASE_ATTRACT;
+        _attractSlide      = SLIDE_GAME;
+        _attractSlideTimer = millis();
+        _riffNextAt         = 0;   // play immediately on first attract frame
         _btnBWasHeld = true;
     }
 
@@ -889,20 +966,21 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-            canvas.setFont();
-            canvas.setTextSize(1);
-            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-            canvas.setCursor(34, 34);
-            canvas.print("TANK FLUX");
-            canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-            canvas.setCursor(14, 54);
-            canvas.print("[JOY] DRIVE / TURN");
-            canvas.setCursor(32, 66);
-            canvas.print("BEST: "); canvas.print(_highScore);
-            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-            canvas.setCursor(18, 92);
-            canvas.print("[BTN A] TO START");
+            // Standard cabinet boot riff, re-triggered on a timer rather
+            // than looped continuously — there's no SD-based loop asset for
+            // this game yet, the way AsteroidFlux's attract loop is a WAV.
+            if (!audio.isMelodyPlaying() && (long)(millis() - _riffNextAt) >= 0) {
+                audio.playLaunchMelody();
+                _riffNextAt = millis() + 1500;
+            }
+
+            if (millis() - _attractSlideTimer > 8000) {
+                _attractSlide      = (_attractSlide == SLIDE_GAME) ? SLIDE_INFO : SLIDE_GAME;
+                _attractSlideTimer = millis();
+            }
+
+            if (_attractSlide == SLIDE_GAME) renderAttractGame(canvas);
+            else                              renderAttractInfo(canvas);
 
             if (input.btnBPressed) {
                 audio.mute();
@@ -946,6 +1024,9 @@ public:
             if (input.btnBPressed) { audio.mute(); return false; }
             if (elapsed > GAMEOVER_TIMEOUT_MS) {
                 _phase = PHASE_ATTRACT;
+                _attractSlide      = SLIDE_GAME;
+                _attractSlideTimer = millis();
+                _riffNextAt        = 0;
                 _btnBWasHeld = false;
             }
             return true;

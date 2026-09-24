@@ -1,11 +1,11 @@
 # Flux Arcade Cabinet v2.0
 
 ESP32-S3 handheld arcade cabinet running multiple games from a unified launcher:
-Asteroid Flux, Lander Flux, Maze Flux, Platform Flux, and **3D Combat Flux** — a
-first-person turret shooter rendered with [Jet](https://github.com/CubeCoders/Jet),
-a dependency-free fixed-function 3D rasteriser. It's the cabinet's first 3D game;
-low-poly fighters close in from a fixed cockpit view and a centre-screen reticle
-fires through Jet's own screen-space picking.
+Asteroid Flux, Lander Flux, Maze Flux, Platform Flux, and **Tank Flux** — a
+first-person tank battle rendered with [Jet](https://github.com/CubeCoders/Jet),
+a dependency-free fixed-function 3D rasteriser. It's the cabinet's first 3D
+game; you drive a fixed-position turret around an arena of obstacles and
+repair kits, fending off enemy tanks that turn and fire back.
 
 ## Build
 
@@ -98,8 +98,8 @@ FluxArcadeCabinet/
     │   │   ├── CavernObstacles.h
     │   │   └── assets/
     │   │       └── TitleScreen.h
-    │   └── CombatFlux/
-    │       └── CombatFluxGame.h     # First-person turret shooter, rendered via Jet
+    │   └── TankFlux/
+    │       └── TankFluxGame.h       # First-person tank battle, rendered via Jet
     │
     └── launcher/
         └── LauncherMenu.h      # Menu UI — receives InputState, no direct HW reads
@@ -131,18 +131,19 @@ All audio is routed through the MAX98357A via I2S. The `AudioEngine` provides:
 
 WAV files for SD playback should be: **8kHz, mono, 8-bit unsigned PCM**.
 
-## 3D Rendering (Combat Flux)
+## 3D Rendering (Tank Flux)
 
-3D Combat Flux is the first game built on [Jet](https://github.com/CubeCoders/Jet),
+Tank Flux is the first game built on [Jet](https://github.com/CubeCoders/Jet),
 pulled in via `platformio.ini`'s `lib_deps` (a git dependency — Jet isn't on the
 PlatformIO registry). Jet expects each frontend to supply its own
 `JetConfig.hpp` on the include path; this project's copy lives at
 `include/JetConfig.hpp`, tuned for the cabinet's 160×128 canvas (no Z-buffer,
-no buffered post-FX, `MAX_PICK_QUERIES = 1` for the reticle hit test). See the
-comments in that file, and in `src/games/CombatFlux/CombatFluxGame.h`, before
-changing either.
+no buffered post-FX). See the comments in that file, and in
+`src/games/TankFlux/TankFluxGame.h`, before changing either — in particular
+the ground-mesh/fog sizing notes, which exist because getting them wrong
+starved the render queue's heap on real hardware.
 
 The game renders straight into the launcher's `GFXcanvas16` buffer (same
-RGB565 layout Jet expects), then draws the HUD and reticle over it with
-ordinary `Adafruit_GFX` calls afterward — no separate framebuffer or extra
-copy needed.
+RGB565 layout Jet expects), then draws the HUD, gun barrel and radar over it
+with ordinary `Adafruit_GFX` calls afterward — no separate framebuffer or
+extra copy needed.

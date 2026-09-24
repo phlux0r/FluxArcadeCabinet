@@ -140,10 +140,14 @@
 // Screen-space picking
 // ---------------------------------------------------------------------------
 
-// Combat Flux fires a single centre-screen pick query each frame — "what's
-// under the reticle" — to hit-test enemies rather than reimplementing the
-// camera's projection math by hand.
-#define MAX_PICK_QUERIES 1
+// Nothing in the cabinet uses screen-space picking — Tank Flux hit-tests by
+// direct 3D distance instead (see TankFluxGame.h). MAX_PICK_QUERIES > 0
+// tags every queued triangle with extra pick-attribution fields, which
+// costs real render-queue memory for no benefit here — a contributing
+// factor in a std::bad_alloc crash Tank Flux hit before its ground mesh
+// was trimmed. Leave at 0 unless something actually calls
+// Scene::setPickQueries/getPickResults.
+#define MAX_PICK_QUERIES 0
 
 // ---------------------------------------------------------------------------
 // Platform detection

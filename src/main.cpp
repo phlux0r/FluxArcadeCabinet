@@ -31,7 +31,6 @@
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
-#include "games/CombatFlux/CombatFluxGame.h"
 #include "games/TankFlux/TankFluxGame.h"
 
 // Launcher
@@ -61,7 +60,6 @@ AsteroidFluxGame asteroidGame;
 LanderFluxGame   landerGame;
 MazeFluxGame     mazeGame;
 PlatformFluxGame platformGame;
-CombatFluxGame   combatGame;
 TankFluxGame     tankGame;
 
 // =============================================================================
@@ -75,7 +73,6 @@ const GameEntry gameRegistry[] = {
     { "Lander",    STATE_LANDER_FLUX   },
     { "Maze", STATE_MAZE_FLUX },
     { "Runner",  STATE_PLATFORM_FLUX },
-    { "3D Combat",  STATE_COMBAT_FLUX },
     { "Tank",  STATE_TANK_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
@@ -218,9 +215,6 @@ void loop() {
                         platformGame.setTFT(tft);
                         launchGame(&platformGame);
                         break;
-                    case STATE_COMBAT_FLUX:
-                        launchGame(&combatGame);
-                        break;
                     case STATE_TANK_FLUX:
                         launchGame(&tankGame);
                         break;
@@ -257,14 +251,6 @@ void loop() {
             bool running = platformGame.update(canvasLandscape, state, audio);
             // Platform Flux flushes its own canvas internally (landscape),
             // same pattern as Asteroid Flux.
-            if (!running) returnToLauncher();
-            break;
-        }
-
-        case STATE_COMBAT_FLUX: {
-            bool running = combatGame.update(canvasLandscape, state, audio);
-            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
-                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
             if (!running) returnToLauncher();
             break;
         }
