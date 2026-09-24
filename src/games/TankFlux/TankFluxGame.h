@@ -110,6 +110,13 @@ private:
     // ~half the hull's 280 width, referenced from a low-poly tank model
     // the user found (barrel length / hull width ratio there was ~0.62).
     static const int32_t BARREL_LENGTH  = 170;
+    // Track strips flanking the 280-wide hull: thin, low, and a little
+    // longer than the hull's own 380 depth for a slight overhang. Offset
+    // hugs the hull's outer edge with a small overlap so there's no gap.
+    static const int32_t TRACK_WIDTH    = 36;
+    static const int32_t TRACK_HEIGHT   = 50;
+    static const int32_t TRACK_DEPTH    = 400;
+    static const int32_t TRACK_OFFSET   = 130;
     static constexpr float ENEMY_SPEED      = 11.0f;
     // The turn rate cap is the whole reason enemies are beatable: it's what
     // lets you flank one that's already committed to a heading.
@@ -243,6 +250,8 @@ private:
         Renderer::Object* hull   = nullptr;
         Renderer::Object* turret = nullptr;
         Renderer::Object* barrel = nullptr;
+        Renderer::Object* trackL = nullptr;
+        Renderer::Object* trackR = nullptr;
         bool  alive = false;
         float x = 0, z = 0;
         float headingDeg = 0;
@@ -349,6 +358,9 @@ private:
     // part. Kept neutral/cool rather than warm so it stays visually
     // distinct from the hull's red and turret's amber.
     Renderer::Material _enemyBarrelMat{ 0xFFFF };
+    // Tracks: a thin strip flanking each side of the hull, so it isn't
+    // just a plain box — playtest feedback verbatim.
+    Renderer::Material _enemyTrackMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
     // Pine trees: GOURAUD like the other obstacles, so they pick up the
@@ -676,8 +688,20 @@ private:
         _obstacleRockMat.color    = rgb565(25, 26, 21);   // light stone grey
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
-        _enemyTurretMat.color  = rgb565(31, 22,  4);   // amber, to break the silhouette
+        // Was amber (31,22,4) — playtest feedback was that hull+turret
+        // both just read as "orange" together, since amber is still in
+        // the same red-family hue as the hull, just lighter. Olive-drab
+        // is a real tank colour and, more importantly here, a genuinely
+        // different hue (green-dominant, not red-dominant) rather than
+        // another shade of the same one.
+        _enemyTurretMat.color  = rgb565(16, 28, 8);    // olive drab
         _enemyBarrelMat.color  = rgb565(22, 44, 22);   // bright neutral silver-grey
+        // Balanced so R:G:B match their channel depths at the same
+        // brightness fraction (32% of each channel's own max) — a
+        // genuinely neutral dark grey rather than the slightly purple
+        // cast an uneven ratio gives at low brightness (the same issue
+        // diagnosed for the ground/ambient earlier this session).
+        _enemyTrackMat.color   = rgb565(10, 20, 10);   // neutral dark grey
         _treeTrunkMat.color    = rgb565(15, 21, 7);    // bark brown
         _treeCanopyLoMat.color = rgb565(5, 25, 7);     // deep pine green
         _treeCanopyHiMat.color = rgb565(11, 37, 10);   // brighter sunlit tip
@@ -698,6 +722,7 @@ private:
         _enemyHullMat.shadingMode   = Renderer::ShadingMode::UNLIT;
         _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyBarrelMat.shadingMode = Renderer::ShadingMode::UNLIT;
+        _enemyTrackMat.shadingMode  = Renderer::ShadingMode::UNLIT;
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
         _playerShellMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyShellMat.shadingMode  = Renderer::ShadingMode::UNLIT;
@@ -784,17 +809,28 @@ private:
         // Radius bumped from a first-pass 12 to 20 after playtest feedback
         // that it "didn't look much different" — a true-to-scale barrel is
         // only 1-2 pixels wide on a 160x128 panel and all but disappears
-        // regardless of colour.
+        // regardless of colour. closedCaps=true (was false): an open tube
+        // has nothing at the muzzle end, so head-on — the single most
+        // common viewing angle, since enemies drive toward the player —
+        // you looked straight through it at the turret behind, which is
+        // exactly what playtest reported as "the barrel hole blends in."
+        // +4 triangles for the two end caps at segments=4.
         for (int i = 0; i < MAX_ENEMIES; ++i) {
             _enemies[i].hull   = Primitives::createCube(280, 110, 380, &_enemyHullMat);
             _enemies[i].turret = Primitives::createCube(150, 90, 150, &_enemyTurretMat);
-            _enemies[i].barrel = Primitives::createCylinder(20, BARREL_LENGTH, 4, false, &_enemyBarrelMat);
+            _enemies[i].barrel = Primitives::createCylinder(20, BARREL_LENGTH, 4, true, &_enemyBarrelMat);
+            _enemies[i].trackL = Primitives::createCube(TRACK_WIDTH, TRACK_HEIGHT, TRACK_DEPTH, &_enemyTrackMat);
+            _enemies[i].trackR = Primitives::createCube(TRACK_WIDTH, TRACK_HEIGHT, TRACK_DEPTH, &_enemyTrackMat);
             _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
             _enemies[i].barrel->enabled = false;
+            _enemies[i].trackL->enabled = false;
+            _enemies[i].trackR->enabled = false;
             _scene->addObject(_enemies[i].hull);
             _scene->addObject(_enemies[i].turret);
             _scene->addObject(_enemies[i].barrel);
+            _scene->addObject(_enemies[i].trackL);
+            _scene->addObject(_enemies[i].trackR);
         }
 
         _playerShell.obj = Primitives::createCube(46, 46, 46, &_playerShellMat);
@@ -979,6 +1015,8 @@ private:
             e.hull->enabled = true;
             e.turret->enabled = true;
             e.barrel->enabled = true;
+            e.trackL->enabled = true;
+            e.trackR->enabled = true;
             e.nextFireAt = fireDelay();
             return;
         }
@@ -993,6 +1031,8 @@ private:
         e.hull->enabled = false;
         e.turret->enabled = false;
         e.barrel->enabled = false;
+        e.trackL->enabled = false;
+        e.trackR->enabled = false;
         e.respawnAt = millis() + ENEMY_RESPAWN_MS;
         _score += SCORE_PER_KILL;
         _kills++;
@@ -1068,6 +1108,18 @@ private:
             int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BARREL_LENGTH / 2));
             e.barrel->setPosition(bx, 155, bz);
             e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
+
+            // Track strips: "the bottom of the tank is still just a brick
+            // block" from playtest. Offset sideways from the hull centre
+            // along the vector perpendicular to heading (sin h, cos h) —
+            // (cos h, -sin h) — at a lower Y so they read as a base the
+            // hull sits on rather than another slab glued to its side.
+            int32_t rx = (int32_t)(cosf(barrelHr) * (float)TRACK_OFFSET);
+            int32_t rz = (int32_t)(-sinf(barrelHr) * (float)TRACK_OFFSET);
+            e.trackL->setPosition((int32_t)e.x - rx, 30, (int32_t)e.z - rz);
+            e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
+            e.trackR->setPosition((int32_t)e.x + rx, 30, (int32_t)e.z + rz);
+            e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
 
             if (fabsf(err) < ENEMY_AIM_TOLERANCE && dist < (float)ENEMY_FIRE_RANGE &&
                 (long)(millis() - e.nextFireAt) >= 0) {
