@@ -162,6 +162,33 @@ private:
     static const int32_t KILL_RADIUS = 250;   // player shell vs enemy
     static const int SCORE_PER_KILL = 100;
 
+    // --- Enemy classes & boss --------------------------------------------
+    // Class 1 is the original single-hit tank, unchanged. Classes 2/3 only
+    // enter the mix once _level puts more than one tank on the field at
+    // once (see pickEnemyClass()), so a tougher tank shows up as a
+    // variation within an already-multi-enemy fight rather than a surprise
+    // sprung on a lone opening attacker. No enemy healing/repair-kit use —
+    // the player has no visibility into enemy HP (no bar, by design, to
+    // keep the HUD simple), so a tank quietly undoing damage would read as
+    // unfair rather than clever.
+    static constexpr int CLASS_HP[3] = { 1, 2, 3 };
+
+    // Boss: a one-off, separate from the regular MAX_ENEMIES pool, so the
+    // field doesn't backfill with regular tanks mid-fight. Every 15 kills
+    // (kept simple/round; regular-kill count only — see destroyEnemy(),
+    // the boss's own death doesn't count toward its own next trigger).
+    // Dimensions/offsets are the regular tank's own values x1.6 throughout.
+    static const int BOSS_EVERY_KILLS = 15;
+    static const int BOSS_HP = 8;
+    static const int BOSS_SCORE = 1000;
+    static const int32_t BOSS_RADIUS      = 270;
+    static const int32_t BOSS_KILL_RADIUS = 400;
+    static const int32_t BOSS_HULL_W = 448, BOSS_HULL_H = 176, BOSS_HULL_D = 608;
+    static const int32_t BOSS_TURRET_W = 240, BOSS_TURRET_H = 144;
+    static const int32_t BOSS_BARREL_R = 32, BOSS_BARREL_LEN = 272;
+    static const int32_t BOSS_TRACK_W = 58, BOSS_TRACK_H = 80, BOSS_TRACK_D = 640, BOSS_TRACK_OFFSET = 208;
+    static const int32_t BOSS_HULL_Y = 88, BOSS_TURRET_Y = 248, BOSS_TRACK_Y = 48;
+
     // Covers the whole arena corner-to-corner, so nothing is ever off-dial.
     static const int32_t RADAR_RANGE = 4300;
 
@@ -252,6 +279,8 @@ private:
     Shell _playerShell;
     Shell _enemyShells[MAX_ENEMY_SHELLS];
 
+    enum EnemyClass : uint8_t { CLASS_1, CLASS_2, CLASS_3 };
+
     struct Enemy {
         Renderer::Object* hull   = nullptr;
         Renderer::Object* turret = nullptr;
@@ -263,8 +292,18 @@ private:
         float headingDeg = 0;
         unsigned long respawnAt = 0;
         unsigned long nextFireAt = 0;
+        EnemyClass tankClass = CLASS_1;
+        int hp = 1;
+        int maxHp = 1;
     };
     Enemy _enemies[MAX_ENEMIES];
+
+    // The boss reuses the Enemy struct (same AI/movement shape) but is a
+    // one-off outside the regular pool — see BOSS_EVERY_KILLS.
+    Enemy _boss;
+    bool  _bossActive  = false;
+    bool  _bossPending = false;   // trigger fired but perimeter spawn hasn't found a spot yet
+    int   _nextBossAt  = BOSS_EVERY_KILLS;
 
     // --- Jet scene state -----------------------------------------------------
     // Scene needs a framebuffer pointer, which only exists once update() hands
@@ -367,6 +406,20 @@ private:
     // Tracks: a thin strip flanking each side of the hull, so it isn't
     // just a plain box — playtest feedback verbatim.
     Renderer::Material _enemyTrackMat{ 0xFFFF };
+    // Class 2/3 turret colours: swapped onto an enemy's existing turret
+    // mesh at spawn (see setObjectMaterial()) rather than built as separate
+    // geometry — Jet has no live per-object scale, so class visually reads
+    // through colour, not size. _enemyTurretMat itself stays class 1's
+    // olive drab. Steel blue-grey for class 2, warning yellow for class 3
+    // — distinct from each other and from class 1, at similar brightness
+    // to the materials already tuned this session (no dark tones).
+    Renderer::Material _enemyTurretMatClass2{ 0xFFFF };
+    Renderer::Material _enemyTurretMatClass3{ 0xFFFF };
+    // Boss: its own materials on its own (larger) geometry — deep vivid
+    // red hull to read as more dangerous than the regular red, neutral
+    // grey turret/armour for contrast.
+    Renderer::Material _bossHullMat{ 0xFFFF };
+    Renderer::Material _bossTurretMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
     // Pine trees: GOURAUD like the other obstacles, so they pick up the
@@ -708,6 +761,10 @@ private:
         // cast an uneven ratio gives at low brightness (the same issue
         // diagnosed for the ground/ambient earlier this session).
         _enemyTrackMat.color   = rgb565(10, 20, 10);   // neutral dark grey
+        _enemyTurretMatClass2.color = rgb565(14, 26, 30);  // steel blue-grey
+        _enemyTurretMatClass3.color = rgb565(30, 40, 4);   // warning yellow
+        _bossHullMat.color     = rgb565(24, 3, 3);     // deep vivid red
+        _bossTurretMat.color   = rgb565(18, 17, 16);   // neutral armour grey
         _treeTrunkMat.color    = rgb565(15, 21, 7);    // bark brown
         _treeCanopyLoMat.color = rgb565(5, 25, 7);     // deep pine green
         _treeCanopyHiMat.color = rgb565(11, 37, 10);   // brighter sunlit tip
@@ -729,6 +786,10 @@ private:
         _enemyTurretMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyBarrelMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyTrackMat.shadingMode  = Renderer::ShadingMode::UNLIT;
+        _enemyTurretMatClass2.shadingMode = Renderer::ShadingMode::UNLIT;
+        _enemyTurretMatClass3.shadingMode = Renderer::ShadingMode::UNLIT;
+        _bossHullMat.shadingMode    = Renderer::ShadingMode::UNLIT;
+        _bossTurretMat.shadingMode  = Renderer::ShadingMode::UNLIT;
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
         _playerShellMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyShellMat.shadingMode  = Renderer::ShadingMode::UNLIT;
@@ -838,6 +899,25 @@ private:
             _scene->addObject(_enemies[i].trackL);
             _scene->addObject(_enemies[i].trackR);
         }
+
+        // Boss: same construction as the regular tanks, at 1.6x every
+        // dimension/offset, its own materials, and its own hp pool
+        // (BOSS_HP) — see trySpawnBoss()/BOSS_EVERY_KILLS.
+        _boss.hull   = Primitives::createCube(BOSS_HULL_W, BOSS_HULL_H, BOSS_HULL_D, &_bossHullMat);
+        _boss.turret = Primitives::createCube(BOSS_TURRET_W, BOSS_TURRET_H, BOSS_TURRET_W, &_bossTurretMat);
+        _boss.barrel = Primitives::createCylinder(BOSS_BARREL_R, BOSS_BARREL_LEN, 4, true, &_bossTurretMat);
+        _boss.trackL = Primitives::createCube(BOSS_TRACK_W, BOSS_TRACK_H, BOSS_TRACK_D, &_enemyTrackMat);
+        _boss.trackR = Primitives::createCube(BOSS_TRACK_W, BOSS_TRACK_H, BOSS_TRACK_D, &_enemyTrackMat);
+        _boss.hull->enabled   = false;
+        _boss.turret->enabled = false;
+        _boss.barrel->enabled = false;
+        _boss.trackL->enabled = false;
+        _boss.trackR->enabled = false;
+        _scene->addObject(_boss.hull);
+        _scene->addObject(_boss.turret);
+        _scene->addObject(_boss.barrel);
+        _scene->addObject(_boss.trackL);
+        _scene->addObject(_boss.trackR);
 
         _playerShell.obj = Primitives::createCube(46, 46, 46, &_playerShellMat);
         _playerShell.obj->enabled = false;
@@ -1019,6 +1099,25 @@ private:
         return millis() + (unsigned long)random((long)lo, (long)hi);
     }
 
+    // Class only enters the mix once _level already puts more than one
+    // tank on the field (see enemyCap()) — the opening stays exactly the
+    // single-class fight it always was.
+    EnemyClass pickEnemyClass() const {
+        if (_level <= 2) return CLASS_1;
+        if (_level <= 4) return (random(0, 2) == 0) ? CLASS_1 : CLASS_2;
+        int r = random(0, 3);
+        return r == 0 ? CLASS_1 : (r == 1 ? CLASS_2 : CLASS_3);
+    }
+
+    // Repoints every triangle of an already-built mesh at a different
+    // material — cheap (Triangle::material is a public pointer, no
+    // geometry rebuild) and only ever called once per spawn, not per
+    // frame. Used to recolour a pooled enemy's turret by class without
+    // needing separate geometry per class.
+    static void setObjectMaterial(Renderer::Object* obj, Renderer::Material* mat) {
+        for (auto &tri : obj->triangles) tri.material = mat;
+    }
+
     void spawnEnemy(Enemy &e) {
         // Spawn out on the perimeter, and not right on top of the player.
         for (int attempt = 0; attempt < 12; ++attempt) {
@@ -1032,6 +1131,11 @@ private:
             e.z = ez;
             e.headingDeg = bearingTo(ex, ez, _x, _z);
             e.alive = true;
+            e.tankClass = pickEnemyClass();
+            e.hp = e.maxHp = CLASS_HP[e.tankClass];
+            setObjectMaterial(e.turret, e.tankClass == CLASS_1 ? &_enemyTurretMat
+                                       : e.tankClass == CLASS_2 ? &_enemyTurretMatClass2
+                                                                 : &_enemyTurretMatClass3);
             e.hull->enabled = true;
             e.turret->enabled = true;
             e.barrel->enabled = true;
@@ -1044,15 +1148,50 @@ private:
         e.respawnAt = millis() + 400;
     }
 
-    void destroyEnemy(Enemy &e, AudioEngine &audio) {
+    // A hit that doesn't kill: multi-hp classes and the boss both need
+    // this now, so it's split out from destroyEnemy() rather than folded
+    // back in — a smaller spark burst and a plain clang tone (distinct
+    // from tryFire()'s 950Hz shot and the explosion.wav a kill gets), so
+    // "that connected but didn't finish it" reads differently from both.
+    void hitEnemy(Enemy &e, AudioEngine &audio) {
+        e.hp--;
+        if (e.hp <= 0) {
+            destroyEnemy(e, audio);
+            return;
+        }
         _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
-                              Renderer::Vec3f{ 0, 1, 0 }, 520.0f, 26);
+                              Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 10);
+        audio.playTone(650, 50);
+    }
+
+    void destroyEnemy(Enemy &e, AudioEngine &audio) {
+        bool isBoss = (&e == &_boss);
+        _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
+                              Renderer::Vec3f{ 0, 1, 0 }, 520.0f, isBoss ? 46 : 26);
         e.alive = false;
         e.hull->enabled = false;
         e.turret->enabled = false;
         e.barrel->enabled = false;
         e.trackL->enabled = false;
         e.trackR->enabled = false;
+        // Shared explosion asset (SharedAssets.h) — same /audio/explosion.wav
+        // AsteroidFlux and LanderFlux already use, with the same PROGMEM
+        // fallback. Firing keeps its own short tone (tryFire()'s 950Hz
+        // blip, enemy fire's 420Hz one): a shot igniting and a shell
+        // detonating are different events and shouldn't sound the same.
+        audio.playExplosionSound(explosion_data, sizeof(explosion_data));
+
+        if (isBoss) {
+            // Doesn't touch _kills/_level: the boss is a detour from the
+            // regular escalation, not a step in it, and counting its own
+            // death toward _kills risks it landing on another multiple of
+            // BOSS_EVERY_KILLS and re-triggering itself immediately.
+            _bossActive = false;
+            _score += BOSS_SCORE;
+            audio.playTone(1900, 300);   // bigger fanfare than the regular level-up cue
+            return;
+        }
+
         e.respawnAt = millis() + ENEMY_RESPAWN_MS;
         _score += SCORE_PER_KILL;
         _kills++;
@@ -1061,17 +1200,147 @@ private:
             _level = newLevel;
             audio.playTone(1900, 140);   // level-up cue
         }
-        // Shared explosion asset (SharedAssets.h) — same /audio/explosion.wav
-        // AsteroidFlux and LanderFlux already use, with the same PROGMEM
-        // fallback. Firing keeps its own short tone (tryFire()'s 950Hz
-        // blip, enemy fire's 420Hz one): a shot igniting and a shell
-        // detonating are different events and shouldn't sound the same.
-        audio.playExplosionSound(explosion_data, sizeof(explosion_data));
+        if (!_bossActive && _kills >= _nextBossAt) {
+            _nextBossAt += BOSS_EVERY_KILLS;
+            _bossPending = true;
+        }
+    }
+
+    // Returns false (and leaves _bossPending set) if every perimeter
+    // candidate was blocked — updateEnemies() retries next frame, the
+    // same pattern spawnEnemy() uses for the regular pool.
+    bool trySpawnBoss(AudioEngine &audio) {
+        for (int attempt = 0; attempt < 12; ++attempt) {
+            float ang = radians((float)random(0, 360));
+            float r   = (float)(ARENA_HALF - 500);
+            float ex  = sinf(ang) * r;
+            float ez  = cosf(ang) * r;
+            if (blockedFor(ex, ez, BOSS_RADIUS)) continue;
+            if (within(ex, ez, _x, _z, 2000)) continue;
+            _boss.x = ex;
+            _boss.z = ez;
+            _boss.headingDeg = bearingTo(ex, ez, _x, _z);
+            _boss.alive = true;
+            _boss.hp = _boss.maxHp = BOSS_HP;
+            _boss.hull->enabled   = true;
+            _boss.turret->enabled = true;
+            _boss.barrel->enabled = true;
+            _boss.trackL->enabled = true;
+            _boss.trackR->enabled = true;
+            _boss.nextFireAt = fireDelay();
+            _bossActive = true;
+            audio.playTone(300, 400);   // low arrival cue, distinct from the kill fanfare
+            return true;
+        }
+        return false;
+    }
+
+    // Chase/aim/fire — identical for the regular pool and the boss, so
+    // both call this rather than duplicating it. Mesh placement is NOT
+    // handled here since the boss uses different offsets for its larger
+    // geometry; see updateEnemyTransform()/updateBossTransform().
+    void updateEnemyAI(Enemy &e, float speed, AudioEngine &audio) {
+        float want = bearingTo(e.x, e.z, _x, _z);
+        float err  = angleDiff(want, e.headingDeg);
+        e.headingDeg = wrapAngle(e.headingDeg +
+                                 constrain(err, -ENEMY_TURN_RATE, ENEMY_TURN_RATE));
+
+        float dx = _x - e.x, dz = _z - e.z;
+        float dist = sqrtf(dx * dx + dz * dz);
+
+        if (dist > (float)ENEMY_STANDOFF) {
+            float hr = radians(e.headingDeg);
+            float nx = e.x + sinf(hr) * speed;
+            float nz = e.z + cosf(hr) * speed;
+            if (!blockedFor(nx, nz, ENEMY_RADIUS)) {
+                e.x = nx;
+                e.z = nz;
+            } else {
+                // Scrape around whatever it walked into rather than
+                // grinding against it forever.
+                e.headingDeg = wrapAngle(e.headingDeg + 9.0f);
+            }
+            const float limit = (float)(ARENA_HALF - ENEMY_RADIUS);
+            e.x = constrain(e.x, -limit, limit);
+            e.z = constrain(e.z, -limit, limit);
+        }
+
+        if (fabsf(err) < ENEMY_AIM_TOLERANCE && dist < (float)ENEMY_FIRE_RANGE &&
+            (long)(millis() - e.nextFireAt) >= 0) {
+            for (auto &s : _enemyShells) {
+                if (s.active) continue;
+                float hr = radians(e.headingDeg);
+                fireShell(s, e.x + sinf(hr) * 220.0f, e.z + cosf(hr) * 220.0f,
+                          e.headingDeg, ENEMY_SHELL_SPEED);
+                audio.playTone(420, 45);
+                break;
+            }
+            e.nextFireAt = fireDelay();
+        }
+    }
+
+    // createCylinder's local axis is Y; rotX=90 tips it onto its side, and
+    // Object's actual composition order (checked in Scene.cpp: M = Rz*Ry*Rx,
+    // applied to local vertices — NOT the Y-then-X order
+    // Camera::transformDirection uses for a different purpose, confirmed by
+    // hand rather than assumed from that comment) then makes rotY=heading
+    // aim the now-horizontal barrel down (sin(heading), 0, cos(heading)) —
+    // this game's own forward convention everywhere else.
+    void updateEnemyTransform(Enemy &e) {
+        e.hull->setPosition((int32_t)e.x, 55, (int32_t)e.z);
+        e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
+        e.turret->setPosition((int32_t)e.x, 155, (int32_t)e.z);
+        e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
+
+        // Offset forward by half its length so it reads as bolted to the
+        // turret's front rather than centred through it.
+        float barrelHr = radians(e.headingDeg);
+        int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BARREL_LENGTH / 2));
+        int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BARREL_LENGTH / 2));
+        e.barrel->setPosition(bx, 155, bz);
+        e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
+
+        // Track strips: offset sideways from the hull centre along the
+        // vector perpendicular to heading (sin h, cos h) — (cos h, -sin h)
+        // — at a lower Y so they read as a base the hull sits on.
+        int32_t rx = (int32_t)(cosf(barrelHr) * (float)TRACK_OFFSET);
+        int32_t rz = (int32_t)(-sinf(barrelHr) * (float)TRACK_OFFSET);
+        e.trackL->setPosition((int32_t)e.x - rx, 30, (int32_t)e.z - rz);
+        e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
+        e.trackR->setPosition((int32_t)e.x + rx, 30, (int32_t)e.z + rz);
+        e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
+    }
+
+    // Same placement logic as updateEnemyTransform(), at the boss's own
+    // 1.6x dimensions/offsets/Y-heights instead of the regular tank's.
+    void updateBossTransform() {
+        Enemy &e = _boss;
+        e.hull->setPosition((int32_t)e.x, BOSS_HULL_Y, (int32_t)e.z);
+        e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
+        e.turret->setPosition((int32_t)e.x, BOSS_TURRET_Y, (int32_t)e.z);
+        e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
+
+        float barrelHr = radians(e.headingDeg);
+        int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BOSS_BARREL_LEN / 2));
+        int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BOSS_BARREL_LEN / 2));
+        e.barrel->setPosition(bx, BOSS_TURRET_Y, bz);
+        e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
+
+        int32_t rx = (int32_t)(cosf(barrelHr) * (float)BOSS_TRACK_OFFSET);
+        int32_t rz = (int32_t)(-sinf(barrelHr) * (float)BOSS_TRACK_OFFSET);
+        e.trackL->setPosition((int32_t)e.x - rx, BOSS_TRACK_Y, (int32_t)e.z - rz);
+        e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
+        e.trackR->setPosition((int32_t)e.x + rx, BOSS_TRACK_Y, (int32_t)e.z + rz);
+        e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
     }
 
     void updateEnemies(AudioEngine &audio) {
         for (auto &e : _enemies) {
             if (!e.alive) {
+                // Boss fights don't backfill the regular pool — the field
+                // stays boss-only (plus any stragglers already alive when
+                // it triggered) until it's dead.
+                if (_bossActive) continue;
                 // Hold the slot shut while at cap, pushing the timer along so
                 // a kill always buys a breather rather than being replaced
                 // the same instant.
@@ -1082,89 +1351,34 @@ private:
                 }
                 continue;
             }
+            updateEnemyAI(e, enemySpeed(), audio);
+            updateEnemyTransform(e);
+        }
 
-            float want = bearingTo(e.x, e.z, _x, _z);
-            float err  = angleDiff(want, e.headingDeg);
-            e.headingDeg = wrapAngle(e.headingDeg +
-                                     constrain(err, -ENEMY_TURN_RATE, ENEMY_TURN_RATE));
-
-            float dx = _x - e.x, dz = _z - e.z;
-            float dist = sqrtf(dx * dx + dz * dz);
-
-            if (dist > (float)ENEMY_STANDOFF) {
-                float hr = radians(e.headingDeg);
-                float nx = e.x + sinf(hr) * enemySpeed();
-                float nz = e.z + cosf(hr) * enemySpeed();
-                if (!blockedFor(nx, nz, ENEMY_RADIUS)) {
-                    e.x = nx;
-                    e.z = nz;
-                } else {
-                    // Scrape around whatever it walked into rather than
-                    // grinding against it forever.
-                    e.headingDeg = wrapAngle(e.headingDeg + 9.0f);
-                }
-                const float limit = (float)(ARENA_HALF - ENEMY_RADIUS);
-                e.x = constrain(e.x, -limit, limit);
-                e.z = constrain(e.z, -limit, limit);
-            }
-
-            e.hull->setPosition((int32_t)e.x, 55, (int32_t)e.z);
-            e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
-            e.turret->setPosition((int32_t)e.x, 155, (int32_t)e.z);
-            e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
-
-            // createCylinder's local axis is Y; rotX=90 tips it onto its
-            // side, and Object's actual composition order (checked in
-            // Scene.cpp: M = Rz*Ry*Rx, applied to local vertices — NOT the
-            // Y-then-X order Camera::transformDirection uses for a
-            // different purpose, confirmed by hand rather than assumed
-            // from that comment) then makes rotY=heading aim the now-
-            // horizontal barrel down (sin(heading), 0, cos(heading)) —
-            // this game's own forward convention everywhere else. Offset
-            // forward by half its length so it reads as bolted to the
-            // turret's front rather than centred through it.
-            float barrelHr = radians(e.headingDeg);
-            int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BARREL_LENGTH / 2));
-            int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BARREL_LENGTH / 2));
-            e.barrel->setPosition(bx, 155, bz);
-            e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
-
-            // Track strips: "the bottom of the tank is still just a brick
-            // block" from playtest. Offset sideways from the hull centre
-            // along the vector perpendicular to heading (sin h, cos h) —
-            // (cos h, -sin h) — at a lower Y so they read as a base the
-            // hull sits on rather than another slab glued to its side.
-            int32_t rx = (int32_t)(cosf(barrelHr) * (float)TRACK_OFFSET);
-            int32_t rz = (int32_t)(-sinf(barrelHr) * (float)TRACK_OFFSET);
-            e.trackL->setPosition((int32_t)e.x - rx, 30, (int32_t)e.z - rz);
-            e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
-            e.trackR->setPosition((int32_t)e.x + rx, 30, (int32_t)e.z + rz);
-            e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
-
-            if (fabsf(err) < ENEMY_AIM_TOLERANCE && dist < (float)ENEMY_FIRE_RANGE &&
-                (long)(millis() - e.nextFireAt) >= 0) {
-                for (auto &s : _enemyShells) {
-                    if (s.active) continue;
-                    float hr = radians(e.headingDeg);
-                    fireShell(s, e.x + sinf(hr) * 220.0f, e.z + cosf(hr) * 220.0f,
-                              e.headingDeg, ENEMY_SHELL_SPEED);
-                    audio.playTone(420, 45);
-                    break;
-                }
-                e.nextFireAt = fireDelay();
-            }
+        if (_bossActive) {
+            updateEnemyAI(_boss, enemySpeed(), audio);
+            updateBossTransform();
+        } else if (_bossPending) {
+            if (trySpawnBoss(audio)) _bossPending = false;
         }
     }
 
     void updateShells(AudioEngine &audio) {
         if (_playerShell.active && advanceShell(_playerShell, PLAYER_SHELL_RANGE)) {
+            bool hit = false;
             for (auto &e : _enemies) {
                 if (!e.alive) continue;
                 if (within(_playerShell.x, _playerShell.z, e.x, e.z, KILL_RADIUS)) {
-                    destroyEnemy(e, audio);
+                    hitEnemy(e, audio);
                     killShell(_playerShell);
+                    hit = true;
                     break;
                 }
+            }
+            if (!hit && _bossActive &&
+                within(_playerShell.x, _playerShell.z, _boss.x, _boss.z, BOSS_KILL_RADIUS)) {
+                hitEnemy(_boss, audio);
+                killShell(_playerShell);
             }
         }
 
@@ -1248,12 +1462,24 @@ private:
         for (auto &s : _enemyShells) killShell(s);
         for (int i = 0; i < MAX_ENEMIES; ++i) {
             _enemies[i].alive = false;
-            _enemies[i].hull->enabled = false;
+            _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
+            _enemies[i].barrel->enabled = false;
+            _enemies[i].trackL->enabled = false;
+            _enemies[i].trackR->enabled = false;
             // enemyCap() holds the extras back at level 1 regardless; this
             // just gives the first arrival a moment's grace.
             _enemies[i].respawnAt = millis() + 1200;
         }
+        _boss.alive = false;
+        _boss.hull->enabled   = false;
+        _boss.turret->enabled = false;
+        _boss.barrel->enabled = false;
+        _boss.trackL->enabled = false;
+        _boss.trackR->enabled = false;
+        _bossActive  = false;
+        _bossPending = false;
+        _nextBossAt  = BOSS_EVERY_KILLS;
         for (auto &p : _particles.pool) p.active = false;
         _phase = PHASE_PLAYING;
         audio.playTone(900, 80);
@@ -1276,6 +1502,18 @@ private:
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
         canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 54, 1);
         canvas.print("HI:"); canvas.print(_highScore);
+
+        // Boss health bar: a second, wider bar directly under the main HUD
+        // strip, only while a boss fight is on. Red so it reads as "the
+        // threat," distinct from the player's own green/amber/red bar.
+        if (_bossActive) {
+            const int bx = 3, by = 13, bw = ArcadeConfig::LANDSCAPE_WIDTH - 6, bh = 6;
+            canvas.drawRect(bx, by, bw, bh, ArcadeConfig::COLOR_GREY);
+            int bossFillW = ((bw - 2) * _boss.hp) / max(1, _boss.maxHp);
+            if (bossFillW > 0) {
+                canvas.fillRect(bx + 1, by + 1, bossFillW, bh - 2, ArcadeConfig::COLOR_RED);
+            }
+        }
 
         // Health bar sits bottom-left, stopping short of centre so it doesn't
         // run across the gun barrel.
