@@ -3,6 +3,7 @@
 
 #include "../../games/IGame.h"
 #include "../../cabinet/ArcadeConfig.h"
+#include "../../assets/shared/SharedAssets.h"
 #include <Preferences.h>
 #include <math.h>
 
@@ -274,13 +275,18 @@ private:
     //     genuinely photorealistic ambient level (15-20%) just isn't
     //     legible on this hardware/format, however correct the shading math
     //     is. This game wants "always readable," not "physically lit."
-    // Now ~40% (100,95,85, still faintly warm/neutral rather than the old
-    // blue lean): shadowed faces stay clearly coloured, and full sun faces
-    // (diffuse alone already reaches ~250-285) still read brighter, so the
-    // directional shading that took real diagnosis to get working (see
-    // buildTerrain()'s SHADE_EXAGGERATION) doesn't vanish — it's just no
-    // longer the ONLY thing standing between a face and being black.
-    Renderer::AmbientLight     _amb{ Renderer::Color{100, 95, 85} };
+    //   - 255/(100,95,85): playtest confirmed this direction was right —
+    //     trees finally read as green — and asked for still more.
+    // Now ~55% (140,133,119, same neutral ratio): checked directly against
+    // buildTerrain()'s actual exaggerated brightness range (16-252 before
+    // ambient) rather than just nudged further blind — at this level ~75%
+    // of ground cells clip to full white already, so this is close to the
+    // ceiling before the checkerboard shading stops reading as shading at
+    // all and just becomes a flat bright slab again (the original
+    // complaint, from the opposite direction). Obstacle/tree faces have
+    // more headroom since their normals face every direction, not mostly
+    // up, so they clip less than the ground does.
+    Renderer::AmbientLight     _amb{ Renderer::Color{140, 133, 119} };
     // A second, unregistered DirectionalLight purely to get its computed
     // worldLightDir for drawSun() — never passed to setDirectionalLight, so
     // it has no effect on shading. Deliberately a lower elevation (22° vs
@@ -320,11 +326,11 @@ private:
     // hardware, so irregular proportions + rotation do the visual work
     // instead, at the same triangle cost as any other obstacle.
     Renderer::Material _obstacleRockMat{ 0xFFFF, nullptr, nullptr, false, 255, 255, 20 };
-    // Not COLOR_GREEN: the ground is green-toned (rgb565(5,16,7) /
-    // (9,26,11)), so a green pickup barely registered against it —
-    // playtest feedback was "repair kits look the same [as the ground]".
-    // Pure white is the one tone nothing else on screen uses.
-    Renderer::Material _kitMat{ 0xFFFF };
+    // Back to bright green per explicit request, now that the ground/
+    // obstacles are lit brightly enough that white was no longer needed to
+    // stand out. UNLIT either way, so it's the same bright green regardless
+    // of viewing angle.
+    Renderer::Material _kitMat{ ArcadeConfig::COLOR_GREEN };
     // Two bright UNLIT tones rather than one lit material: lighting left the
     // side facing away from the sun almost black, and a target you have to
     // spot at range shouldn't depend on which way it happens to be facing.
@@ -963,7 +969,12 @@ private:
             _level = newLevel;
             audio.playTone(1900, 140);   // level-up cue
         }
-        audio.playTone(1500, 90);
+        // Shared explosion asset (SharedAssets.h) — same /audio/explosion.wav
+        // AsteroidFlux and LanderFlux already use, with the same PROGMEM
+        // fallback. Firing keeps its own short tone (tryFire()'s 950Hz
+        // blip, enemy fire's 420Hz one): a shot igniting and a shell
+        // detonating are different events and shouldn't sound the same.
+        audio.playExplosionSound(explosion_data, sizeof(explosion_data));
     }
 
     void updateEnemies(AudioEngine &audio) {
@@ -1041,16 +1052,17 @@ private:
             if (!s.active) continue;
             if (!advanceShell(s, ENEMY_SHELL_RANGE)) continue;
             if (within(s.x, s.z, _x, _z, HIT_RADIUS)) {
-                // Player-hit feedback: sparks right at the impact point
-                // complement the existing screen flash. advanceShell()
+                // Player-hit feedback: sparks and the same shared explosion
+                // sound as destroyEnemy() right at the impact point,
+                // complementing the existing screen flash. advanceShell()
                 // already covers shell-vs-obstacle; this was the one impact
-                // case with no particles at all.
+                // case with no particles or explosion audio at all.
                 _particles.emitSparks(Renderer::Vec3f{ s.x, (float)SHELL_Y, s.z },
                                       Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 16);
                 _health -= HIT_DAMAGE;
                 _damageFlashUntil = millis() + 160;
                 killShell(s);
-                audio.playTone(180, 220);
+                audio.playExplosionSound(explosion_data, sizeof(explosion_data));
             }
         }
     }
