@@ -512,6 +512,11 @@ public:
         else playLaunchMelody();
     }
 
+    void playTankStartSound() {
+        if (SD.cardType() != CARD_NONE) playWAV("/audio/tank_start.wav");
+        else playTankStartMelody();
+    }
+
     void playLandingSuccessSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/land_success.wav");
         else playLandingSuccess();
@@ -603,6 +608,11 @@ public:
         static const int n[] = {392,523,659,784,1047};
         static const int d[] = {100,100,100,100, 300};
         playMelody(n, d, 5);
+    }
+    void playTankStartMelody() {
+        static const int n[] = {110,147,185,220};
+        static const int d[] = { 90, 90, 90,180};
+        playMelody(n, d, 4);
     }
     void playCountdownBeep()    { playTone(800,  100); }
     void playPowerUpShield()    { playTone(1000, 250); }

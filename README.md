@@ -68,8 +68,10 @@ FluxArcadeCabinet/
 │   │   ├── title.raw
 │   │   └── theme.wav
 │   └── tank_flux/
-│       ├── tank_start.wav      # Optional — overrides the synthesized PROGMEM
-│       │                       # startup sting below when an SD card is present
+│       ├── tank_start.wav      # Optional — startup sound when the game is
+│       │                       # selected; falls back to a generated melody
+│       │                       # (same convention as Lander Flux) if missing
+│       │                       # or no SD card
 │       └── tank_loop.wav       # Not provided yet — attract music is silent without it
 │
 └── src/                        # PlatformIO source root
@@ -103,9 +105,7 @@ FluxArcadeCabinet/
     │   │   └── assets/
     │   │       └── TitleScreen.h
     │   └── TankFlux/
-    │       ├── TankFluxGame.h       # First-person tank battle, rendered via Jet
-    │       └── assets/
-    │           └── tank_start.h     # Synthesized startup sting (PROGMEM PCM)
+    │       └── TankFluxGame.h       # First-person tank battle, rendered via Jet
     │
     └── launcher/
         └── LauncherMenu.h      # Menu UI — receives InputState, no direct HW reads
