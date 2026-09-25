@@ -579,11 +579,16 @@ private:
                 // near-horizontal view covers a lot of far terrain even a
                 // little below the horizon), so it needs to read as lit
                 // terrain haze on its own, not a dark void the checkerboard
-                // pops out of.
+                // pops out of. Endpoints match _groundMatB (far/hazier) and
+                // _groundMatA (near/darker) — this was still the OLD green
+                // ground's own tones after the brown palette swap, which is
+                // why distant terrain kept reading grey-green regardless of
+                // the checkerboard's own colour: most of the visible ground
+                // band is this haze, not the up-close mesh.
                 float t = (float)(y - horizon) / (float)(h - horizon);
-                _skyGround[y] = rgb565((uint8_t)(16 - t * 5.0f),
-                                       (uint8_t)(34 - t * 10.0f),
-                                       (uint8_t)(19 - t * 6.0f));
+                _skyGround[y] = rgb565((uint8_t)(20 - t * 5.0f),
+                                       (uint8_t)(33 - t * 8.0f),
+                                       (uint8_t)(11 - t * 3.0f));
             }
         }
     }
