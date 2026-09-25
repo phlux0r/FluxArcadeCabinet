@@ -98,16 +98,19 @@ struct AudioTaskState {
     volatile uint16_t channels      = 1;
 };
 
-static AudioTaskState    _audioState;
-static SemaphoreHandle_t _audioMutex = nullptr;
+// `inline`, not `static`: this header is included from more than one .cpp,
+// and every file must share the single state the audio task reads.
+// `static` would give each file its own private copy.
+inline AudioTaskState    _audioState;
+inline SemaphoreHandle_t _audioMutex = nullptr;
 
 // Read buffer lives in internal RAM for fast SD access
-static uint8_t _wavBuf[WAV_READ_CHUNK];
+inline uint8_t _wavBuf[WAV_READ_CHUNK];
 
 // =============================================================================
 // AUDIO TASK — runs on Core 0
 // =============================================================================
-static void audioTask(void* param) {
+inline void audioTask(void* param) {
     File wavFile;
     bool pgmMode      = false;
     size_t pgmPos     = 0;
@@ -512,6 +515,11 @@ public:
         else playLaunchMelody();
     }
 
+    void playTankStartSound() {
+        if (SD.cardType() != CARD_NONE) playWAV("/audio/tank_start.wav");
+        else playTankStartMelody();
+    }
+
     void playLandingSuccessSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/land_success.wav");
         else playLandingSuccess();
@@ -603,6 +611,11 @@ public:
         static const int n[] = {392,523,659,784,1047};
         static const int d[] = {100,100,100,100, 300};
         playMelody(n, d, 5);
+    }
+    void playTankStartMelody() {
+        static const int n[] = {110,147,185,220};
+        static const int d[] = { 90, 90, 90,180};
+        playMelody(n, d, 4);
     }
     void playCountdownBeep()    { playTone(800,  100); }
     void playPowerUpShield()    { playTone(1000, 250); }

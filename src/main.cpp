@@ -2,7 +2,7 @@
 // FLUX MASTER ARCADE — v2.0
 // Main state machine orchestrator.
 //
-// To add a new game:
+// To add a new game (see also src/games/IGame.h):
 //   1. #include its header below
 //   2. Instantiate it in the "Game instances" section
 //   3. Add it to the gameRegistry[] array
@@ -10,6 +10,7 @@
 //   5. Add a case to the switch in loop()
 // =============================================================================
 
+#include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
@@ -30,6 +31,7 @@
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
+#include "games/TankFlux/TankFluxGame.h"
 
 // Launcher
 #include "launcher/LauncherMenu.h"
@@ -58,6 +60,7 @@ AsteroidFluxGame asteroidGame;
 LanderFluxGame   landerGame;
 MazeFluxGame     mazeGame;
 PlatformFluxGame platformGame;
+TankFluxGame     tankGame;
 
 // =============================================================================
 // LAUNCHER
@@ -70,6 +73,7 @@ const GameEntry gameRegistry[] = {
     { "Lander",    STATE_LANDER_FLUX   },
     { "Maze", STATE_MAZE_FLUX },
     { "Runner",  STATE_PLATFORM_FLUX },
+    { "Tank",  STATE_TANK_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
@@ -95,6 +99,7 @@ void launchGame(IGame* game) {
 }
 
 void returnToLauncher() {
+    if (activeGame) activeGame->onExit();
     activeGame = nullptr;
     tft.setRotation(2);  // Portrait for menu
     launcher.onEnter(audio);
@@ -211,6 +216,9 @@ void loop() {
                         platformGame.setTFT(tft);
                         launchGame(&platformGame);
                         break;
+                    case STATE_TANK_FLUX:
+                        launchGame(&tankGame);
+                        break;
                     default: returnToLauncher(); break;
                 }
             }
@@ -244,6 +252,14 @@ void loop() {
             bool running = platformGame.update(canvasLandscape, state, audio);
             // Platform Flux flushes its own canvas internally (landscape),
             // same pattern as Asteroid Flux.
+            if (!running) returnToLauncher();
+            break;
+        }
+
+        case STATE_TANK_FLUX: {
+            bool running = tankGame.update(canvasLandscape, state, audio);
+            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
+                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
             if (!running) returnToLauncher();
             break;
         }

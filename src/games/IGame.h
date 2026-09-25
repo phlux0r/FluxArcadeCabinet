@@ -10,9 +10,9 @@
 //
 // To add a new game:
 //   1. Create a class that inherits from IGame
-//   2. Implement all four methods below
+//   2. Implement the four pure virtual methods below (onExit() is optional)
 //   3. Add a new CabinetState entry in ArcadeConfig.h
-//   4. Register the game in FluxMasterArcade.ino
+//   4. Register the game in src/main.cpp
 //
 // The launcher owns the canvas and passes it by reference each frame.
 // Games must NOT create their own display or canvas objects.
@@ -46,6 +46,11 @@ public:
 
     // Short display name shown in the launcher menu (max ~16 chars)
     virtual const char* getName() const = 0;
+
+    // Called when the game hands control back to the launcher (after
+    // update() returns false). Free large allocations here so the heap is
+    // available to other games; init() runs again on the next launch.
+    virtual void onExit() {}
 };
 
 #endif // IGAME_H

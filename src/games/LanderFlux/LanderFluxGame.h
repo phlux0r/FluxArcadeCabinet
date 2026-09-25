@@ -15,7 +15,7 @@ public:
         _engine.init(audio);
     }
 
-    // tft must be set before first update() — called by FluxMasterArcade.ino on launch
+    // tft must be set before first update() — called by src/main.cpp on launch
     void setTFT(Adafruit_ST7735 &tft) { _engine.setTFT(tft); }
 
     bool update(GFXcanvas16 &canvas,

@@ -279,7 +279,8 @@ enum CabinetState {
     STATE_ASTEROID_FLUX,
     STATE_LANDER_FLUX,
     STATE_MAZE_FLUX,
-    STATE_PLATFORM_FLUX
+    STATE_PLATFORM_FLUX,
+    STATE_TANK_FLUX
     // STATE_NEW_GAME  <-- add future games here
 };
 
