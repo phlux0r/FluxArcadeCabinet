@@ -12,3 +12,6 @@
 core
 .DS_Store
 Thumbs.db
+
+# Host test harness build output
+test/.build/
