@@ -1293,7 +1293,13 @@ private:
                 float hr = radians(e.headingDeg);
                 fireShell(s, e.x + sinf(hr) * 220.0f, e.z + cosf(hr) * 220.0f,
                           e.headingDeg, ENEMY_SHELL_SPEED);
-                audio.playTone(420, 45);
+                // Shared /audio/shot.wav — same asset and call as the
+                // player's own tryFire(). playWAV() stops whatever's
+                // currently playing first (same as playExplosionSound()),
+                // so a shot fired right after a kill can cut its
+                // explosion.wav short; accepted, matches how every other
+                // sound in this single-channel setup already behaves.
+                audio.playWAV("/audio/shot.wav");
                 break;
             }
             e.nextFireAt = fireDelay();
@@ -1433,7 +1439,7 @@ private:
                   _headingDeg, PLAYER_SHELL_SPEED);
         _reloadAt = millis() + PLAYER_RELOAD_MS;
         _muzzleFlashUntil = millis() + 70;
-        audio.playTone(950, 55);
+        audio.playWAV("/audio/shot.wav");
     }
 
     void updateKits(AudioEngine &audio) {
@@ -1457,7 +1463,7 @@ private:
                 k.active = false;
                 k.obj->enabled = false;
                 k.respawnAt = millis() + REPAIR_RESPAWN_MS;
-                audio.playTone(1200, 70);
+                audio.playWAV("/audio/repair.wav");
             }
         }
     }

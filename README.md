@@ -72,7 +72,9 @@ FluxArcadeCabinet/
 │       │                       # selected; falls back to a generated melody
 │       │                       # (same convention as Lander Flux) if missing
 │       │                       # or no SD card
-│       └── tank_loop.wav       # Not provided yet — attract music is silent without it
+│       ├── tank_loop.wav       # Not provided yet — attract music is silent without it
+│       ├── shot.wav            # Player and enemy cannon fire
+│       └── repair.wav          # Repair kit pickup
 │
 └── src/                        # PlatformIO source root
     ├── main.cpp                # State machine orchestrator
