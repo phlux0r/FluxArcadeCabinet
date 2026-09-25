@@ -98,16 +98,19 @@ struct AudioTaskState {
     volatile uint16_t channels      = 1;
 };
 
-static AudioTaskState    _audioState;
-static SemaphoreHandle_t _audioMutex = nullptr;
+// `inline`, not `static`: this header is included from more than one .cpp,
+// and every file must share the single state the audio task reads.
+// `static` would give each file its own private copy.
+inline AudioTaskState    _audioState;
+inline SemaphoreHandle_t _audioMutex = nullptr;
 
 // Read buffer lives in internal RAM for fast SD access
-static uint8_t _wavBuf[WAV_READ_CHUNK];
+inline uint8_t _wavBuf[WAV_READ_CHUNK];
 
 // =============================================================================
 // AUDIO TASK — runs on Core 0
 // =============================================================================
-static void audioTask(void* param) {
+inline void audioTask(void* param) {
     File wavFile;
     bool pgmMode      = false;
     size_t pgmPos     = 0;
