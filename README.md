@@ -105,7 +105,9 @@ FluxArcadeCabinet/
     │   │   └── assets/
     │   │       └── TitleScreen.h
     │   └── TankFlux/
-    │       └── TankFluxGame.h       # First-person tank battle, rendered via Jet
+    │       ├── TankFluxGame.h       # First-person tank battle, rendered via Jet
+    │       └── assets/
+    │           └── TitleScreen.h    # Attract-screen art, 160x128 landscape
     │
     └── launcher/
         └── LauncherMenu.h      # Menu UI — receives InputState, no direct HW reads

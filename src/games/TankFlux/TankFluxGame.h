@@ -4,6 +4,7 @@
 #include "../../games/IGame.h"
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../assets/shared/SharedAssets.h"
+#include "assets/TitleScreen.h"
 #include <Preferences.h>
 #include <math.h>
 
@@ -1665,63 +1666,81 @@ private:
         }
     }
 
-    // Placeholder "gameplay" slide — a simple flat-shaded tank icon rather
-    // than an actual screenshot, since there's no real art yet. Swap for a
-    // captured frame (same approach AsteroidFluxGame's splash bitmap uses)
-    // once one exists.
+    // Real title art (assets/TitleScreen.h) replaces the old placeholder
+    // (a code-drawn tank icon + "TANK FLUX" text) now that it exists —
+    // same full-screen PROGMEM blit every other game's splash uses. The
+    // source image's own bottom 20px are solid black, left there
+    // deliberately for this HUD text: start prompt and high score,
+    // centred, blinking prompt at the same 600ms-on/400ms-off cadence
+    // Maze/Lander's own splash screens use.
     void renderAttractGame(GFXcanvas16 &canvas) {
-        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-
-        const int cx = canvas.width() / 2, cy = 70;
-        const uint16_t hull = rgb565(29, 6, 4), track = rgb565(10, 10, 10);
-        canvas.fillRect(cx - 26, cy - 8, 52, 16, hull);
-        canvas.fillRect(cx - 30, cy - 10, 6, 20, track);
-        canvas.fillRect(cx + 24, cy - 10, 6, 20, track);
-        canvas.fillRect(cx - 12, cy - 16, 24, 10, hull);
-        canvas.fillRect(cx - 2, cy - 26, 5, 14, hull);   // barrel
+        for (int i = 0; i < (ArcadeConfig::LANDSCAPE_WIDTH * ArcadeConfig::LANDSCAPE_HEIGHT); i++) {
+            uint16_t px = pgm_read_word(&tank_flux_160x128_data[i]);
+            canvas.drawPixel(i % ArcadeConfig::LANDSCAPE_WIDTH,
+                             i / ArcadeConfig::LANDSCAPE_WIDTH, px);
+        }
 
         canvas.setFont();
         canvas.setTextSize(1);
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(34, 30);
-        canvas.print("TANK FLUX");
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(18, 100);
-        canvas.print("[BTN A] TO START");
+        int16_t tbx, tby; uint16_t tbw, tbh;
+
+        if (millis() % 1000 < 600) {
+            const char* prompt = "[BTN A] TO START";
+            canvas.getTextBounds(prompt, 0, 0, &tbx, &tby, &tbw, &tbh);
+            canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+            canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, 111);
+            canvas.print(prompt);
+        }
+
+        char hiBuf[20];
+        snprintf(hiBuf, sizeof(hiBuf), "HI: %d", _highScore);
+        canvas.getTextBounds(hiBuf, 0, 0, &tbx, &tby, &tbw, &tbh);
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, 120);
+        canvas.print(hiBuf);
     }
 
+    // Updated for: strafe (BTN B now moves, doesn't quit, during PLAYING —
+    // see updateDriving()/the top of update()), green (not white) repair
+    // kits, and the boss. Ten more content lines than the version this
+    // replaced had to fit in the same 128px height, so pitch is tightened
+    // to 10px between lines (still setTextSize(1), the smallest built-in
+    // font available here — there's no separate "small font" to switch
+    // to) rather than dropping any line.
     void renderAttractInfo(GFXcanvas16 &canvas) {
         canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
         canvas.setFont();
         canvas.setTextSize(1);
 
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(30, 6);
+        canvas.setCursor(30, 4);
         canvas.print("HOW TO PLAY");
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(4, 24);
+        canvas.setCursor(4, 20);
         canvas.print("[JOY]   DRIVE / TURN");
-        canvas.setCursor(4, 36);
+        canvas.setCursor(4, 30);
         canvas.print("[BTN A] FIRE (1 SHELL)");
-        canvas.setCursor(4, 48);
-        canvas.print("[BTN B] HOLD TO QUIT");
+        canvas.setCursor(4, 40);
+        canvas.print("[HOLD B]+JOY STRAFE");
 
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(4, 66);
-        canvas.print("WHITE CUBES = REPAIR");
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setCursor(4, 56);
+        canvas.print("GREEN CUBES = REPAIR");
         canvas.setTextColor(ArcadeConfig::COLOR_RED);
-        canvas.setCursor(4, 78);
+        canvas.setCursor(4, 66);
         canvas.print("RED DOTS ON RADAR = FOES");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(4, 96);
+        canvas.setCursor(4, 82);
         canvas.print("MORE TANKS EVERY FEW");
-        canvas.setCursor(4, 108);
+        canvas.setCursor(4, 92);
         canvas.print("KILLS -- SURVIVE!");
+        canvas.setCursor(4, 102);
+        canvas.print("BOSS TANK EVERY 15 KILLS");
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(28, 120);
+        canvas.setCursor(28, 118);
         canvas.print("BEST: "); canvas.print(_highScore);
     }
 
