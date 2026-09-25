@@ -178,9 +178,10 @@ void setup() {
 // against that budget. Games move by a fixed amount per frame, so sustained
 // work at or above the budget is what makes them play slow.
 //
-// Reported once a second, to the screen (top-left, over whatever the game
-// drew) and to serial. Drawing the overlay itself costs a little, counted
-// against the next frame rather than the one being reported.
+// Reported once a second, to the screen and to serial. On screen it reads
+// "fps avgMs/peakMs" in magenta, low on the left — clear of every game's
+// HUD text, though it does sit over the play area. Drawing it costs a
+// little, counted against the next frame rather than the one reported.
 // =============================================================================
 #ifdef SHOW_FPS
 namespace {
@@ -208,13 +209,26 @@ void fpsAccumulate(uint32_t workUs) {
 
 void fpsDraw() {
     char buf[24];
-    snprintf(buf, sizeof(buf), "%u %u.%u/%u.%u", (unsigned)fpsLastFps,
-             (unsigned)(fpsLastAvgUs / 1000), (unsigned)((fpsLastAvgUs % 1000) / 100),
-             (unsigned)(fpsLastPeakUs / 1000), (unsigned)((fpsLastPeakUs % 1000) / 100));
+    snprintf(buf, sizeof(buf), "%uf %u/%ums", (unsigned)fpsLastFps,
+             (unsigned)((fpsLastAvgUs + 500) / 1000),
+             (unsigned)((fpsLastPeakUs + 500) / 1000));
+
+    // Sits above the bottom edge, where no game puts text: Tank Flux's
+    // health bar is lower still, its radar is on the right, and the
+    // portrait games keep this strip clear. tft.height() follows the
+    // current rotation, so this lands correctly either way.
+    const int16_t boxH = 9;
+    const int16_t boxY = tft.height() - boxH - 9;
+    const int16_t boxW = (int16_t)(strlen(buf) * 6 + 4);
+
+    // One filled rect plus transparent text is far fewer pixel writes than
+    // opaque text, which redraws every glyph's blank pixels too. This runs
+    // every frame, so the difference is worth having.
+    tft.fillRect(0, boxY, boxW, boxH, ArcadeConfig::COLOR_BLACK);
     tft.setFont();
     tft.setTextSize(1);
-    tft.setTextColor(ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_BLACK);
-    tft.setCursor(0, 0);
+    tft.setTextColor(ArcadeConfig::COLOR_MAGENTA);
+    tft.setCursor(2, boxY + 1);
     tft.print(buf);
 }
 }  // namespace
