@@ -1116,37 +1116,27 @@ private:
         _camera.farPlane  = 5200;
         _scene->setCamera(&_camera);
 
+        // EXPERIMENTAL PALETTE SWAP — ground green->brown, obstacles
+        // warm-tan/amber->grey/slate, pyramids (all three hill variants,
+        // not just the stumpy one) ->dark grassy green. Requested as an
+        // easy-to-revert trial: `git revert` this single commit restores
+        // the previous tan/amber/green palette if this doesn't read well
+        // on hardware. R:G ratios were kept close to the previous
+        // (playtested) values' own proportions rather than picked
+        // freehand, to avoid the reddish-pink-under-bright-lighting
+        // jetModulateRGB565 quirk a prior playtest round already hit here.
+        //
         // Two ground tones that differ enough to actually read as a
         // checkerboard at this resolution — an earlier attempt in Combat Flux
         // used two near-identical navies and the floor looked like one flat
-        // slab. Kept greener than the obstacles' warm tones so obstacles pop.
-        //
-        // Brightened after playtest feedback that hill shading was
-        // invisible even with correct per-face normals and FLAT shading
-        // wired up (verified against Renderer.cpp's actual jetShadeBrightness
-        // — the lighting math itself was right). The real ceiling was these
-        // colours: at R=5-9/31, G=16-26/63, shading has almost no headroom
-        // to show against a base that dark regardless of how correct the
-        // normals are. Still deliberately darker/cooler than the obstacles'
-        // warm tones so obstacles keep popping against it.
-        _groundMatA.color = rgb565(11, 30, 15);
-        _groundMatB.color = rgb565(17, 44, 21);
-        // R:G ratios tuned so these stay tan/amber under full lighting
-        // instead of reading red: the previous values (23,33,13) and
-        // especially (26,24,10) had G too small a fraction of its own
-        // 6-bit range relative to R's fraction of its 5-bit range, so a
-        // brightly-lit face — worked out numerically against
-        // jetModulateRGB565, not guessed — converged toward a reddish-pink
-        // rather than staying warm tan/amber (this is what playtest
-        // reported as pyramids having "a red bottom": their most directly
-        // lit face).
-        _obstacleCubeMat.color    = rgb565(25, 41, 14);   // warm tan
-        _obstaclePyramidMat.color = rgb565(28, 38, 6);    // dry amber
-        // Brightened after playtest feedback that rocks blended into the
-        // terrain — the original (15,15,12) was close enough in luminance
-        // to the dark ground (max channel ~26) to read as barely distinct.
-        // Real contrast, not just a different hue.
-        _obstacleRockMat.color    = rgb565(25, 26, 21);   // light stone grey
+        // slab. Warm brown now that the obstacles themselves are moving to
+        // grey/slate/green, so nothing needs to stay "cooler than the
+        // obstacles" to pop anymore.
+        _groundMatA.color = rgb565(15, 25, 8);    // dark brown
+        _groundMatB.color = rgb565(20, 33, 11);   // lighter brown
+        _obstacleCubeMat.color    = rgb565(19, 38, 19);   // neutral grey
+        _obstaclePyramidMat.color = rgb565(10, 38, 10);   // dark grassy green — "hills"
+        _obstacleRockMat.color    = rgb565(9, 16, 13);    // dark slate, distinct from the cube's grey
         _riverMat.color        = rgb565(9, 24, 27);       // pale blue-green
         _enemyHullMat.color    = rgb565(31,  6,  4);   // vivid red
         // Was amber (31,22,4) — playtest feedback was that hull+turret
