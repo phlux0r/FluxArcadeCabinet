@@ -204,6 +204,10 @@ private:
     // Dimensions/offsets are the regular tank's own values x1.6 throughout.
     static const int BOSS_EVERY_KILLS = 15;
     static const int BOSS_HP = 8;
+    // Each subsequent boss is tougher: 1st is BOSS_HP, 2nd is +BOSS_HP_STEP,
+    // and so on — see _bossesDefeated, incremented in destroyEnemy()'s own
+    // boss branch right before this would apply to the NEXT one.
+    static const int BOSS_HP_STEP = 2;
     static const int BOSS_SCORE = 1000;
     static const int32_t BOSS_RADIUS      = 270;
     static const int32_t BOSS_KILL_RADIUS = 400;
@@ -353,6 +357,7 @@ private:
     bool  _bossPending = false;   // trigger fired but perimeter spawn hasn't found a spot yet
     unsigned long _bossAlertUntil = 0;   // updateEnemies() won't call trySpawnBoss() before this
     int   _nextBossAt  = BOSS_EVERY_KILLS;
+    int   _bossesDefeated = 0;   // drives the next boss's HP — see BOSS_HP_STEP
 
     // Arena-shift transition cue (regenerateArena()) — deferred the same way
     // _bossAlertUntil is, so the new-arena chime doesn't cut off the boss's
@@ -1595,6 +1600,7 @@ private:
             // BOSS_EVERY_KILLS and re-triggering itself immediately.
             _bossActive = false;
             _score += BOSS_SCORE;
+            _bossesDefeated++;   // next boss spawns with BOSS_HP_STEP more HP
             audio.playTone(1900, 300);   // bigger fanfare than the regular level-up cue
             regenerateArena();
             return;
@@ -1646,7 +1652,7 @@ private:
             _boss.z = ez;
             _boss.headingDeg = bearingTo(ex, ez, _x, _z);
             _boss.alive = true;
-            _boss.hp = _boss.maxHp = BOSS_HP;
+            _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
             _boss.hull->enabled   = true;
             _boss.turret->enabled = true;
             _boss.barrel->enabled = true;
@@ -1911,6 +1917,7 @@ private:
         _bossActive  = false;
         _bossPending = false;
         _nextBossAt  = BOSS_EVERY_KILLS;
+        _bossesDefeated = 0;
         _arenaShiftCuePending = false;
         _arenaShiftFlashUntil = 0;
         for (auto &p : _particles.pool) p.active = false;
@@ -2064,6 +2071,14 @@ private:
         for (const auto &e : _enemies) {
             if (e.alive) plot(e.x, e.z, ArcadeConfig::COLOR_RED, true);
         }
+        if (_bossActive) {
+            // Distinct from the regular red dots and blinking, so the boss
+            // reads as a different kind of threat on the dial, not just
+            // another enemy — same 300ms on/off cadence as drawBossAlert().
+            uint16_t bossColour = (millis() % 300 < 150) ? ArcadeConfig::COLOR_MAGENTA
+                                                          : ArcadeConfig::COLOR_RED;
+            plot(_boss.x, _boss.z, bossColour, true);
+        }
 
         canvas.drawPixel(cx, cy, ArcadeConfig::COLOR_WHITE);
     }
@@ -2093,16 +2108,19 @@ private:
     // BOSS_ALERT_MS warning shown between the boss trigger and trySpawnBoss()
     // actually being allowed to run (see updateEnemies()) — a fast blink so
     // it reads as urgent rather than a static banner, drawn over a black bar
-    // so it stays legible against the 3D scene behind it.
+    // so it stays legible against the 3D scene behind it. Sits directly
+    // under the HUD strip rather than screen-centre: regular enemies can
+    // still be alive and on-screen during the alert window, and a centred
+    // banner was covering the gunsight and whatever you were aiming at.
     void drawBossAlert(GFXcanvas16 &canvas) {
         if (!_bossPending || millis() >= _bossAlertUntil) return;
         const char* msg = "BOSS ALERT";
         canvas.setFont();
-        canvas.setTextSize(2);
+        canvas.setTextSize(1);
         int16_t tbx, tby; uint16_t tbw, tbh;
         canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
-        int y = ArcadeConfig::LANDSCAPE_HEIGHT / 2 - (int)tbh / 2;
-        canvas.fillRect(0, y - 4, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 8, ArcadeConfig::COLOR_BLACK);
+        const int y = 13;   // just below the HUD strip's divider line at y=10
+        canvas.fillRect(0, y - 2, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5, ArcadeConfig::COLOR_BLACK);
         if (millis() % 400 < 250) {
             canvas.setTextColor(ArcadeConfig::COLOR_RED);
             canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
