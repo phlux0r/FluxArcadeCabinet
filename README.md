@@ -107,7 +107,17 @@ FluxArcadeCabinet/
     │   │   └── assets/
     │   │       └── TitleScreen.h
     │   └── TankFlux/
-    │       ├── TankFluxGame.h       # First-person tank battle, rendered via Jet
+    │       ├── TankFluxGame.h       # First-person tank battle, rendered via Jet (class declaration)
+    │       ├── TankFluxConfig.h     # All tuning constants + per-tank-type TankSpec
+    │       ├── TankFluxGame.cpp     # Lifecycle and per-phase update loop
+    │       ├── TankFluxScene.cpp    # Jet scene, materials, tank models
+    │       ├── TankFluxArena.cpp    # Arena layout -> 3D objects, boss-kill reset
+    │       ├── TankFluxPlayer.cpp   # Driving, collisions, shells, repair kits
+    │       ├── TankFluxEnemies.cpp  # Enemy/boss spawning, AI, firing
+    │       ├── TankFluxHud.cpp      # HUD, radar, overlays, menu screens
+    │       ├── ArenaLayout.h/.cpp   # Obstacle/tree/kit placement + obstacle collision
+    │       ├── TankGeometry.h/.cpp  # Mesh builders and terrain height
+    │       ├── TankMath.h           # Small inline angle/distance/timing helpers
     │       └── assets/
     │           └── TitleScreen.h    # Attract-screen art, 160x128 landscape
     │
@@ -149,7 +159,7 @@ PlatformIO registry). Jet expects each frontend to supply its own
 `JetConfig.hpp` on the include path; this project's copy lives at
 `include/JetConfig.hpp`, tuned for the cabinet's 160×128 canvas (no Z-buffer,
 no buffered post-FX). See the comments in that file, and in
-`src/games/TankFlux/TankFluxGame.h`, before changing either — in particular
+`src/games/TankFlux/TankFluxConfig.h`, before changing either — in particular
 the ground-mesh/fog sizing notes, which exist because getting them wrong
 starved the render queue's heap on real hardware.
 

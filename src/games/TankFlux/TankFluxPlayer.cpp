@@ -1,5 +1,4 @@
 #include "TankFluxGame.h"
-#include "../../assets/shared/SharedAssets.h"
 
 namespace tankflux {
 
@@ -14,13 +13,10 @@ void TankFluxGame::updateDriving(const InputState &input, AudioEngine &audio) {
     const float terrainMult = inRiver(_x, _z) ? RIVER_SPEED_MULT : 1.0f;
     const float prevX = _x, prevZ = _z;
 
+    // Strafe (hold B) and drive share _speed/SPEED_SMOOTH, so both ease in
+    // and out the same way; strafe moves along the right vector (cos h, -sin h).
     float nx, nz;
     if (input.btnB) {
-        // Strafe mode: joyX moves along the tank's right vector
-        // (perpendicular to heading, same (cos h, -sin h) used for the
-        // enemy track strips) instead of driving forward/back. Reuses
-        // _speed/SPEED_SMOOTH so strafing eases in/out exactly like
-        // normal driving does, just along a different axis.
         float strafeDrive = STRAFE_SIGN * input.joyX;
         float target = strafeDrive * STRAFE_SPEED * terrainMult;
         _speed += (target - _speed) * SPEED_SMOOTH;
@@ -34,7 +30,7 @@ void TankFluxGame::updateDriving(const InputState &input, AudioEngine &audio) {
         nx = _x + fx * _speed;
         nz = _z + fz * _speed;
     }
-    resolveObstacleCollision(nx, nz);
+    _arena.pushOut(nx, nz, TANK_RADIUS);
     resolveEnemyCollision(nx, nz, audio);
     _x = nx;
     _z = nz;
@@ -49,37 +45,40 @@ void TankFluxGame::updateDriving(const InputState &input, AudioEngine &audio) {
     _camera.setRotation(0, (int32_t)_headingDeg, 0);
 }
 
-// Same push-out as resolveObstacleCollision(), against enemy tanks and
-// the boss — driving straight through them read as a free pass before
-// this existed. Also charges BUMP_DAMAGE the first frame contact
-// starts (e.playerBumping is the rising-edge guard, so leaning on a
-// tank continuously doesn't drain health every single frame).
 void TankFluxGame::resolveEnemyCollision(float &x, float &z, AudioEngine &audio) {
     for (auto &e : _enemies) {
-        if (e.alive) bumpTank(e, ENEMY_RADIUS, x, z, audio);
+        if (e.alive) bumpTank(e, x, z, audio);
     }
-    if (_bossActive) bumpTank(_boss, BOSS_RADIUS, x, z, audio);
+    if (_bossActive) bumpTank(_boss, x, z, audio);
 }
 
-void TankFluxGame::bumpTank(Enemy &e, int32_t enemyRadius, float &x, float &z, AudioEngine &audio) {
-    float dx = x - e.x, dz = z - e.z;
-    float r  = (float)(TANK_RADIUS + enemyRadius);
-    float d2 = dx * dx + dz * dz;
-    if (d2 < r * r) {
-        float d = sqrtf(d2);
-        if (d < 0.0001f) { dx = r; dz = 0.0f; d = r; }
-        float push = (r - d) / d;
-        x += dx * push;
-        z += dz * push;
+// Tanks are solid: push the player out, and charge BUMP_DAMAGE once per
+// contact rather than every frame spent leaning on the tank.
+void TankFluxGame::bumpTank(Enemy &e, float &x, float &z, AudioEngine &audio) {
+    if (pushOutOfCircle(x, z, e.x, e.z, (float)(TANK_RADIUS + e.spec->radius))) {
         if (!e.playerBumping) {
             e.playerBumping = true;
             _health -= BUMP_DAMAGE;
-            _damageFlashUntil = millis() + 120;
-            audio.playTone(180, 70);   // dull collision thud, distinct from a shell hit
+            _damageFlashUntil = millis() + BUMP_FLASH_MS;
+            audio.playTone(180, 70);   // dull thud, distinct from a shell hit
         }
     } else {
         e.playerBumping = false;
     }
+}
+
+void TankFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
+    if (!input.btnAPressed) return;
+    if (_playerShell.active) return;              // one shell in flight
+    if (!reached(_reloadAt)) return;
+
+    float hr = radians(_headingDeg);
+    fireShell(_playerShell,
+              _x + sinf(hr) * PLAYER_MUZZLE, _z + cosf(hr) * PLAYER_MUZZLE,
+              _headingDeg, PLAYER_SHELL_SPEED);
+    _reloadAt = millis() + PLAYER_RELOAD_MS;
+    _muzzleFlashUntil = millis() + MUZZLE_FLASH_MS;
+    audio.playWAV("/audio/shot.wav");
 }
 
 void TankFluxGame::fireShell(Shell &s, float x, float z, float headingDeg, float speed) {
@@ -99,9 +98,8 @@ void TankFluxGame::killShell(Shell &s) {
     s.obj->enabled = false;
 }
 
-// Advances a shell and returns true while it's still in flight. Shells
-// die on obstacles, which is what turns cover into actual cover — no
-// separate line-of-sight test is needed anywhere else.
+// Moves a shell one frame; returns false once it's gone (out of range, out
+// of the arena, or into an obstacle, which is what makes obstacles cover).
 bool TankFluxGame::advanceShell(Shell &s, int32_t range) {
     s.x += s.vx;
     s.z += s.vz;
@@ -113,7 +111,7 @@ bool TankFluxGame::advanceShell(Shell &s, int32_t range) {
         killShell(s);
         return false;
     }
-    if (blockedFor(s.x, s.z, 20)) {
+    if (_arena.blocked(s.x, s.z, SHELL_OBSTACLE_RADIUS)) {
         _particles.emitSparks(Renderer::Vec3f{ s.x, (float)SHELL_Y, s.z },
                               Renderer::Vec3f{ 0, 1, 0 }, 260.0f, 8);
         killShell(s);
@@ -127,7 +125,7 @@ void TankFluxGame::updateShells(AudioEngine &audio) {
         bool hit = false;
         for (auto &e : _enemies) {
             if (!e.alive) continue;
-            if (within(_playerShell.x, _playerShell.z, e.x, e.z, KILL_RADIUS)) {
+            if (within(_playerShell.x, _playerShell.z, e.x, e.z, e.spec->killRadius)) {
                 hitEnemy(e, audio);
                 killShell(_playerShell);
                 hit = true;
@@ -135,9 +133,9 @@ void TankFluxGame::updateShells(AudioEngine &audio) {
             }
         }
         if (!hit && _bossActive &&
-            within(_playerShell.x, _playerShell.z, _boss.x, _boss.z, BOSS_KILL_RADIUS)) {
-            // Rear hit: the shell is travelling roughly the same way
-            // the boss faces, i.e. it came from behind.
+            within(_playerShell.x, _playerShell.z, _boss.x, _boss.z, _boss.spec->killRadius)) {
+            // A shell travelling roughly the way the boss faces came from
+            // behind: rear armour takes extra damage.
             float hr = radians(_boss.headingDeg);
             float sv = sqrtf(_playerShell.vx * _playerShell.vx + _playerShell.vz * _playerShell.vz);
             float along = (_playerShell.vx * sinf(hr) + _playerShell.vz * cosf(hr)) / sv;
@@ -150,40 +148,21 @@ void TankFluxGame::updateShells(AudioEngine &audio) {
         if (!s.active) continue;
         if (!advanceShell(s, ENEMY_SHELL_RANGE)) continue;
         if (within(s.x, s.z, _x, _z, HIT_RADIUS)) {
-            // Player-hit feedback: sparks and the same shared explosion
-            // sound as destroyEnemy() right at the impact point,
-            // complementing the existing screen flash. advanceShell()
-            // already covers shell-vs-obstacle; this was the one impact
-            // case with no particles or explosion audio at all.
             _particles.emitSparks(Renderer::Vec3f{ s.x, (float)SHELL_Y, s.z },
                                   Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 16);
             _health -= HIT_DAMAGE;
-            _damageFlashUntil = millis() + 160;
+            _damageFlashUntil = millis() + HIT_FLASH_MS;
             killShell(s);
-            audio.playExplosionSound(explosion_data, sizeof(explosion_data));
+            playExplosion(audio);
         }
     }
-}
-
-void TankFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
-    if (!input.btnAPressed) return;
-    if (_playerShell.active) return;              // one shell in flight
-    if ((long)(millis() - _reloadAt) < 0) return;
-
-    float hr = radians(_headingDeg);
-    fireShell(_playerShell,
-              _x + sinf(hr) * 200.0f, _z + cosf(hr) * 200.0f,
-              _headingDeg, PLAYER_SHELL_SPEED);
-    _reloadAt = millis() + PLAYER_RELOAD_MS;
-    _muzzleFlashUntil = millis() + 70;
-    audio.playWAV("/audio/shot.wav");
 }
 
 void TankFluxGame::updateKits(AudioEngine &audio) {
     for (int i = 0; i < REPAIR_COUNT; ++i) {
         RepairKit &k = _kits[i];
         if (!k.active) {
-            if ((long)(millis() - k.respawnAt) >= 0) {
+            if (reached(k.respawnAt)) {
                 k.active = true;
                 k.obj->enabled = true;
             }
@@ -191,10 +170,10 @@ void TankFluxGame::updateKits(AudioEngine &audio) {
         }
         k.obj->rotate(0, 3, 0);   // slow spin, so pickups read as pickups
 
-        // Picked up whenever you drive through, even at full health —
-        // a kit that silently refuses to collect reads as a bug.
-        float dx = _x - (float)REPAIRS[i].x;
-        float dz = _z - (float)REPAIRS[i].z;
+        // Collected on contact even at full health: a kit that silently
+        // refuses to be picked up reads as a bug.
+        float dx = _x - (float)_arena.kits[i].x;
+        float dz = _z - (float)_arena.kits[i].z;
         if (dx * dx + dz * dz < (float)REPAIR_PICKUP_RADIUS * REPAIR_PICKUP_RADIUS) {
             _health = min(HEALTH_MAX, _health + REPAIR_AMOUNT);
             k.active = false;

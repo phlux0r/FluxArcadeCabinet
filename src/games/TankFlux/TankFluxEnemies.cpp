@@ -1,17 +1,17 @@
 #include "TankFluxGame.h"
+// The only Tank Flux file that includes the shared samples, so the PROGMEM
+// explosion fallback isn't duplicated across translation units.
 #include "../../assets/shared/SharedAssets.h"
 
 namespace tankflux {
 
-int32_t TankFluxGame::tankRadius(const Enemy &e) const {
-    return (&e == &_boss) ? BOSS_RADIUS : ENEMY_RADIUS;
-}
+// --- Queries -------------------------------------------------------------------
 
-// Would putting `self` at (x,z) overlap tank `o`? For a move (not a
-// spawn) it only counts if the move also brings them closer, so two
-// tanks that already overlap can still drive apart instead of locking.
+// Would putting `self` at (x,z) overlap tank `o`? For a move (not a spawn)
+// it only counts if the move also brings them closer, so two tanks that
+// already overlap can still drive apart instead of locking up.
 bool TankFluxGame::crowdsTank(const Enemy &self, const Enemy &o, float x, float z, bool spawning) const {
-    if (!within(x, z, o.x, o.z, tankRadius(self) + tankRadius(o))) return false;
+    if (!within(x, z, o.x, o.z, self.spec->radius + o.spec->radius)) return false;
     if (spawning) return true;
     float nx = x - o.x, nz = z - o.z;
     float cx = self.x - o.x, cz = self.z - o.z;
@@ -22,11 +22,11 @@ bool TankFluxGame::blockedByTank(const Enemy &self, float x, float z, bool spawn
     for (const auto &o : _enemies) {
         if (&o != &self && o.alive && crowdsTank(self, o, x, z, spawning)) return true;
     }
-    return _bossActive && &self != &_boss && crowdsTank(self, _boss, x, z, spawning);
+    return _bossActive && !isBoss(self) && crowdsTank(self, _boss, x, z, spawning);
 }
 
-// How many tanks may be on the field at once. Ramps 1 -> 2 -> 3 so the
-// opening is survivable while you learn where cover is.
+// Tanks allowed on the field at once: 1 -> 2 -> 3, so the opening is
+// survivable while you learn where cover is.
 int TankFluxGame::enemyCap() const {
     if (_level <= 2) return 1;
     if (_level <= 4) return 2;
@@ -40,21 +40,20 @@ int TankFluxGame::aliveEnemies() const {
 }
 
 float TankFluxGame::enemySpeed() const {
-    return ENEMY_SPEED + (float)(_level - 1) * 0.9f;
+    return ENEMY_SPEED + (float)(_level - 1) * ENEMY_SPEED_PER_LEVEL;
 }
 
+// Absolute millis() time of the next allowed shot.
 unsigned long TankFluxGame::fireDelay() const {
-    unsigned long cut = (unsigned long)(_level - 1) * 320;
+    unsigned long cut = (unsigned long)(_level - 1) * FIRE_CUT_PER_LEVEL_MS;
     unsigned long lo = (ENEMY_FIRE_MIN_MS > cut + ENEMY_FIRE_FLOOR_MS)
                      ? ENEMY_FIRE_MIN_MS - cut : ENEMY_FIRE_FLOOR_MS;
     unsigned long hi = (ENEMY_FIRE_MAX_MS > cut + ENEMY_FIRE_FLOOR_MS)
-                     ? ENEMY_FIRE_MAX_MS - cut : ENEMY_FIRE_FLOOR_MS + 800;
+                     ? ENEMY_FIRE_MAX_MS - cut : ENEMY_FIRE_FLOOR_MS + ENEMY_FIRE_FLOOR_SPREAD_MS;
     return millis() + (unsigned long)random((long)lo, (long)hi);
 }
 
-// Class only enters the mix once _level already puts more than one
-// tank on the field (see enemyCap()) — the opening stays exactly the
-// single-class fight it always was.
+// Tougher classes only once more than one tank is on the field (enemyCap()).
 TankFluxGame::EnemyClass TankFluxGame::pickEnemyClass() const {
     if (_level <= 2) return CLASS_1;
     if (_level <= 4) return (random(0, 2) == 0) ? CLASS_1 : CLASS_2;
@@ -62,13 +61,22 @@ TankFluxGame::EnemyClass TankFluxGame::pickEnemyClass() const {
     return r == 0 ? CLASS_1 : (r == 1 ? CLASS_2 : CLASS_3);
 }
 
-void TankFluxGame::setBarrelHot(Enemy &e, bool hot) {
-    Renderer::Material* normal = (&e == &_boss) ? &_bossTurretMat : &_enemyBarrelMat;
-    setObjectMaterial(e.barrel, hot ? &_barrelHotMat : normal);
+// --- State changes -----------------------------------------------------------
+
+void TankFluxGame::setTankVisible(Enemy &e, bool visible) {
+    e.hull->enabled   = visible;
+    e.turret->enabled = visible;
+    e.barrel->enabled = visible;
+    e.trackL->enabled = visible;
+    e.trackR->enabled = visible;
 }
 
-// Cancels a telegraphed shot or unfinished burst — on death/spawn, so
-// a tank never comes back with a glowing barrel or a queued shot.
+void TankFluxGame::setBarrelHot(Enemy &e, bool hot) {
+    setObjectMaterial(e.barrel, hot ? &_barrelHotMat : e.barrelMat);
+}
+
+// Cancels a telegraphed shot or unfinished burst, so a tank never comes back
+// with a glowing barrel or a queued shot.
 void TankFluxGame::resetFireState(Enemy &e) {
     e.fireAt = 0;
     e.volley = 0;
@@ -77,16 +85,17 @@ void TankFluxGame::resetFireState(Enemy &e) {
     setBarrelHot(e, false);
 }
 
+// Spawns on the arena perimeter, clear of obstacles, other tanks and the
+// player. If every attempt is blocked, retries SPAWN_RETRY_MS later.
 void TankFluxGame::spawnEnemy(Enemy &e) {
-    // Spawn out on the perimeter, and not right on top of the player.
-    for (int attempt = 0; attempt < 12; ++attempt) {
+    for (int attempt = 0; attempt < SPAWN_ATTEMPTS; ++attempt) {
         float ang = radians((float)random(0, 360));
-        float r   = (float)(ARENA_HALF - 400);
+        float r   = (float)(ARENA_HALF - ENEMY_SPAWN_INSET);
         float ex  = sinf(ang) * r;
         float ez  = cosf(ang) * r;
-        if (blockedFor(ex, ez, ENEMY_RADIUS)) continue;
+        if (_arena.blocked(ex, ez, e.spec->radius)) continue;
         if (blockedByTank(e, ex, ez, true)) continue;
-        if (within(ex, ez, _x, _z, 1600)) continue;
+        if (within(ex, ez, _x, _z, ENEMY_SPAWN_MIN_DIST)) continue;
         e.x = ex;
         e.z = ez;
         e.headingDeg = bearingTo(ex, ez, _x, _z);
@@ -94,25 +103,51 @@ void TankFluxGame::spawnEnemy(Enemy &e) {
         resetFireState(e);
         e.tankClass = pickEnemyClass();
         e.hp = e.maxHp = CLASS_HP[e.tankClass];
+        // Class shows as turret colour (Jet has no per-object scale).
         setObjectMaterial(e.turret, e.tankClass == CLASS_1 ? &_enemyTurretMat
                                    : e.tankClass == CLASS_2 ? &_enemyTurretMatClass2
                                                              : &_enemyTurretMatClass3);
-        e.hull->enabled = true;
-        e.turret->enabled = true;
-        e.barrel->enabled = true;
-        e.trackL->enabled = true;
-        e.trackR->enabled = true;
+        setTankVisible(e, true);
         e.nextFireAt = fireDelay();
         return;
     }
-    // Every candidate was blocked or too close; try again next frame.
-    e.respawnAt = millis() + 400;
+    e.respawnAt = millis() + SPAWN_RETRY_MS;
 }
 
-// A hit that doesn't kill gets a small spark burst and a clang tone,
-// distinct from the shot sound and the explosion a kill gets. A
-// damage > 1 hit (boss rear armour) gets a higher clang and more
-// sparks so the player learns that flanking paid off.
+// Spawns on the far side of the arena from the player (their angle from the
+// centre plus 180 degrees, with jitter), so the boss is always seen coming.
+// A plain minimum-distance check can't guarantee that: with the player near
+// the centre, every perimeter point is about the same distance away.
+// Returns false (leaving _bossPending set) if every attempt was blocked.
+bool TankFluxGame::trySpawnBoss(AudioEngine &audio) {
+    float playerAngle = atan2f(_x, _z);   // same atan2(dx,dz) convention as bearingTo()
+    for (int attempt = 0; attempt < SPAWN_ATTEMPTS; ++attempt) {
+        float jitter = radians((float)random(-BOSS_SPAWN_JITTER_DEG, BOSS_SPAWN_JITTER_DEG + 1));
+        float ang = playerAngle + PI + jitter;
+        float r   = (float)(ARENA_HALF - BOSS_SPAWN_INSET);
+        float ex  = sinf(ang) * r;
+        float ez  = cosf(ang) * r;
+        if (_arena.blocked(ex, ez, _boss.spec->radius)) continue;
+        if (blockedByTank(_boss, ex, ez, true)) continue;
+        if (within(ex, ez, _x, _z, BOSS_MIN_SPAWN_DIST)) continue;
+        _boss.x = ex;
+        _boss.z = ez;
+        _boss.headingDeg = bearingTo(ex, ez, _x, _z);
+        _boss.alive = true;
+        resetFireState(_boss);
+        _bossSpawnedAt = millis();
+        _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
+        setTankVisible(_boss, true);
+        _boss.nextFireAt = fireDelay();
+        _bossActive = true;
+        audio.playTone(300, 400);   // low arrival cue
+        return true;
+    }
+    return false;
+}
+
+// A hit that doesn't kill gets small sparks and a clang. A heavy hit (boss
+// rear armour) gets more sparks and a higher clang, so flanking visibly pays.
 void TankFluxGame::hitEnemy(Enemy &e, AudioEngine &audio, int damage) {
     e.hp -= damage;
     if (e.hp <= 0) {
@@ -126,36 +161,25 @@ void TankFluxGame::hitEnemy(Enemy &e, AudioEngine &audio, int damage) {
 }
 
 void TankFluxGame::destroyEnemy(Enemy &e, AudioEngine &audio) {
-    bool isBoss = (&e == &_boss);
+    const bool boss = isBoss(e);
     _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
-                          Renderer::Vec3f{ 0, 1, 0 }, 520.0f, isBoss ? 46 : 26);
+                          Renderer::Vec3f{ 0, 1, 0 }, 520.0f, boss ? 46 : 26);
     e.alive = false;
     resetFireState(e);
-    e.hull->enabled = false;
-    e.turret->enabled = false;
-    e.barrel->enabled = false;
-    e.trackL->enabled = false;
-    e.trackR->enabled = false;
-    // Shared explosion asset (SharedAssets.h) — same /audio/explosion.wav
-    // AsteroidFlux and LanderFlux already use, with the same PROGMEM
-    // fallback. Firing keeps its own short tone (tryFire()'s 950Hz
-    // blip, enemy fire's 420Hz one): a shot igniting and a shell
-    // detonating are different events and shouldn't sound the same.
-    audio.playExplosionSound(explosion_data, sizeof(explosion_data));
+    setTankVisible(e, false);
+    playExplosion(audio);
 
-    if (isBoss) {
-        // Doesn't touch _kills/_level: the boss is a detour from the
-        // regular escalation, not a step in it, and counting its own
-        // death toward _kills risks it landing on another multiple of
-        // BOSS_EVERY_KILLS and re-triggering itself immediately.
+    if (boss) {
+        // Not counted in _kills/_level: the boss is a detour from regular
+        // escalation, and counting it could land on the next trigger.
         _bossActive = false;
         long fightSecs = (long)((millis() - _bossSpawnedAt) / 1000UL);
         _bossBonus = BOSS_TIME_BONUS_MAX - fightSecs * BOSS_TIME_BONUS_PER_SEC;
         if (_bossBonus < 0) _bossBonus = 0;
         _bossBonusUntil = millis() + BOSS_BONUS_SHOW_MS;
         _score += BOSS_SCORE + _bossBonus;
-        _bossesDefeated++;   // next boss spawns with BOSS_HP_STEP more HP
-        audio.playTone(1900, 300);   // bigger fanfare than the regular level-up cue
+        _bossesDefeated++;
+        audio.playTone(1900, 300);   // kill fanfare
         regenerateArena();
         return;
     }
@@ -172,78 +196,65 @@ void TankFluxGame::destroyEnemy(Enemy &e, AudioEngine &audio) {
         _nextBossAt += BOSS_EVERY_KILLS;
         _bossPending = true;
         _bossAlertUntil = millis() + BOSS_ALERT_MS;
-        _bossKlaxonAt = millis();   // see updateEnemies()
+        _bossKlaxonAt = millis();
     }
 }
 
-// Returns false (and leaves _bossPending set) if every perimeter
-// candidate was blocked — updateEnemies() retries next frame, the
-// same pattern spawnEnemy() uses for the regular pool.
-bool TankFluxGame::trySpawnBoss(AudioEngine &audio) {
-    // Always on the far side of the arena from the player, not just
-    // "reject if too close": a pure random-angle-plus-reject approach
-    // (what the regular spawnEnemy() perimeter search does) can still
-    // land within a couple hundred units of the player by chance —
-    // "scary when he's right behind you" from playtest, a boss should
-    // be seen coming. Base angle is the player's own angle from the
-    // arena centre plus 180°, with modest jitter so it isn't perfectly
-    // predictable every time. This is also the only way to GUARANTEE
-    // separation regardless of where the player is standing: a fixed
-    // minimum-distance floor would be impossible to satisfy (and loop
-    // forever) whenever the player is near the arena centre, since
-    // every point on the spawn circle is then roughly the same
-    // distance away.
-    float playerAngle = atan2f(_x, _z);   // matches bearingTo()'s atan2(dx,dz) convention
-    for (int attempt = 0; attempt < 12; ++attempt) {
-        float jitter = radians((float)random(-BOSS_SPAWN_JITTER_DEG, BOSS_SPAWN_JITTER_DEG + 1));
-        float ang = playerAngle + PI + jitter;
-        float r   = (float)(ARENA_HALF - 500);
-        float ex  = sinf(ang) * r;
-        float ez  = cosf(ang) * r;
-        if (blockedFor(ex, ez, BOSS_RADIUS)) continue;
-        if (blockedByTank(_boss, ex, ez, true)) continue;
-        if (within(ex, ez, _x, _z, BOSS_MIN_SPAWN_DIST)) continue;
-        _boss.x = ex;
-        _boss.z = ez;
-        _boss.headingDeg = bearingTo(ex, ez, _x, _z);
-        _boss.alive = true;
-        resetFireState(_boss);
-        _bossSpawnedAt = millis();
-        _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
-        _boss.hull->enabled   = true;
-        _boss.turret->enabled = true;
-        _boss.barrel->enabled = true;
-        _boss.trackL->enabled = true;
-        _boss.trackR->enabled = true;
-        _boss.nextFireAt = fireDelay();
-        _bossActive = true;
-        audio.playTone(300, 400);   // low arrival cue, distinct from the kill fanfare
-        return true;
-    }
-    return false;
+// Shared /audio/explosion.wav, with the PROGMEM sample as fallback.
+void TankFluxGame::playExplosion(AudioEngine &audio) {
+    audio.playExplosionSound(explosion_data, sizeof(explosion_data));
 }
 
-// Chase/aim/fire — identical for the regular pool and the boss, so
-// both call this rather than duplicating it. Mesh placement is NOT
-// handled here since the boss uses different offsets for its larger
-// geometry; see updateEnemyTransform()/updateBossTransform().
-void TankFluxGame::updateEnemyAI(Enemy &e, float speed, AudioEngine &audio) {
-    // Boss gets its own (slower/further-back) tuning instead of the
-    // regular pool's — see BOSS_TURN_RATE's own comment for why.
-    bool isBoss = (&e == &_boss);
-    float turnRate     = isBoss ? BOSS_TURN_RATE     : ENEMY_TURN_RATE;
-    float standoff     = isBoss ? (float)BOSS_STANDOFF : (float)ENEMY_STANDOFF;
-    float aimTolerance = isBoss ? BOSS_AIM_TOLERANCE : ENEMY_AIM_TOLERANCE;
-    const int32_t radius = tankRadius(e);
+// --- Per-frame -----------------------------------------------------------------
+
+void TankFluxGame::updateEnemies(AudioEngine &audio) {
+    for (auto &e : _enemies) {
+        if (!e.alive) {
+            // No backfill during a boss fight.
+            if (_bossActive) continue;
+            // At the cap, keep pushing the timer back so a kill always buys
+            // a breather instead of being replaced the same instant.
+            if (aliveEnemies() >= enemyCap()) {
+                e.respawnAt = millis() + ENEMY_RESPAWN_MS;
+            } else if (reached(e.respawnAt)) {
+                spawnEnemy(e);
+            }
+            continue;
+        }
+        updateEnemyAI(e, audio);
+        updateTankTransform(e);
+    }
+
+    if (_bossActive) {
+        updateEnemyAI(_boss, audio);
+        updateTankTransform(_boss);
+    } else if (_bossPending) {
+        if (reached(_bossAlertUntil)) {
+            if (trySpawnBoss(audio)) _bossPending = false;
+        } else if (reached(_bossKlaxonAt)) {
+            // Two-tone klaxon during the alert. playTone() is skipped while a
+            // WAV plays, so beeps under the kill's explosion are lost but the
+            // later ones get through.
+            audio.playTone((_bossKlaxonBeat++ % 2) ? 660 : 880, 180);
+            _bossKlaxonAt = millis() + BOSS_KLAXON_MS;
+        }
+    }
+}
+
+// Turn towards the player at the spec's capped rate, close in to the
+// standoff distance, then telegraph and fire once lined up.
+void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
+    const TankSpec &spec = *e.spec;
+    const bool boss = isBoss(e);
 
     float dx = _x - e.x, dz = _z - e.z;
     float dist = sqrtf(dx * dx + dz * dz);
 
-    // Class 3 leads its target: aims where the player will be when a
-    // shell covering `dist` arrives. Everything else aims straight at
-    // the player, so steady strafing still beats the easier tanks.
+    // Class 3 leads its target: aims where the player will be when a shell
+    // covering `dist` arrives. The others aim straight at the player, so
+    // steady strafing still beats them.
     float aimX = _x, aimZ = _z;
-    if (!isBoss && e.tankClass == CLASS_3) {
+    if (!boss && e.tankClass == CLASS_3) {
         float framesToImpact = dist / ENEMY_SHELL_SPEED;
         aimX += _vx * framesToImpact;
         aimZ += _vz * framesToImpact;
@@ -251,56 +262,55 @@ void TankFluxGame::updateEnemyAI(Enemy &e, float speed, AudioEngine &audio) {
 
     float want = bearingTo(e.x, e.z, aimX, aimZ);
     float err  = angleDiff(want, e.headingDeg);
-    e.headingDeg = wrapAngle(e.headingDeg +
-                             constrain(err, -turnRate, turnRate));
+    e.headingDeg = wrapAngle(e.headingDeg + constrain(err, -spec.turnRate, spec.turnRate));
 
-    if (dist > standoff) {
+    if (dist > (float)spec.standoff) {
+        float speed = enemySpeed() * spec.speedMult;
         float step = inRiver(e.x, e.z) ? speed * RIVER_SPEED_MULT : speed;
         float hr = radians(e.headingDeg);
         float nx = e.x + sinf(hr) * step;
         float nz = e.z + cosf(hr) * step;
-        if (!blockedFor(nx, nz, radius) && !blockedByTank(e, nx, nz, false)) {
+        if (!_arena.blocked(nx, nz, spec.radius) && !blockedByTank(e, nx, nz, false)) {
             e.x = nx;
             e.z = nz;
         } else {
-            // Scrape around whatever it walked into rather than
-            // grinding against it forever.
-            e.headingDeg = wrapAngle(e.headingDeg + 9.0f);
+            // Scrape round whatever it hit instead of grinding against it.
+            e.headingDeg = wrapAngle(e.headingDeg + ENEMY_SCRAPE_TURN_DEG);
         }
-        const float limit = (float)(ARENA_HALF - radius);
+        const float limit = (float)(ARENA_HALF - spec.radius);
         e.x = constrain(e.x, -limit, limit);
         e.z = constrain(e.z, -limit, limit);
     }
 
     // Follow-up shots of a boss burst, along its current heading.
-    if (e.burstShotsLeft > 0 && (long)(millis() - e.nextBurstAt) >= 0) {
+    if (e.burstShotsLeft > 0 && reached(e.nextBurstAt)) {
         fireEnemyShell(e, e.headingDeg);
         e.burstShotsLeft--;
         e.nextBurstAt = millis() + BOSS_BURST_GAP_MS;
     }
 
     if (e.fireAt != 0) {
-        // Telegraph running: fire when it ends, wherever it's now aimed.
-        if ((long)(millis() - e.fireAt) >= 0) {
+        // Telegraph running: fire when it ends, wherever it's aimed by then.
+        if (reached(e.fireAt)) {
             e.fireAt = 0;
             setBarrelHot(e, false);
             fireVolley(e, audio);
             e.nextFireAt = fireDelay();
         }
-    } else if (e.burstShotsLeft == 0 && fabsf(err) < aimTolerance &&
-               dist < (float)ENEMY_FIRE_RANGE && (long)(millis() - e.nextFireAt) >= 0) {
-        // Commit to a shot: barrel glows and a warning tone plays, so
-        // the player gets FIRE_TELEGRAPH_MS to get out of the way.
+    } else if (e.burstShotsLeft == 0 && fabsf(err) < spec.aimTolerance &&
+               dist < (float)ENEMY_FIRE_RANGE && reached(e.nextFireAt)) {
+        // Commit to a shot: barrel glows and a warning tone plays, giving
+        // the player FIRE_TELEGRAPH_MS to move.
         e.fireAt = millis() + FIRE_TELEGRAPH_MS;
         setBarrelHot(e, true);
-        audio.playTone(isBoss ? 330 : 520, 40);
+        audio.playTone(boss ? 330 : 520, 40);
     }
 }
 
-// One shell from `e`'s muzzle along headingDeg. Returns false if the
-// shared shell pool is full.
+// One shell from the muzzle along headingDeg. Returns false if the shared
+// shell pool is full.
 bool TankFluxGame::fireEnemyShell(Enemy &e, float headingDeg) {
-    const float muzzle = (&e == &_boss) ? 360.0f : 220.0f;
+    const float muzzle = e.spec->muzzle;
     for (auto &s : _enemyShells) {
         if (s.active) continue;
         float hr = radians(headingDeg);
@@ -311,12 +321,12 @@ bool TankFluxGame::fireEnemyShell(Enemy &e, float headingDeg) {
     return false;
 }
 
-// Regular tanks fire one shell. The boss alternates a 3-shell spread
-// (hard to dodge sideways, easy to back out of) with a 3-shot burst
-// down one line (easy to sidestep, punishing to sit still in).
+// Regular tanks fire one shell. The boss alternates a 3-shell spread (hard
+// to dodge sideways, easy to back out of) with a 3-shot burst down one line
+// (easy to sidestep, punishing to sit still in).
 void TankFluxGame::fireVolley(Enemy &e, AudioEngine &audio) {
     bool fired;
-    if (&e == &_boss) {
+    if (isBoss(e)) {
         if (e.volley++ % 2 == 0) {
             fired  = fireEnemyShell(e, e.headingDeg - BOSS_SPREAD_DEG);
             fired |= fireEnemyShell(e, e.headingDeg);
@@ -329,103 +339,36 @@ void TankFluxGame::fireVolley(Enemy &e, AudioEngine &audio) {
     } else {
         fired = fireEnemyShell(e, e.headingDeg);
     }
-    // playWAV() stops whatever's playing first, so this can cut a
-    // just-started explosion.wav short — accepted on this
-    // single-channel setup, same as the player's own shot.
+    // playWAV() stops whatever is playing, so this can cut a just-started
+    // explosion short. Accepted on this single-channel audio setup.
     if (fired) audio.playWAV("/audio/shot.wav");
 }
 
-// createCylinder's local axis is Y; rotX=90 tips it onto its side, and
-// Object's actual composition order (checked in Scene.cpp: M = Rz*Ry*Rx,
-// applied to local vertices — NOT the Y-then-X order
-// Camera::transformDirection uses for a different purpose, confirmed by
-// hand rather than assumed from that comment) then makes rotY=heading
-// aim the now-horizontal barrel down (sin(heading), 0, cos(heading)) —
-// this game's own forward convention everywhere else.
-void TankFluxGame::updateEnemyTransform(Enemy &e) {
-    e.hull->setPosition((int32_t)e.x, 55, (int32_t)e.z);
-    e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
-    e.turret->setPosition((int32_t)e.x, 155, (int32_t)e.z);
-    e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
+// Places the tank's five parts from its position and heading. The barrel is
+// a Y-axis cylinder tipped onto its side (rotX=90); with Jet's Rz*Ry*Rx
+// order, rotY=heading then points it along (sin h, 0, cos h). It's pushed
+// forward by half its length so it sticks out of the turret front. Tracks
+// sit either side along the right vector (cos h, -sin h).
+void TankFluxGame::updateTankTransform(Enemy &e) {
+    const TankSpec &spec = *e.spec;
+    const int32_t heading = (int32_t)e.headingDeg;
+    e.hull->setPosition((int32_t)e.x, spec.hullY, (int32_t)e.z);
+    e.hull->setRotation(0, heading, 0);
+    e.turret->setPosition((int32_t)e.x, spec.turretY, (int32_t)e.z);
+    e.turret->setRotation(0, heading, 0);
 
-    // Offset forward by half its length so it reads as bolted to the
-    // turret's front rather than centred through it.
-    float barrelHr = radians(e.headingDeg);
-    int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BARREL_LENGTH / 2));
-    int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BARREL_LENGTH / 2));
-    e.barrel->setPosition(bx, 155, bz);
-    e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
+    float hr = radians(e.headingDeg);
+    int32_t bx = (int32_t)(e.x + sinf(hr) * (float)(spec.barrelLen / 2));
+    int32_t bz = (int32_t)(e.z + cosf(hr) * (float)(spec.barrelLen / 2));
+    e.barrel->setPosition(bx, spec.turretY, bz);
+    e.barrel->setRotation(90, heading, 0);
 
-    // Track strips: offset sideways from the hull centre along the
-    // vector perpendicular to heading (sin h, cos h) — (cos h, -sin h)
-    // — at a lower Y so they read as a base the hull sits on.
-    int32_t rx = (int32_t)(cosf(barrelHr) * (float)TRACK_OFFSET);
-    int32_t rz = (int32_t)(-sinf(barrelHr) * (float)TRACK_OFFSET);
-    e.trackL->setPosition((int32_t)e.x - rx, 30, (int32_t)e.z - rz);
-    e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
-    e.trackR->setPosition((int32_t)e.x + rx, 30, (int32_t)e.z + rz);
-    e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
-}
-
-// Same placement logic as updateEnemyTransform(), at the boss's own
-// 1.6x dimensions/offsets/Y-heights instead of the regular tank's.
-void TankFluxGame::updateBossTransform() {
-    Enemy &e = _boss;
-    e.hull->setPosition((int32_t)e.x, BOSS_HULL_Y, (int32_t)e.z);
-    e.hull->setRotation(0, (int32_t)e.headingDeg, 0);
-    e.turret->setPosition((int32_t)e.x, BOSS_TURRET_Y, (int32_t)e.z);
-    e.turret->setRotation(0, (int32_t)e.headingDeg, 0);
-
-    float barrelHr = radians(e.headingDeg);
-    int32_t bx = (int32_t)(e.x + sinf(barrelHr) * (float)(BOSS_BARREL_LEN / 2));
-    int32_t bz = (int32_t)(e.z + cosf(barrelHr) * (float)(BOSS_BARREL_LEN / 2));
-    e.barrel->setPosition(bx, BOSS_TURRET_Y, bz);
-    e.barrel->setRotation(90, (int32_t)e.headingDeg, 0);
-
-    int32_t rx = (int32_t)(cosf(barrelHr) * (float)BOSS_TRACK_OFFSET);
-    int32_t rz = (int32_t)(-sinf(barrelHr) * (float)BOSS_TRACK_OFFSET);
-    e.trackL->setPosition((int32_t)e.x - rx, BOSS_TRACK_Y, (int32_t)e.z - rz);
-    e.trackL->setRotation(0, (int32_t)e.headingDeg, 0);
-    e.trackR->setPosition((int32_t)e.x + rx, BOSS_TRACK_Y, (int32_t)e.z + rz);
-    e.trackR->setRotation(0, (int32_t)e.headingDeg, 0);
-}
-
-void TankFluxGame::updateEnemies(AudioEngine &audio) {
-    for (auto &e : _enemies) {
-        if (!e.alive) {
-            // Boss fights don't backfill the regular pool — the field
-            // stays boss-only (plus any stragglers already alive when
-            // it triggered) until it's dead.
-            if (_bossActive) continue;
-            // Hold the slot shut while at cap, pushing the timer along so
-            // a kill always buys a breather rather than being replaced
-            // the same instant.
-            if (aliveEnemies() >= enemyCap()) {
-                e.respawnAt = millis() + ENEMY_RESPAWN_MS;
-            } else if ((long)(millis() - e.respawnAt) >= 0) {
-                spawnEnemy(e);
-            }
-            continue;
-        }
-        updateEnemyAI(e, enemySpeed(), audio);
-        updateEnemyTransform(e);
-    }
-
-    if (_bossActive) {
-        updateEnemyAI(_boss, enemySpeed() * BOSS_SPEED_MULT, audio);
-        updateBossTransform();
-    } else if (_bossPending) {
-        if ((long)(millis() - _bossAlertUntil) >= 0) {
-            if (trySpawnBoss(audio)) _bossPending = false;
-        } else if ((long)(millis() - _bossKlaxonAt) >= 0) {
-            // Two-tone klaxon through the alert window. playTone() is
-            // skipped while a WAV plays, so the beeps that land during
-            // the triggering kill's explosion are lost but later ones
-            // still get through.
-            audio.playTone((_bossKlaxonBeat++ % 2) ? 660 : 880, 180);
-            _bossKlaxonAt = millis() + 400;
-        }
-    }
+    int32_t rx = (int32_t)(cosf(hr) * (float)spec.trackOffset);
+    int32_t rz = (int32_t)(-sinf(hr) * (float)spec.trackOffset);
+    e.trackL->setPosition((int32_t)e.x - rx, spec.trackY, (int32_t)e.z - rz);
+    e.trackL->setRotation(0, heading, 0);
+    e.trackR->setPosition((int32_t)e.x + rx, spec.trackY, (int32_t)e.z + rz);
+    e.trackR->setRotation(0, heading, 0);
 }
 
 }  // namespace tankflux

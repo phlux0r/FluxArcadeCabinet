@@ -3,9 +3,40 @@
 
 namespace tankflux {
 
+namespace {
+
+constexpr int16_t W = ArcadeConfig::LANDSCAPE_WIDTH;
+constexpr int16_t H = ArcadeConfig::LANDSCAPE_HEIGHT;
+constexpr int STRIP_Y = 13;   // message strip under the HUD bar (divider at y=10)
+
+// Prints `msg` horizontally centred at row y, in the current text size/colour.
+void centredText(GFXcanvas16 &canvas, const char* msg, int16_t y) {
+    int16_t tbx, tby; uint16_t tbw, tbh;
+    canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
+    canvas.setCursor((W - (int16_t)tbw) / 2, y);
+    canvas.print(msg);
+}
+
+uint16_t textHeight(GFXcanvas16 &canvas, const char* msg) {
+    int16_t tbx, tby; uint16_t tbw, tbh;
+    canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
+    return tbh;
+}
+
+// Concentric rectangles round the play area: a border rather than a full
+// tint, which at 160x128 would hide what you need to see.
+void flashBorder(GFXcanvas16 &canvas, int rings, uint16_t colour) {
+    const int w = canvas.width(), h = canvas.height();
+    for (int i = 0; i < rings; ++i) {
+        canvas.drawRect(i, 11 + i, w - i * 2, h - 11 - i * 2, colour);
+    }
+}
+
+}  // namespace
+
 void TankFluxGame::drawHUD(GFXcanvas16 &canvas) {
-    canvas.fillRect(0, 0, ArcadeConfig::LANDSCAPE_WIDTH, 10, ArcadeConfig::COLOR_BLACK);
-    canvas.drawFastHLine(0, 10, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::COLOR_GREEN);
+    canvas.fillRect(0, 0, W, 10, ArcadeConfig::COLOR_BLACK);
+    canvas.drawFastHLine(0, 10, W, ArcadeConfig::COLOR_GREEN);
 
     canvas.setFont();
     canvas.setTextSize(1);
@@ -14,18 +45,16 @@ void TankFluxGame::drawHUD(GFXcanvas16 &canvas) {
     canvas.print("SCORE:"); canvas.print(_score);
 
     canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-    canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 2 - 6, 1);
+    canvas.setCursor(W / 2 - 6, 1);
     canvas.print("LV"); canvas.print(_level);
 
     canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-    canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 54, 1);
+    canvas.setCursor(W - 54, 1);
     canvas.print("HI:"); canvas.print(_highScore);
 
-    // Boss health bar: a second, wider bar directly under the main HUD
-    // strip, only while a boss fight is on. Red so it reads as "the
-    // threat," distinct from the player's own green/amber/red bar.
+    // Boss health: a red bar under the HUD strip during a boss fight.
     if (_bossActive) {
-        const int bx = 3, by = 13, bw = ArcadeConfig::LANDSCAPE_WIDTH - 6, bh = 6;
+        const int bx = 3, by = STRIP_Y, bw = W - 6, bh = 6;
         canvas.drawRect(bx, by, bw, bh, ArcadeConfig::COLOR_GREY);
         int bossFillW = ((bw - 2) * _boss.hp) / max(1, _boss.maxHp);
         if (bossFillW > 0) {
@@ -33,9 +62,8 @@ void TankFluxGame::drawHUD(GFXcanvas16 &canvas) {
         }
     }
 
-    // Health bar sits bottom-left, stopping short of centre so it doesn't
-    // run across the gun barrel.
-    const int barX = 3, barY = ArcadeConfig::LANDSCAPE_HEIGHT - 7;
+    // Player health, bottom-left, short of the centre so it clears the barrel.
+    const int barX = 3, barY = H - 7;
     const int barW = 58, barH = 5;
     canvas.drawRect(barX, barY, barW, barH, ArcadeConfig::COLOR_GREY);
     int fillW = ((barW - 2) * _health) / HEALTH_MAX;
@@ -47,16 +75,10 @@ void TankFluxGame::drawHUD(GFXcanvas16 &canvas) {
     }
 }
 
-// A visible sun disc, projected from the same _sun direction that
-// actually lights the world — same idea as the LensFlare in Jet's
-// Tropical Island example, but drawn directly with plain 2D circles
-// (matching the muzzle-flash pattern just below) rather than pulling in
-// Jet's Sprite2D/LensFlare/pick-query machinery: this project doesn't
-// enable TEXTURE_MAPPING or MAX_PICK_QUERIES, and a single fixed light
-// never needs occlusion fading or a multi-element flare chain. Drawn
-// straight onto the canvas after the 3D scene, so it paints over the
-// sky gradient — clipped to stay above the horizon so it can't paint
-// over ground geometry it should logically be behind.
+// A sun disc in the direction of _sunVisual, drawn over the sky after the 3D
+// pass. Plain circles rather than Jet's LensFlare, which needs texture
+// mapping and pick queries this project doesn't enable. Kept above the
+// horizon so it can't paint over ground it should be behind.
 void TankFluxGame::drawSun(GFXcanvas16 &canvas) {
     Vector3 viewDir = _camera.transformDirection(_sunVisual.worldLightDir);
     if (viewDir.z <= 0) return;   // behind the camera
@@ -64,7 +86,7 @@ void TankFluxGame::drawSun(GFXcanvas16 &canvas) {
     const int sx = canvas.width()  / 2 + (int)(viewDir.x * invZ);
     const int sy = canvas.height() / 2 - (int)(viewDir.y * invZ);
     if (sy >= canvas.height() / 2 - 6) return;   // at/below the horizon
-    if (sy < 12) return;   // drawHUD's top bar (rows 0-9) paints over this anyway
+    if (sy < 12) return;                          // under the HUD bar anyway
     if (sx < -20 || sx > canvas.width() + 20) return;
     canvas.fillCircle(sx, sy, 9, rgb565(31, 55, 24));   // pale halo
     canvas.fillCircle(sx, sy, 5, rgb565(31, 50, 10));   // warm core
@@ -78,11 +100,8 @@ void TankFluxGame::drawGunsight(GFXcanvas16 &canvas, int cx, int cy) {
     canvas.drawFastVLine(cx, cy + 3, 6, ArcadeConfig::COLOR_GREEN);
 }
 
-// The barrel is drawn in 2D rather than as a 3D object because it's
-// rigidly bolted to the vehicle the camera sits inside — it should never
-// move relative to the screen, so a screen-space shape is both simpler
-// and strictly more correct than positioning a mesh in front of the
-// camera every frame.
+// The player's barrel is 2D: it's fixed to the vehicle the camera is in, so
+// it never moves on screen.
 void TankFluxGame::drawBarrel(GFXcanvas16 &canvas) {
     const int cx = canvas.width() / 2;
     const int base = canvas.height() - 1;
@@ -96,18 +115,15 @@ void TankFluxGame::drawBarrel(GFXcanvas16 &canvas) {
     canvas.drawLine(cx + 13, base, cx + 6, tipY, edge);
     canvas.drawFastHLine(cx - 6, tipY, 13, edge);
 
-    if ((long)(_muzzleFlashUntil - millis()) > 0) {
+    if (!reached(_muzzleFlashUntil)) {
         canvas.fillCircle(cx, tipY - 2, 5, ArcadeConfig::COLOR_YELLOW);
         canvas.fillCircle(cx, tipY - 2, 2, ArcadeConfig::COLOR_WHITE);
     }
 }
 
-// Rotated radar: forward is always up, so a blip's position on the dial
-// is the direction you need to turn. Without this, an attacker that
-// slides out of frame is simply lost — which is the single hardest
-// thing to deal with in a first-person game on a 160x128 screen.
-// Shows the whole arena, deliberately beyond visual range, so shells
-// arriving out of the haze still have a visible source.
+// Rotating radar, forward always up, so a blip's position is the direction
+// to turn. Covers the whole arena, beyond visual range, so shells arriving
+// out of the haze still have a visible source.
 void TankFluxGame::drawRadar(GFXcanvas16 &canvas) {
     const int r  = 20;
     const int cx = canvas.width() - r - 5;
@@ -116,21 +132,19 @@ void TankFluxGame::drawRadar(GFXcanvas16 &canvas) {
 
     canvas.fillCircle(cx, cy, r, rgb565(2, 6, 4));
     canvas.drawCircle(cx, cy, r, ArcadeConfig::COLOR_GREY);
-    // Bow marker, so "up" is unambiguous.
-    canvas.drawFastVLine(cx, cy - r, 4, ArcadeConfig::COLOR_GREY);
+    canvas.drawFastVLine(cx, cy - r, 4, ArcadeConfig::COLOR_GREY);   // bow marker
 
     const float hr = radians(_headingDeg);
     const float sh = sinf(hr), ch = cosf(hr);
 
     auto plot = [&](float wx, float wz, uint16_t colour, bool big) {
         float dx = wx - _x, dz = wz - _z;
-        // Into tank-local space: forward = (sin h, cos h), right = (cos h, -sin h).
+        // Tank-local: forward = (sin h, cos h), right = (cos h, -sin h).
         float right   = dx * ch - dz * sh;
         float forward = dx * sh + dz * ch;
         float px = right * scale;
         float py = -forward * scale;
-        // Clamp to the rim rather than dropping it, so something out of
-        // range still tells you which way it is.
+        // Out-of-range blips sit on the rim, still showing their direction.
         float len = sqrtf(px * px + py * py);
         if (len > (float)(r - 2)) {
             float k = (float)(r - 2) / len;
@@ -143,16 +157,14 @@ void TankFluxGame::drawRadar(GFXcanvas16 &canvas) {
     };
 
     for (int i = 0; i < REPAIR_COUNT; ++i) {
-        if (_kits[i].active) plot((float)REPAIRS[i].x, (float)REPAIRS[i].z,
+        if (_kits[i].active) plot((float)_arena.kits[i].x, (float)_arena.kits[i].z,
                                   ArcadeConfig::COLOR_GREEN, false);
     }
     for (const auto &e : _enemies) {
         if (e.alive) plot(e.x, e.z, ArcadeConfig::COLOR_RED, true);
     }
     if (_bossActive) {
-        // Distinct from the regular red dots and blinking, so the boss
-        // reads as a different kind of threat on the dial, not just
-        // another enemy — same 300ms on/off cadence as drawBossAlert().
+        // Blinks magenta/red so it reads as a different kind of threat.
         uint16_t bossColour = (millis() % 300 < 150) ? ArcadeConfig::COLOR_MAGENTA
                                                       : ArcadeConfig::COLOR_RED;
         plot(_boss.x, _boss.z, bossColour, true);
@@ -161,69 +173,43 @@ void TankFluxGame::drawRadar(GFXcanvas16 &canvas) {
     canvas.drawPixel(cx, cy, ArcadeConfig::COLOR_WHITE);
 }
 
-// A red border rather than a full-screen tint: at 160x128 a full flash
-// hides the very thing you need to see after being hit.
-void TankFluxGame::drawDamageFlash(GFXcanvas16 &canvas) {
-    if ((long)(_damageFlashUntil - millis()) <= 0) return;
-    const int w = canvas.width(), h = canvas.height();
-    for (int i = 0; i < 3; ++i) {
-        canvas.drawRect(i, 11 + i, w - i * 2, h - 11 - i * 2, ArcadeConfig::COLOR_RED);
-    }
+// Red for damage; green, one ring wider, for the arena shift.
+void TankFluxGame::drawFlashes(GFXcanvas16 &canvas) {
+    if (!reached(_damageFlashUntil))     flashBorder(canvas, 3, ArcadeConfig::COLOR_RED);
+    if (!reached(_arenaShiftFlashUntil)) flashBorder(canvas, 4, ArcadeConfig::COLOR_GREEN);
 }
 
-// regenerateArena()'s visual half of the transition cue — same
-// concentric-rect trick as drawDamageFlash(), but green (a positive
-// event, not a threat) and one ring wider so it doesn't read as a copy
-// of the damage flash.
-void TankFluxGame::drawArenaShiftFlash(GFXcanvas16 &canvas) {
-    if ((long)(_arenaShiftFlashUntil - millis()) <= 0) return;
-    const int w = canvas.width(), h = canvas.height();
-    for (int i = 0; i < 4; ++i) {
-        canvas.drawRect(i, 11 + i, w - i * 2, h - 11 - i * 2, ArcadeConfig::COLOR_GREEN);
-    }
-}
-
-// Shown between the boss trigger and its spawn. Directly under the HUD
-// rather than screen-centre, so it doesn't cover the gunsight while
-// regular enemies are still around. The bar itself flashes red/black
-// (text stays visible in both phases) because small blinking text on
-// its own was easy to miss mid-fight.
+// Under the HUD rather than screen-centre, so it doesn't cover the gunsight
+// while regular enemies are still around. The whole bar flashes (text stays
+// readable in both phases); small blinking text alone was easy to miss.
 void TankFluxGame::drawBossAlert(GFXcanvas16 &canvas) {
-    if (!_bossPending || (long)(millis() - _bossAlertUntil) >= 0) return;
+    if (!_bossPending || reached(_bossAlertUntil)) return;
     const char* msg = "BOSS ALERT";
+    const int y = 14;
     canvas.setFont();
     canvas.setTextSize(2);
-    int16_t tbx, tby; uint16_t tbw, tbh;
-    canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
-    const int y = 14;   // HUD divider is at y=10
     bool on = millis() % 400 < 200;
-    canvas.fillRect(0, y - 3, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5,
+    canvas.fillRect(0, y - 3, W, (int)textHeight(canvas, msg) + 5,
                     on ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_BLACK);
     canvas.setTextColor(on ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_RED);
-    canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
-    canvas.print(msg);
+    centredText(canvas, msg, y);
     canvas.setTextSize(1);
 }
 
-// Shown for BOSS_BONUS_SHOW_MS after a boss kill, in the strip the
-// boss health bar used during the fight.
+// In the strip the boss health bar used, for BOSS_BONUS_SHOW_MS after a kill.
 void TankFluxGame::drawBossBonus(GFXcanvas16 &canvas) {
-    if ((long)(millis() - _bossBonusUntil) >= 0) return;
+    if (reached(_bossBonusUntil)) return;
     char buf[24];
     snprintf(buf, sizeof(buf), "TIME BONUS +%ld", _bossBonus);
     canvas.setFont();
     canvas.setTextSize(1);
-    int16_t tbx, tby; uint16_t tbw, tbh;
-    canvas.getTextBounds(buf, 0, 0, &tbx, &tby, &tbw, &tbh);
-    const int y = 13;
-    canvas.fillRect(0, y - 2, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5, ArcadeConfig::COLOR_BLACK);
+    canvas.fillRect(0, STRIP_Y - 2, W, (int)textHeight(canvas, buf) + 5, ArcadeConfig::COLOR_BLACK);
     canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-    canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
-    canvas.print(buf);
+    centredText(canvas, buf, STRIP_Y);
 }
 
-// Feedback while A+B is held, so a quit doesn't come as a surprise and
-// an accidental press is obvious. Same strip as drawBossAlert().
+// Shown once A+B have been held past QUIT_HINT_DELAY_MS; the bar fills over
+// the rest of the hold.
 void TankFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
     if (_quitHoldStart == 0) return;
     const unsigned long delay = QUIT_HINT_DELAY_MS;
@@ -231,58 +217,36 @@ void TankFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
     unsigned long held = millis() - _quitHoldStart;
     if (held < delay) return;
     if (held > total) held = total;
-    const int y = 13;
-    const int w = ArcadeConfig::LANDSCAPE_WIDTH;
-    // Bar fills over the visible part of the hold, not the whole 2s.
-    int fillW = (int)((unsigned long)(w - 2) * (held - delay) / (total - delay));
-    canvas.fillRect(0, y - 2, w, 12, ArcadeConfig::COLOR_BLACK);
-    canvas.fillRect(1, y + 8, fillW, 2, ArcadeConfig::COLOR_AMBER);
+    int fillW = (int)((unsigned long)(W - 2) * (held - delay) / (total - delay));
+    canvas.fillRect(0, STRIP_Y - 2, W, 12, ArcadeConfig::COLOR_BLACK);
+    canvas.fillRect(1, STRIP_Y + 8, fillW, 2, ArcadeConfig::COLOR_AMBER);
     canvas.setFont();
     canvas.setTextSize(1);
     canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-    const char* msg = "HOLD TO QUIT";
-    int16_t tbx, tby; uint16_t tbw, tbh;
-    canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
-    canvas.setCursor((w - (int16_t)tbw) / 2, y - 1);
-    canvas.print(msg);
+    centredText(canvas, "HOLD TO QUIT", STRIP_Y - 1);
 }
 
-// Real title art (assets/TitleScreen.h) replaces the old placeholder
-// (a code-drawn tank icon + "TANK FLUX" text) now that it exists —
-// same full-screen PROGMEM blit every other game's splash uses. The
-// source image's own bottom 20px are solid black, left there
-// deliberately for this HUD text: start prompt and high score,
-// centred, blinking prompt at the same 600ms-on/400ms-off cadence
-// Maze/Lander's own splash screens use.
+// Title art with a blinking start prompt and the high score in the image's
+// black bottom strip.
 void TankFluxGame::renderAttractGame(GFXcanvas16 &canvas) {
-    for (int i = 0; i < (ArcadeConfig::LANDSCAPE_WIDTH * ArcadeConfig::LANDSCAPE_HEIGHT); i++) {
+    for (int i = 0; i < (W * H); i++) {
         uint16_t px = pgm_read_word(&tank_flux_160x128_data[i]);
-        canvas.drawPixel(i % ArcadeConfig::LANDSCAPE_WIDTH,
-                         i / ArcadeConfig::LANDSCAPE_WIDTH, px);
+        canvas.drawPixel(i % W, i / W, px);
     }
 
     canvas.setFont();
     canvas.setTextSize(1);
-    int16_t tbx, tby; uint16_t tbw, tbh;
-
     if (millis() % 1000 < 600) {
-        const char* prompt = "[BTN A] TO START";
-        canvas.getTextBounds(prompt, 0, 0, &tbx, &tby, &tbw, &tbh);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, 111);
-        canvas.print(prompt);
+        centredText(canvas, "[BTN A] TO START", 111);
     }
-
     char hiBuf[20];
     snprintf(hiBuf, sizeof(hiBuf), "HI: %d", _highScore);
-    canvas.getTextBounds(hiBuf, 0, 0, &tbx, &tby, &tbw, &tbh);
     canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-    canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, 120);
-    canvas.print(hiBuf);
+    centredText(canvas, hiBuf, 120);
 }
 
-// 10px line pitch at setTextSize(1) (the smallest built-in font) so
-// every line fits in 128px without dropping any.
+// 10px line pitch at text size 1 (the smallest built-in font) fits every line.
 void TankFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
     canvas.setFont();
@@ -320,6 +284,35 @@ void TankFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.setTextColor(ArcadeConfig::COLOR_GREY);
     canvas.setCursor(28, 118);
     canvas.print("BEST: "); canvas.print(_highScore);
+}
+
+void TankFluxGame::renderGameOver(GFXcanvas16 &canvas) {
+    canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+    canvas.setTextColor(ArcadeConfig::COLOR_RED);
+    canvas.setTextSize(2);
+    canvas.setCursor(W / 4 - 12, 15);
+    canvas.print("DESTROYED");
+
+    canvas.setTextSize(1);
+    canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+    canvas.setCursor(W / 4, 45);
+    canvas.print("SCORE: "); canvas.print(_score);
+
+    if (_score >= _highScore && _score > 0) {
+        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
+        canvas.setCursor(W / 4, 65);
+        canvas.print("NEW HIGH SCORE!!");
+    } else {
+        canvas.setTextColor(ArcadeConfig::COLOR_GREY);
+        canvas.setCursor(W / 4, 65);
+        canvas.print("BEST: "); canvas.print(_highScore);
+    }
+
+    canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+    canvas.setCursor(20, 90);
+    canvas.print("[BTN A] PLAY AGAIN");
+    canvas.setCursor(20, 103);
+    canvas.print("[BTN B] QUIT");
 }
 
 }  // namespace tankflux
