@@ -37,7 +37,7 @@
 class TankFluxGame : public IGame {
 private:
     // --- Arena ---------------------------------------------------------------
-    static const int32_t ARENA_HALF   = 3000;   // playable area is +/- this in X and Z
+    static const int32_t ARENA_HALF   = 4200;   // playable area is +/- this in X and Z
     // The ground is ONE static mesh covering the whole bounded arena, built
     // once at world origin and never repositioned. An earlier version
     // re-centred it on the tank in discrete steps — a trick carried over
@@ -52,22 +52,38 @@ private:
     //
     // Sizing: from the worst case (a tank in one corner looking straight out
     // through the opposite side) the mesh needs a half-extent of at least
-    // ARENA_HALF + depthFogFar plus margin = 3000 + 3600 + margin. Cell
-    // COUNT, not physical size, drives triangle count — the ground still
-    // dominates it, and every queued triangle costs ~100 bytes in Jet's
-    // render queue, a single contiguous allocation that has already run this
-    // hardware out of contiguous heap space once. So the size below is
-    // generous (real headroom past the minimum) while CELLS stays low.
-    static const int32_t GROUND_SIZE  = 14400;   // half-extent 7200
+    // ARENA_HALF + depthFogFar plus margin = 4200 + 5000 + margin (see
+    // JetConfig.hpp's depthFogFar). Cell COUNT, not physical size, drives
+    // triangle count — the ground still dominates it, and every queued
+    // triangle costs ~100 bytes in Jet's render queue, a single contiguous
+    // allocation that has already run this hardware out of contiguous heap
+    // space once. So the size below is generous (real headroom past the
+    // minimum) while CELLS stays low — bumping ARENA_HALF only grows this
+    // value, never GROUND_CELLS, so it's free in triangle count.
+    static const int32_t GROUND_SIZE  = 20800;   // half-extent 10400
     static const int32_t GROUND_CELLS = 12;      // 242 triangles
 
     // River: a fixed landmark strip, not tied to the tank's position the
     // way the terrain is. RIVER_Y sits a few units above the terrain's own
     // surface (which itself varies by hillHeight()) so the two meshes never
-    // go exactly coplanar and flicker against each other.
+    // go exactly coplanar and flicker against each other. Endpoints scale
+    // with ARENA_HALF so the diagonal keeps roughly the same corner-to-corner
+    // proportions as the arena grows; generateArenaLayout() below is what
+    // actually guarantees nothing else gets placed on top of it.
+    static const int32_t RIVER_X0 = -4000, RIVER_Z0 = -3800;
+    static const int32_t RIVER_X1 =  2600, RIVER_Z1 =  4000;
     static const int32_t RIVER_Y       = 6;
     static const int32_t RIVER_WIDTH   = 260;
     static const int32_t RIVER_SEGMENTS = 8;
+
+    // --- Arena layout placement (generateArenaLayout()) -----------------------
+    // Shared by every category placeCircle() finds a spot for.
+    static const int32_t ARENA_MARGIN       = 300;   // stay clear of the arena edge itself
+    static const int32_t PLACEMENT_MIN_GAP  = 150;   // extra clearance beyond two circles' own radii
+    static const int32_t SPAWN_CLEARANCE    = 700;   // keep the player's own start point (origin) open
+    static const int32_t TREE_PLACEMENT_RADIUS = 160;   // canopy footprint, wider than the trunk itself
+    static const int32_t KIT_PLACEMENT_RADIUS  = 150;   // visual clearance around a repair cross
+    static const int PLACEMENT_ATTEMPTS = 24;
 
     // --- Tank ----------------------------------------------------------------
     static const int32_t EYE_HEIGHT  = 120;
@@ -98,6 +114,13 @@ private:
     static const int REPAIR_COUNT  = 3;
     static const int32_t REPAIR_PICKUP_RADIUS = 240;
     static const unsigned long REPAIR_RESPAWN_MS = 12000;
+    // Repair cross is upright now (see buildRepairCross()) — vertical
+    // half-extent is its own extHalf (62), not a height/2, so this is
+    // 62 + 25 to keep the same ~25-unit ground clearance the old cube had.
+    static const int32_t REPAIR_ARM_HALF = 26;   // half-width of the cross arms
+    static const int32_t REPAIR_EXT_HALF = 62;   // half-length from center to arm tip
+    static const int32_t REPAIR_DEPTH    = 22;   // thin front-to-back extrusion
+    static const int32_t REPAIR_Y_OFFSET = 87;
 
     static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
 
@@ -199,15 +222,21 @@ private:
     static const int32_t BOSS_HULL_Y = 88, BOSS_TURRET_Y = 248, BOSS_TRACK_Y = 48;
 
     // Covers the whole arena corner-to-corner, so nothing is ever off-dial.
-    static const int32_t RADAR_RANGE = 4300;
+    static const int32_t RADAR_RANGE = 6000;
 
     // --- Obstacles -----------------------------------------------------------
-    // Hand-placed rather than random: a fixed arena is learnable, so players
-    // can come to know where cover is instead of re-reading the map each run.
+    // Sizes/shapes are still hand-tuned per slot (kept below), but positions
+    // are no longer fixed: generateArenaLayout() (see there) randomizes x/z
+    // for every obstacle, tree and repair kit at scene setup and again on
+    // every boss kill, rejecting any spot too close to the river, the
+    // player's start point, or another placed object. These initializer
+    // values only matter as a fallback if that search somehow can't find
+    // room (see placeCircle()) — they're deliberately NOT constexpr since
+    // generateArenaLayout() overwrites x/z in place.
     enum ObstacleShape : uint8_t { SHAPE_CUBE, SHAPE_PYRAMID, SHAPE_ROCK };
     struct ObstacleDef { int32_t x, z, size; ObstacleShape shape; };
     static const int OBSTACLE_COUNT = 12;
-    static constexpr ObstacleDef OBSTACLES[OBSTACLE_COUNT] = {
+    ObstacleDef OBSTACLES[OBSTACLE_COUNT] = {
         { -1500,   800, 440, SHAPE_CUBE    },
         {   900,  1500, 380, SHAPE_PYRAMID },
         {  1900,  -400, 500, SHAPE_ROCK    },
@@ -223,7 +252,7 @@ private:
     };
 
     struct RepairDef { int32_t x, z; };
-    static constexpr RepairDef REPAIRS[REPAIR_COUNT] = {
+    RepairDef REPAIRS[REPAIR_COUNT] = {
         {  2400,   600 },
         { -2400,  -300 },
         {   500, -2400 },
@@ -232,15 +261,21 @@ private:
     // Decorative pines, inspired by the tiered low-poly trees in Jet's own
     // Woodland example (github.com/CubeCoders/JetExamples/esp32-lod-billboards)
     // — a trunk plus two stacked canopy cones, built from proven Jet
-    // primitives (see buildPineTree()). Hand-placed like OBSTACLES/REPAIRS,
-    // clear of both by 500+ units and of the river, so they read as
-    // scenery rather than a hidden collision hazard — they don't block
-    // movement or shots. Six is a deliberately modest count: 24 triangles
-    // per tree adds up fast against the render queue's heap headroom that
-    // caused the earlier bad_alloc crash.
+    // primitives (see buildPineTree()). Positions randomized the same way as
+    // OBSTACLES/REPAIRS (see generateArenaLayout()) — they don't block
+    // movement or shots, but still shouldn't visually clip through the river
+    // or crowd the other placed scenery. Six is a deliberately modest count:
+    // 24 triangles per tree adds up fast against the render queue's heap
+    // headroom that caused the earlier bad_alloc crash.
     struct TreeDef { int32_t x, z; };
     static const int TREE_COUNT = 6;
-    static constexpr TreeDef TREES[TREE_COUNT] = {
+    // Shared by buildPineTree() (initial construction) and
+    // repositionPineTree() (boss-kill regeneration) so the two can't drift
+    // out of sync with each other.
+    static const int32_t TREE_TRUNK_W = 34, TREE_TRUNK_H = 90;
+    static const int32_t TREE_LO_BASE = 260, TREE_LO_H = 190;
+    static const int32_t TREE_HI_BASE = 150, TREE_HI_H = 150;
+    TreeDef TREES[TREE_COUNT] = {
         { -1000, -2000 },
         {  2700,  2700 },
         { -2700,  2700 },
@@ -318,6 +353,13 @@ private:
     bool  _bossPending = false;   // trigger fired but perimeter spawn hasn't found a spot yet
     unsigned long _bossAlertUntil = 0;   // updateEnemies() won't call trySpawnBoss() before this
     int   _nextBossAt  = BOSS_EVERY_KILLS;
+
+    // Arena-shift transition cue (regenerateArena()) — deferred the same way
+    // _bossAlertUntil is, so the new-arena chime doesn't cut off the boss's
+    // own kill fanfare (destroyEnemy(), a 300ms tone) before it's heard.
+    bool _arenaShiftCuePending = false;
+    unsigned long _arenaShiftCueAt = 0;
+    unsigned long _arenaShiftFlashUntil = 0;
 
     // --- Jet scene state -----------------------------------------------------
     // Scene needs a framebuffer pointer, which only exists once update() hands
@@ -527,6 +569,122 @@ private:
         return (o.size * 3) / 5;
     }
 
+    // Point-to-segment distance, used by placeCircle() to keep every placed
+    // circle clear of the river's own line (RIVER_X0/Z0 to RIVER_X1/Z1).
+    static float distToSegment(float px, float pz, float x0, float z0, float x1, float z1) {
+        float dx = x1 - x0, dz = z1 - z0;
+        float lenSq = dx * dx + dz * dz;
+        float t = (lenSq > 0.0001f) ? ((px - x0) * dx + (pz - z0) * dz) / lenSq : 0.0f;
+        t = fmaxf(0.0f, fminf(1.0f, t));
+        float cx = x0 + t * dx, cz = z0 + t * dz;
+        float ex = px - cx, ez = pz - cz;
+        return sqrtf(ex * ex + ez * ez);
+    }
+
+    // A placed obstacle/tree/kit's own footprint, tracked only for the
+    // duration of generateArenaLayout() so later picks can avoid earlier ones.
+    struct PlacedCircle { float x, z, r; };
+
+    // Random rejection sampling within the arena: reject a candidate point
+    // if it's too close to the river, the player's own start point (arena
+    // origin), or an already-placed circle. PLACEMENT_ATTEMPTS tries before
+    // giving up — the same bounded-retry shape as trySpawnBoss()'s own
+    // perimeter search. Returns false (leaving outX/outZ untouched) if the
+    // arena's simply too packed to find room; callers fall back to that
+    // slot's original hand-placed coordinates in that case.
+    bool placeCircle(float radius, const PlacedCircle* placed, int placedCount,
+                     float &outX, float &outZ) {
+        const int32_t bound = ARENA_HALF - ARENA_MARGIN;
+        for (int attempt = 0; attempt < PLACEMENT_ATTEMPTS; ++attempt) {
+            float x = (float)random(-bound, bound);
+            float z = (float)random(-bound, bound);
+            if (distToSegment(x, z, (float)RIVER_X0, (float)RIVER_Z0,
+                              (float)RIVER_X1, (float)RIVER_Z1) <
+                (float)RIVER_WIDTH / 2.0f + radius + (float)PLACEMENT_MIN_GAP) continue;
+            if (sqrtf(x * x + z * z) < (float)SPAWN_CLEARANCE + radius) continue;
+            bool ok = true;
+            for (int i = 0; i < placedCount; ++i) {
+                float dx = x - placed[i].x, dz = z - placed[i].z;
+                float minD = radius + placed[i].r + (float)PLACEMENT_MIN_GAP;
+                if (dx * dx + dz * dz < minD * minD) { ok = false; break; }
+            }
+            if (!ok) continue;
+            outX = x; outZ = z;
+            return true;
+        }
+        return false;
+    }
+
+    // Randomizes OBSTACLES/TREES/REPAIRS x/z in place — sizes and shapes are
+    // untouched, only where each one sits. Called once at scene setup and
+    // again on every boss kill (see regenerateArena()); the river itself
+    // never moves, so this is what actually guarantees nothing gets placed
+    // on top of it rather than that being hand-verified once.
+    void generateArenaLayout() {
+        PlacedCircle placed[OBSTACLE_COUNT + TREE_COUNT + REPAIR_COUNT];
+        int placedCount = 0;
+
+        for (int i = 0; i < OBSTACLE_COUNT; ++i) {
+            float r = (float)obstacleRadius(OBSTACLES[i]);
+            float x, z;
+            if (placeCircle(r, placed, placedCount, x, z)) {
+                OBSTACLES[i].x = (int32_t)x;
+                OBSTACLES[i].z = (int32_t)z;
+            }
+            placed[placedCount++] = { (float)OBSTACLES[i].x, (float)OBSTACLES[i].z, r };
+        }
+        for (int i = 0; i < TREE_COUNT; ++i) {
+            float r = (float)TREE_PLACEMENT_RADIUS;
+            float x, z;
+            if (placeCircle(r, placed, placedCount, x, z)) {
+                TREES[i].x = (int32_t)x;
+                TREES[i].z = (int32_t)z;
+            }
+            placed[placedCount++] = { (float)TREES[i].x, (float)TREES[i].z, r };
+        }
+        for (int i = 0; i < REPAIR_COUNT; ++i) {
+            float r = (float)KIT_PLACEMENT_RADIUS;
+            float x, z;
+            if (placeCircle(r, placed, placedCount, x, z)) {
+                REPAIRS[i].x = (int32_t)x;
+                REPAIRS[i].z = (int32_t)z;
+            }
+            placed[placedCount++] = { (float)REPAIRS[i].x, (float)REPAIRS[i].z, r };
+        }
+    }
+
+    // Ground is no longer flat (hillHeight()), so every obstacle's resting
+    // height is the local terrain height plus however far its own shape
+    // needs lifting to sit on top of it rather than through it. Shared by
+    // the initial build (ensureSceneReady()) and regenerateArena() — same
+    // per-shape Y offset either way, just not tied to creating the object.
+    void repositionObstacle(int i) {
+        const ObstacleDef &o = OBSTACLES[i];
+        int32_t groundY = hillHeight(o.x, o.z);
+        int32_t baseY;
+        switch (o.shape) {
+            case SHAPE_PYRAMID:
+                baseY = groundY;
+                break;
+            case SHAPE_ROCK:
+                _obstacleObjs[i]->setRotation(0, (o.x * 7 + o.z * 3) % 360, 0);  // deterministic "random" facing
+                baseY = groundY + (o.size * 11) / 40;
+                break;
+            default:  // SHAPE_CUBE
+                baseY = groundY + (o.size * 3) / 8;
+                break;
+        }
+        _obstacleObjs[i]->setPosition(o.x, baseY, o.z);
+    }
+
+    // Same idea as repositionObstacle() — shared by the initial build and
+    // regenerateArena().
+    void repositionKit(int i) {
+        _kits[i].obj->setPosition(REPAIRS[i].x,
+                                  hillHeight(REPAIRS[i].x, REPAIRS[i].z) + REPAIR_Y_OFFSET,
+                                  REPAIRS[i].z);
+    }
+
     // Cosmetic height field for the terrain — two overlaid sine waves at
     // different frequencies/phases, chosen only to avoid an obviously
     // periodic single-wave look.
@@ -648,23 +806,29 @@ private:
                        Renderer::Material* loMat, Renderer::Material* hiMat,
                        Renderer::Object*& outTrunk,
                        Renderer::Object*& outLo, Renderer::Object*& outHi) {
-        const int32_t trunkW = 34, trunkH = 90;
-        const int32_t loBase = 260, loH = 190;
-        const int32_t hiBase = 150, hiH = 150;
-
-        outTrunk = Primitives::createCube(trunkW, trunkH, trunkW, trunkMat);
-        outTrunk->setPosition(x, groundY + trunkH / 2, z);
+        outTrunk = Primitives::createCube(TREE_TRUNK_W, TREE_TRUNK_H, TREE_TRUNK_W, trunkMat);
 
         // Base overlaps a little into the trunk top so there's no gap if
         // the trunk sways or the canopy doesn't sit perfectly flush.
-        outLo = Primitives::createPyramid(loBase, loH, loMat);
-        outLo->setPosition(x, groundY + trunkH - 10, z);
+        outLo = Primitives::createPyramid(TREE_LO_BASE, TREE_LO_H, loMat);
 
         // Base sits partway up the lower cone rather than at its apex, so
         // the two tiers read as a visible step rather than one smooth cone
         // — the same per-tier flare Woodland's profile-sweep produces.
-        outHi = Primitives::createPyramid(hiBase, hiH, hiMat);
-        outHi->setPosition(x, groundY + trunkH - 10 + loH / 2, z);
+        outHi = Primitives::createPyramid(TREE_HI_BASE, TREE_HI_H, hiMat);
+
+        positionPineTree(x, groundY, z, outTrunk, outLo, outHi);
+    }
+
+    // Shared by buildPineTree() (right after creation) and
+    // repositionPineTree() (boss-kill regeneration, existing objects) — same
+    // Y offsets either way, just not tied to object creation.
+    static void positionPineTree(int32_t x, int32_t groundY, int32_t z,
+                                 Renderer::Object* trunk, Renderer::Object* lo,
+                                 Renderer::Object* hi) {
+        trunk->setPosition(x, groundY + TREE_TRUNK_H / 2, z);
+        lo->setPosition(x, groundY + TREE_TRUNK_H - 10, z);
+        hi->setPosition(x, groundY + TREE_TRUNK_H - 10 + TREE_LO_H / 2, z);
     }
 
     // A short, fixed-position decorative strip — not tied to the tank's
@@ -1014,27 +1178,26 @@ private:
                                &_groundMatA, &_groundMatB);
         _scene->addObject(_ground);
 
-        _river = buildRiverStrip(-2900, -2700, 1900, 2900, RIVER_WIDTH, RIVER_SEGMENTS, &_riverMat);
+        _river = buildRiverStrip(RIVER_X0, RIVER_Z0, RIVER_X1, RIVER_Z1, RIVER_WIDTH, RIVER_SEGMENTS, &_riverMat);
         _river->cullingMode = Renderer::CullingMode::NO_CULLING;   // hand-authored winding, unverified
         _scene->addObject(_river);
 
+        // Randomize every obstacle/tree/kit position before building any of
+        // them, so the very first arena is already clear of the river —
+        // regenerateArena() re-runs this same call on every boss kill.
+        generateArenaLayout();
+
         for (int i = 0; i < OBSTACLE_COUNT; ++i) {
             const ObstacleDef &o = OBSTACLES[i];
-            // Ground is no longer flat (hillHeight()), so every obstacle's
-            // resting height is the local terrain height plus however far
-            // its own shape needs lifting to sit on top of it rather than
-            // through it. One-time cost at scene build, not per frame.
-            int32_t groundY = hillHeight(o.x, o.z);
             Renderer::Object* obj;
             Renderer::Material* mat;
-            int32_t baseY;
             switch (o.shape) {
                 case SHAPE_PYRAMID: {
                     // Mixed to make hills read as varied rather than
                     // identical cones — deterministic per obstacle (index)
-                    // rather than random, so the arena layout stays fixed
-                    // across runs like every other obstacle here. All
-                    // three variants put their base at local y=0.
+                    // rather than random, so the same slot keeps the same
+                    // shape/variant across every regenerateArena() call.
+                    // All three variants put their base at local y=0.
                     mat = &_obstaclePyramidMat;
                     int variant = i % 3;
                     if (variant == 0) {
@@ -1045,7 +1208,6 @@ private:
                         obj = buildStumpyPyramid(o.size / 2, (o.size * 17) / 40, (o.size * 1) / 2,
                                                  (o.size * 11) / 10, mat);
                     }
-                    baseY = groundY;
                     break;
                 }
                 case SHAPE_ROCK:
@@ -1057,18 +1219,15 @@ private:
                     mat = &_obstacleRockMat;
                     obj = Primitives::createCube((o.size * 9) / 10, (o.size * 11) / 20,
                                                  (o.size * 6) / 5, mat);
-                    obj->setRotation(0, (o.x * 7 + o.z * 3) % 360, 0);  // deterministic "random" facing
-                    baseY = groundY + (o.size * 11) / 40;
                     break;
                 default:  // SHAPE_CUBE
                     mat = &_obstacleCubeMat;
                     obj = Primitives::createCube(o.size, (o.size * 3) / 4, o.size, mat);
-                    baseY = groundY + (o.size * 3) / 8;
                     break;
             }
-            obj->setPosition(o.x, baseY, o.z);
-            _scene->addObject(obj);
             _obstacleObjs[i] = obj;
+            _scene->addObject(obj);
+            repositionObstacle(i);   // sets position (and rock rotation) from OBSTACLES[i]
         }
 
         for (int i = 0; i < TREE_COUNT; ++i) {
@@ -1082,15 +1241,9 @@ private:
         }
 
         for (int i = 0; i < REPAIR_COUNT; ++i) {
-            const int32_t REPAIR_ARM_HALF = 26;   // half-width of the cross arms
-            const int32_t REPAIR_EXT_HALF = 62;   // half-length from center to arm tip
-            const int32_t REPAIR_DEPTH = 22;      // thin front-to-back extrusion
             _kits[i].obj = buildRepairCross(REPAIR_ARM_HALF, REPAIR_EXT_HALF, REPAIR_DEPTH, &_kitMat);
-            // upright now, so the vertical half-extent is REPAIR_EXT_HALF (62), not
-            // a height/2 — same ~25-unit ground clearance as before: 62+25=87
-            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 87,
-                                      REPAIRS[i].z);
             _scene->addObject(_kits[i].obj);
+            repositionKit(i);
         }
 
         // Enemy tanks: a low hull, a smaller turret box on top, and a gun
@@ -1395,6 +1548,29 @@ private:
         audio.playTone(650, 50);
     }
 
+    // Fresh obstacle/tree/kit layout on every boss kill — reuses
+    // generateArenaLayout() (the same river/spawn/overlap avoidance the
+    // initial arena build uses) and then just moves the existing objects;
+    // no geometry is rebuilt, so this is cheap enough to call from
+    // destroyEnemy() directly. The river itself stays put. The transition
+    // cue (chime + flash) is deferred rather than fired here — see
+    // _arenaShiftCueAt's own comment for why.
+    void regenerateArena() {
+        generateArenaLayout();
+        for (int i = 0; i < OBSTACLE_COUNT; ++i) repositionObstacle(i);
+        for (int i = 0; i < TREE_COUNT; ++i) {
+            positionPineTree(TREES[i].x, hillHeight(TREES[i].x, TREES[i].z), TREES[i].z,
+                             _treeTrunks[i], _treeCanopyLo[i], _treeCanopyHi[i]);
+        }
+        for (int i = 0; i < REPAIR_COUNT; ++i) {
+            _kits[i].active = true;
+            _kits[i].obj->enabled = true;
+            repositionKit(i);
+        }
+        _arenaShiftCuePending = true;
+        _arenaShiftCueAt = millis() + 350;   // let the boss's own 300ms kill fanfare finish first
+    }
+
     void destroyEnemy(Enemy &e, AudioEngine &audio) {
         bool isBoss = (&e == &_boss);
         _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
@@ -1420,6 +1596,7 @@ private:
             _bossActive = false;
             _score += BOSS_SCORE;
             audio.playTone(1900, 300);   // bigger fanfare than the regular level-up cue
+            regenerateArena();
             return;
         }
 
@@ -1734,6 +1911,8 @@ private:
         _bossActive  = false;
         _bossPending = false;
         _nextBossAt  = BOSS_EVERY_KILLS;
+        _arenaShiftCuePending = false;
+        _arenaShiftFlashUntil = 0;
         for (auto &p : _particles.pool) p.active = false;
         _phase = PHASE_PLAYING;
         audio.playTone(900, 80);
@@ -1896,6 +2075,18 @@ private:
         const int w = canvas.width(), h = canvas.height();
         for (int i = 0; i < 3; ++i) {
             canvas.drawRect(i, 11 + i, w - i * 2, h - 11 - i * 2, ArcadeConfig::COLOR_RED);
+        }
+    }
+
+    // regenerateArena()'s visual half of the transition cue — same
+    // concentric-rect trick as drawDamageFlash(), but green (a positive
+    // event, not a threat) and one ring wider so it doesn't read as a copy
+    // of the damage flash.
+    void drawArenaShiftFlash(GFXcanvas16 &canvas) {
+        if ((long)(_arenaShiftFlashUntil - millis()) <= 0) return;
+        const int w = canvas.width(), h = canvas.height();
+        for (int i = 0; i < 4; ++i) {
+            canvas.drawRect(i, 11 + i, w - i * 2, h - 11 - i * 2, ArcadeConfig::COLOR_GREEN);
         }
     }
 
@@ -2136,6 +2327,17 @@ public:
         updateEnemies(audio);
         updateShells(audio);
 
+        if (_arenaShiftCuePending && millis() >= _arenaShiftCueAt) {
+            _arenaShiftCuePending = false;
+            // A quick rising four-note chime — distinct from the boss's own
+            // fanfare (a single 1900Hz tone) and from level-up (also single-
+            // tone), so "the world just reset" reads as its own event.
+            static const int n[] = { 700, 950, 1250, 1600 };
+            static const int d[] = {  70,  70,   70,  160 };
+            audio.playMelody(n, d, 4);
+            _arenaShiftFlashUntil = millis() + 320;
+        }
+
         _scene->render();
         drawSun(canvas);
         _particles.update(1.0f / 60.0f);
@@ -2144,6 +2346,7 @@ public:
         drawBarrel(canvas);
         drawGunsight(canvas, canvas.width() / 2, 11 + (canvas.height() - 11) / 2);
         drawDamageFlash(canvas);
+        drawArenaShiftFlash(canvas);
         drawRadar(canvas);
         drawHUD(canvas);
         drawBossAlert(canvas);
