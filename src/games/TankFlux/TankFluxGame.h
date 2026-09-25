@@ -267,6 +267,10 @@ private:
     // nothing if the file isn't there yet, the same as any other game's SD
     // asset would.
     bool _attractMusicStarted = false;
+    // Grace period before the attract loop is allowed to start — see the
+    // guard at its call site for why this is needed in addition to the
+    // isSamplePlaying()/isMelodyPlaying() checks.
+    unsigned long _attractMusicEarliestAt = 0;
 
     struct RepairKit {
         Renderer::Object* obj = nullptr;
@@ -1759,6 +1763,20 @@ public:
         _attractSlide      = SLIDE_GAME;
         _attractSlideTimer = millis();
         _attractMusicStarted = false;
+        // playTankStartSound()'s SD-WAV path (AudioEngine::playWAV) sets
+        // _audioState.playing FALSE immediately (stopAudioTask(), to halt
+        // whatever came before) and only flips it back TRUE once its own
+        // async audio task has opened the file over SPI and parsed the WAV
+        // header — real SD latency, not instant. isSamplePlaying() reads
+        // false the whole time that's in flight, so checking it on the very
+        // next update() (one frame after init()) can't tell "hasn't started
+        // yet" apart from "started, still opening" — the attract-loop guard
+        // below saw a false negative and stole the channel with
+        // loopWAV(/audio/tank_loop.wav) before tank_start.wav ever became
+        // audible. 300ms mirrors the deferred-fallback deadline
+        // AudioEngine.h already uses for this exact kind of SD-open-latency
+        // check (playGameOverSound() etc).
+        _attractMusicEarliestAt = millis() + 300;
         _btnBWasHeld = true;
         // Same convention as LanderFluxGame's playLanderStartSound(): try
         // /audio/tank_start.wav on SD first, else fall back to a short
@@ -1800,8 +1818,12 @@ public:
             // currently playing, so without these guards the startup sound
             // from init() — playTankStartSound() plays either a WAV
             // (isSamplePlaying()) or the fallback melody (isMelodyPlaying())
-            // — would be cut off within one frame of ATTRACT starting.
-            if (!_attractMusicStarted && !audio.isSamplePlaying() && !audio.isMelodyPlaying()) {
+            // — would be cut off before it's ever heard. The extra
+            // millis() check covers the SD-WAV path specifically: see
+            // _attractMusicEarliestAt's own comment in init() for why
+            // isSamplePlaying() alone isn't enough to catch that case.
+            if (!_attractMusicStarted && !audio.isSamplePlaying() && !audio.isMelodyPlaying() &&
+                millis() >= _attractMusicEarliestAt) {
                 audio.loopWAV("/audio/tank_loop.wav");
                 _attractMusicStarted = true;
             }
