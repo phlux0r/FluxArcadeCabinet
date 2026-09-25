@@ -189,6 +189,9 @@ private:
     // floor on a random one.
     static const int32_t BOSS_MIN_SPAWN_DIST = 2200;
     static const int32_t BOSS_SPAWN_JITTER_DEG = 40;
+    // "BOSS ALERT" banner delay before trySpawnBoss() actually runs — gives
+    // the player a beat of warning instead of the boss just appearing.
+    static const unsigned long BOSS_ALERT_MS = 2500;
     static const int32_t BOSS_HULL_W = 448, BOSS_HULL_H = 176, BOSS_HULL_D = 608;
     static const int32_t BOSS_TURRET_W = 240, BOSS_TURRET_H = 144;
     static const int32_t BOSS_BARREL_R = 32, BOSS_BARREL_LEN = 272;
@@ -313,6 +316,7 @@ private:
     Enemy _boss;
     bool  _bossActive  = false;
     bool  _bossPending = false;   // trigger fired but perimeter spawn hasn't found a spot yet
+    unsigned long _bossAlertUntil = 0;   // updateEnemies() won't call trySpawnBoss() before this
     int   _nextBossAt  = BOSS_EVERY_KILLS;
 
     // --- Jet scene state -----------------------------------------------------
@@ -1430,6 +1434,8 @@ private:
         if (!_bossActive && _kills >= _nextBossAt) {
             _nextBossAt += BOSS_EVERY_KILLS;
             _bossPending = true;
+            _bossAlertUntil = millis() + BOSS_ALERT_MS;
+            audio.playTone(1100, 150);   // warning cue, distinct from the arrival tone at spawn
         }
     }
 
@@ -1606,7 +1612,7 @@ private:
         if (_bossActive) {
             updateEnemyAI(_boss, enemySpeed(), audio);
             updateBossTransform();
-        } else if (_bossPending) {
+        } else if (_bossPending && millis() >= _bossAlertUntil) {
             if (trySpawnBoss(audio)) _bossPending = false;
         }
     }
@@ -1893,6 +1899,26 @@ private:
         }
     }
 
+    // BOSS_ALERT_MS warning shown between the boss trigger and trySpawnBoss()
+    // actually being allowed to run (see updateEnemies()) — a fast blink so
+    // it reads as urgent rather than a static banner, drawn over a black bar
+    // so it stays legible against the 3D scene behind it.
+    void drawBossAlert(GFXcanvas16 &canvas) {
+        if (!_bossPending || millis() >= _bossAlertUntil) return;
+        const char* msg = "BOSS ALERT";
+        canvas.setFont();
+        canvas.setTextSize(2);
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
+        int y = ArcadeConfig::LANDSCAPE_HEIGHT / 2 - (int)tbh / 2;
+        canvas.fillRect(0, y - 4, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 8, ArcadeConfig::COLOR_BLACK);
+        if (millis() % 400 < 250) {
+            canvas.setTextColor(ArcadeConfig::COLOR_RED);
+            canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
+            canvas.print(msg);
+        }
+    }
+
     // Real title art (assets/TitleScreen.h) replaces the old placeholder
     // (a code-drawn tank icon + "TANK FLUX" text) now that it exists —
     // same full-screen PROGMEM blit every other game's splash uses. The
@@ -2120,6 +2146,7 @@ public:
         drawDamageFlash(canvas);
         drawRadar(canvas);
         drawHUD(canvas);
+        drawBossAlert(canvas);
 
         if (_health <= 0) {
             if (_score > _highScore) { _highScore = _score; saveHighScore(); }
