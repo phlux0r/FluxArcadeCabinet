@@ -74,6 +74,10 @@ int main(int argc, char** argv) {
     const bool god   = strcmp(mode, "god") == 0 || profile;
     const bool menus = strcmp(mode, "menus") == 0;
     const long frames = argc > 2 ? atol(argv[2]) : 20000;
+    // Milliseconds of fake clock per frame. The game reads this as its own
+    // frame time, so it also sets the frame rate being simulated: 16 is
+    // ~60fps, 33 is ~30fps (what the hardware actually manages).
+    const unsigned long stepMs = argc > 3 ? (unsigned long)atol(argv[3]) : 16;
 
     // 0-3 regular enemies, or a boss fight (the boss suppresses respawns).
     Bucket buckets[5] = { {"0 enemies"}, {"1 enemy"}, {"2 enemies"}, {"3 enemies"}, {"boss"} };
@@ -179,7 +183,7 @@ int main(int argc, char** argv) {
                    f, st[0], st[1], st[2], st[3], st[4], st[5], st[6], st[8], st[9], traceHash);
         }
 
-        g_fakeMillis += 16;   // nominal 60fps; the game only reads millis()
+        g_fakeMillis += stepMs;
     }
 
     printf("DONE frames=%ld bosses=%d defeated=%d gameovers=%d quits=%d "

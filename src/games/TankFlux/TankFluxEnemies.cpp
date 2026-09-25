@@ -260,13 +260,16 @@ void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
         aimZ += _vz * framesToImpact;
     }
 
+    // Turn and movement are per reference frame, so both scale with how long
+    // this frame actually took (see updateFrameScale()).
+    float turnLimit = spec.turnRate * _frameScale;
     float want = bearingTo(e.x, e.z, aimX, aimZ);
     float err  = angleDiff(want, e.headingDeg);
-    e.headingDeg = wrapAngle(e.headingDeg + constrain(err, -spec.turnRate, spec.turnRate));
+    e.headingDeg = wrapAngle(e.headingDeg + constrain(err, -turnLimit, turnLimit));
 
     if (dist > (float)spec.standoff) {
         float speed = enemySpeed() * spec.speedMult;
-        float step = inRiver(e.x, e.z) ? speed * RIVER_SPEED_MULT : speed;
+        float step = (inRiver(e.x, e.z) ? speed * RIVER_SPEED_MULT : speed) * _frameScale;
         float hr = radians(e.headingDeg);
         float nx = e.x + sinf(hr) * step;
         float nz = e.z + cosf(hr) * step;
@@ -275,7 +278,7 @@ void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
             e.z = nz;
         } else {
             // Scrape round whatever it hit instead of grinding against it.
-            e.headingDeg = wrapAngle(e.headingDeg + ENEMY_SCRAPE_TURN_DEG);
+            e.headingDeg = wrapAngle(e.headingDeg + ENEMY_SCRAPE_TURN_DEG * _frameScale);
         }
         const float limit = (float)(ARENA_HALF - spec.radius);
         e.x = constrain(e.x, -limit, limit);

@@ -21,6 +21,18 @@ void TankFluxGame::recordHighScore() {
     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
 }
 
+// How far this frame should move things, relative to a frame at the rate the
+// game was tuned at. Without it the whole game runs slow whenever the frame
+// rate drops — three tanks on screen cost enough to be felt as lag.
+void TankFluxGame::updateFrameScale() {
+    unsigned long now = millis();
+    unsigned long dt = now - _lastFrameMs;
+    _lastFrameMs = now;
+    if (dt < MIN_FRAME_MS) dt = MIN_FRAME_MS;
+    if (dt > MAX_FRAME_MS) dt = MAX_FRAME_MS;
+    _frameScale = (float)dt / (float)REFERENCE_FRAME_MS;
+}
+
 void TankFluxGame::init(AudioEngine &audio) {
     loadHighScore();
     _phase = PHASE_ATTRACT;
@@ -30,6 +42,7 @@ void TankFluxGame::init(AudioEngine &audio) {
     _attractMusicEarliestAt = millis() + ATTRACT_MUSIC_GRACE_MS;
     _btnBWasHeld = true;
     _btnBHoldStart = 0;
+    _lastFrameMs = millis();   // so the first frame isn't a huge clamped step
     // /audio/tank_start.wav from SD, or a generated melody if it's missing.
     audio.playTankStartSound();
 }
@@ -81,6 +94,7 @@ void TankFluxGame::startNewGame(AudioEngine &audio) {
 
 bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     ensureSceneReady(canvas);
+    updateFrameScale();
 
     // Outside of play, holding B for EXIT_HOLD_MS exits. A fresh B press
     // already exits from both screens (see their handlers); this covers B
@@ -183,7 +197,10 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 
     _scene->render();
     drawSun(canvas);
-    _particles.update(1.0f / 60.0f);
+    // Not the real frame time: this is the step the particles were tuned
+    // against, scaled the same way everything else is, so they keep the
+    // look they have now while staying steady across frame rates.
+    _particles.update((1.0f / 60.0f) * _frameScale);
     _particles.render(_scene, &_camera, canvas.width(), canvas.height());
 
     drawBarrel(canvas);

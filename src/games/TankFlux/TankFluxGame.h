@@ -100,6 +100,9 @@ private:
     unsigned long _btnBHoldStart = 0;       // attract/game over: hold B to exit
     unsigned long _quitHoldStart = 0;       // playing: hold A+B to quit; 0 = not held
     unsigned long _gameOverEnteredMs = 0;
+    // See REFERENCE_FRAME_MS: multiplies every per-frame movement.
+    float _frameScale = 1.0f;
+    unsigned long _lastFrameMs = 0;
 
     // --- Player ----------------------------------------------------------------
     float _x = 0.0f, _z = 0.0f;
@@ -198,6 +201,7 @@ private:
     void loadHighScore();
     void saveHighScore();
     void recordHighScore();
+    void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);

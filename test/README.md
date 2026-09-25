@@ -13,10 +13,17 @@ build.
 ## Running
 
 ```bash
-test/build.sh                # build, run all three scenarios, print summaries
+test/build.sh                # build, run all scenarios, print summaries
 test/build.sh god 30000      # one scenario, full trace
+test/build.sh god 30000 45   # ...at a 45ms frame time (~22fps)
 test/build.sh --build-only
 ```
+
+The third argument is milliseconds of fake clock per frame, default 16. The
+game reads it as its own frame time, so it sets the frame rate being
+simulated — useful now that movement scales with frame time (see
+REFERENCE_FRAME_MS). At 33 the scale is exactly 1.0, so a trace there should
+match one taken before that change.
 
 Needs a host `g++` with C++17. Jet is picked up from `.pio/libdeps/` once
 `pio run` has fetched it, or from `JET_SRC=/path/to/Jet/src`. Build artifacts
