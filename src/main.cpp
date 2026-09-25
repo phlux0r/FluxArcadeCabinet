@@ -170,6 +170,57 @@ void setup() {
 }
 
 // =============================================================================
+// FRAME RATE INSTRUMENTATION — build with -DSHOW_FPS (see platformio.ini)
+//
+// loop() caps the frame rate, so "fps" sits at 60 whenever there's headroom
+// and only drops once a frame overruns. The work figures are the real
+// measurement: how long a frame's input, update and render actually took
+// against that budget. Games move by a fixed amount per frame, so sustained
+// work at or above the budget is what makes them play slow.
+//
+// Reported once a second, to the screen (top-left, over whatever the game
+// drew) and to serial. Drawing the overlay itself costs a little, counted
+// against the next frame rather than the one being reported.
+// =============================================================================
+#ifdef SHOW_FPS
+namespace {
+uint32_t fpsFrames = 0, fpsWorkSumUs = 0, fpsPeakUs = 0, fpsWindowStartUs = 0;
+uint32_t fpsLastFps = 0, fpsLastAvgUs = 0, fpsLastPeakUs = 0;
+
+void fpsAccumulate(uint32_t workUs) {
+    fpsWorkSumUs += workUs;
+    if (workUs > fpsPeakUs) fpsPeakUs = workUs;
+    ++fpsFrames;
+
+    if (micros() - fpsWindowStartUs < 1000000UL) return;
+    fpsLastFps    = fpsFrames;
+    fpsLastAvgUs  = fpsWorkSumUs / fpsFrames;
+    fpsLastPeakUs = fpsPeakUs;
+    fpsFrames = fpsWorkSumUs = fpsPeakUs = 0;
+    fpsWindowStartUs = micros();
+    Serial.printf("[FPS] %u fps | work avg %u.%02ums peak %u.%02ums | budget %u.%02ums\n",
+                  (unsigned)fpsLastFps,
+                  (unsigned)(fpsLastAvgUs / 1000), (unsigned)((fpsLastAvgUs % 1000) / 10),
+                  (unsigned)(fpsLastPeakUs / 1000), (unsigned)((fpsLastPeakUs % 1000) / 10),
+                  (unsigned)(ArcadeConfig::FRAME_INTERVAL_US / 1000),
+                  (unsigned)((ArcadeConfig::FRAME_INTERVAL_US % 1000) / 10));
+}
+
+void fpsDraw() {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%u %u.%u/%u.%u", (unsigned)fpsLastFps,
+             (unsigned)(fpsLastAvgUs / 1000), (unsigned)((fpsLastAvgUs % 1000) / 100),
+             (unsigned)(fpsLastPeakUs / 1000), (unsigned)((fpsLastPeakUs % 1000) / 100));
+    tft.setFont();
+    tft.setTextSize(1);
+    tft.setTextColor(ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_BLACK);
+    tft.setCursor(0, 0);
+    tft.print(buf);
+}
+}  // namespace
+#endif
+
+// =============================================================================
 // MAIN LOOP
 // =============================================================================
 void loop() {
@@ -269,4 +320,9 @@ void loop() {
             returnToLauncher();
             break;
     }
+
+#ifdef SHOW_FPS
+    fpsAccumulate(micros() - lastFrameUs);   // before the overlay's own cost
+    fpsDraw();
+#endif
 }
