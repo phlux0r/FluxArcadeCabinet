@@ -29,6 +29,13 @@ Scenarios:
 | `play` | Normal run — the bot dies and restarts, so game-over is covered |
 | `god` | Health pinned, so a long run reaches many bosses and arena resets |
 | `menus` | Attract exit, in-game A+B quit, game-over timeout |
+| `profile` | `god`, plus per-frame render cost grouped by what was on screen |
+
+`profile` reports Jet's per-frame triangle counts and host render time,
+bucketed by how many tanks were on screen, plus the scene's total object and
+triangle count as a drift check (an arena reset only moves existing objects,
+so the totals must not grow). Host microseconds aren't ESP32 microseconds —
+compare the buckets to each other, not to a frame budget.
 
 ## Checking a change
 
