@@ -717,7 +717,14 @@ private:
     // self-intersecting triangle the way fanning an arbitrary concave
     // polygon could.
     //
-    // Side-wall outward normal ((-dz, 0, dx) from each edge's own (dx,dz)
+    // Built standing upright: the plus outline lives in the local X-Y
+    // (vertical) plane and is extruded a short distance along Z, rather
+    // than lying flat in X-Z extruded up in Y — so it reads as a "+" from
+    // the tank's eye-level view instead of a thin disc seen edge-on. The
+    // existing Y-axis rotate() call then spins it face-on to edge-on like
+    // a coin, which is the intended look for a rotating pickup.
+    //
+    // Side-wall outward normal ((-dy, dx, 0) from each edge's own (dx,dy)
     // direction) was verified by hand against three edges in different
     // quadrants of the outline before trusting it here, the same
     // discipline as the barrel's rotation math earlier this session — but
@@ -732,45 +739,165 @@ private:
     // once and they're otherwise motionless, unlike the ground/obstacles/
     // trees this session was careful to keep cheap because there can be
     // many of them or they move every frame.
-    Renderer::Object* buildRepairCross(int32_t armHalf, int32_t extHalf, int32_t height,
+    Renderer::Object* buildRepairCross(int32_t armHalf, int32_t extHalf, int32_t depth,
                                        Renderer::Material* mat) {
         Renderer::Object* obj = new Renderer::Object();
-        const int32_t halfH = height / 2;
+        const int32_t halfD = depth / 2;
         const int N = 12;
         const int32_t ox[12] = {  armHalf,  extHalf,  extHalf,  armHalf,  armHalf, -armHalf,
                                   -armHalf, -extHalf, -extHalf, -armHalf, -armHalf,  armHalf };
-        const int32_t oz[12] = {  armHalf,  armHalf, -armHalf, -armHalf, -extHalf, -extHalf,
+        const int32_t oy[12] = {  armHalf,  armHalf, -armHalf, -armHalf, -extHalf, -extHalf,
                                   -armHalf, -armHalf,  armHalf,  armHalf,  extHalf,  extHalf };
 
         for (int i = 0; i < N; ++i) {
             int j = (i + 1) % N;
-            int32_t dx = ox[j] - ox[i], dz = oz[j] - oz[i];
-            float len = sqrtf((float)dx * dx + (float)dz * dz);
+            int32_t dx = ox[j] - ox[i], dy = oy[j] - oy[i];
+            float len = sqrtf((float)dx * dx + (float)dy * dy);
             float s = (len > 0.0001f) ? ((float)FIXED_POINT_SCALE / len) : 0.0f;
-            Vector3 n{ (int32_t)(-(float)dz * s), 0, (int32_t)((float)dx * s) };
+            Vector3 n{ (int32_t)(-(float)dy * s), (int32_t)((float)dx * s), 0 };
 
             uint16_t b = (uint16_t)obj->vertices.size();
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], -halfH, oz[i]}, Vector2{0, 0}, n });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], -halfH, oz[j]}, Vector2{0, 0}, n });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j],  halfH, oz[j]}, Vector2{0, 0}, n });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i],  halfH, oz[i]}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], oy[i], -halfD}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], oy[j], -halfD}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], oy[j],  halfD}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], oy[i],  halfD}, Vector2{0, 0}, n });
             obj->addFace(b, b + 1, b + 2, b + 3, mat);
         }
 
-        const Vector3 upN{0, FIXED_POINT_SCALE, 0}, downN{0, -FIXED_POINT_SCALE, 0};
+        const Vector3 frontN{0, 0, FIXED_POINT_SCALE}, backN{0, 0, -FIXED_POINT_SCALE};
         for (int i = 0; i < N; ++i) {
             int j = (i + 1) % N;
-            uint16_t bt = (uint16_t)obj->vertices.size();
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, halfH, 0}, Vector2{0, 0}, upN });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], halfH, oz[i]}, Vector2{0, 0}, upN });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], halfH, oz[j]}, Vector2{0, 0}, upN });
-            obj->addTriangle(bt, bt + 1, bt + 2, mat);
+            uint16_t bf = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, 0, halfD}, Vector2{0, 0}, frontN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], oy[i], halfD}, Vector2{0, 0}, frontN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], oy[j], halfD}, Vector2{0, 0}, frontN });
+            obj->addTriangle(bf, bf + 1, bf + 2, mat);
 
             uint16_t bb = (uint16_t)obj->vertices.size();
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, -halfH, 0}, Vector2{0, 0}, downN });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], -halfH, oz[i]}, Vector2{0, 0}, downN });
-            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], -halfH, oz[j]}, Vector2{0, 0}, downN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, 0, -halfD}, Vector2{0, 0}, backN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], oy[i], -halfD}, Vector2{0, 0}, backN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], oy[j], -halfD}, Vector2{0, 0}, backN });
             obj->addTriangle(bb, bb + 1, bb + 2, mat);
+        }
+
+        obj->calculateBoundingBox();
+        obj->cullingMode = Renderer::CullingMode::NO_CULLING;   // hand-authored winding, unverified
+        return obj;
+    }
+
+    // Shared by buildPyramidFrustum/buildStumpyPyramid: a slanted quad's
+    // outward normal isn't purely horizontal like the cross's vertical
+    // walls, so it's computed from the actual face rather than assumed —
+    // cross product of two edges, then flipped if it points back toward
+    // the Y axis instead of away from it (checked via the horizontal
+    // component of the face centroid, which is never at the axis for an
+    // off-centre side face).
+    static Vector3 outwardQuadNormal(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3) {
+        float e1x = (float)(v1.x - v0.x), e1y = (float)(v1.y - v0.y), e1z = (float)(v1.z - v0.z);
+        float e2x = (float)(v3.x - v0.x), e2y = (float)(v3.y - v0.y), e2z = (float)(v3.z - v0.z);
+        float nx = e1y * e2z - e1z * e2y;
+        float ny = e1z * e2x - e1x * e2z;
+        float nz = e1x * e2y - e1y * e2x;
+        float len = sqrtf(nx * nx + ny * ny + nz * nz);
+        if (len > 0.0001f) { nx /= len; ny /= len; nz /= len; }
+        float cx = (float)(v0.x + v1.x + v2.x + v3.x) / 4.0f;
+        float cz = (float)(v0.z + v1.z + v2.z + v3.z) / 4.0f;
+        if (nx * cx + nz * cz < 0.0f) { nx = -nx; ny = -ny; nz = -nz; }
+        return Vector3{ (int32_t)(nx * FIXED_POINT_SCALE), (int32_t)(ny * FIXED_POINT_SCALE),
+                        (int32_t)(nz * FIXED_POINT_SCALE) };
+    }
+
+    // Flat-topped pyramid ("frustum") — one of the mix of hill-like
+    // obstacle shapes alongside the pointed pyramid and the two-tier
+    // stumpy pyramid below. Base sits at local y=0 like createPyramid's
+    // own convention, so callers position it the same way. No bottom cap,
+    // same as createPyramid — the base is never seen once planted in the
+    // terrain. 4 side quads + 1 top cap quad = 5 faces, 10 triangles.
+    Renderer::Object* buildPyramidFrustum(int32_t baseHalf, int32_t topHalf, int32_t height,
+                                          Renderer::Material* mat) {
+        Renderer::Object* obj = new Renderer::Object();
+        const int32_t bx[4] = {  baseHalf,  baseHalf, -baseHalf, -baseHalf };
+        const int32_t bz[4] = {  baseHalf, -baseHalf, -baseHalf,  baseHalf };
+        const int32_t tx[4] = {  topHalf,  topHalf, -topHalf, -topHalf };
+        const int32_t tz[4] = {  topHalf, -topHalf, -topHalf,  topHalf };
+
+        for (int i = 0; i < 4; ++i) {
+            int j = (i + 1) % 4;
+            Vector3 v0{bx[i], 0, bz[i]}, v1{bx[j], 0, bz[j]};
+            Vector3 v2{tx[j], height, tz[j]}, v3{tx[i], height, tz[i]};
+            Vector3 n = outwardQuadNormal(v0, v1, v2, v3);
+
+            uint16_t b = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ v0, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v1, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v2, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v3, Vector2{0, 0}, n });
+            obj->addFace(b, b + 1, b + 2, b + 3, mat);
+        }
+
+        const Vector3 upN{0, FIXED_POINT_SCALE, 0};
+        uint16_t bt = (uint16_t)obj->vertices.size();
+        for (int i = 0; i < 4; ++i) {
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{tx[i], height, tz[i]}, Vector2{0, 0}, upN });
+        }
+        obj->addFace(bt, bt + 1, bt + 2, bt + 3, mat);
+
+        obj->calculateBoundingBox();
+        obj->cullingMode = Renderer::CullingMode::NO_CULLING;   // hand-authored winding, unverified
+        return obj;
+    }
+
+    // Two-tier "stumpy" pyramid — a hill silhouette where the slope
+    // changes partway up rather than running straight to the apex: a
+    // shallower lower band (base to waist) and a steeper upper band
+    // (waist to a point), so it reads as a rounded mound rather than a
+    // sharp cone. Base at local y=0, same convention as createPyramid.
+    // No bottom cap, same reasoning as buildPyramidFrustum. 4 lower side
+    // quads + 4 upper triangles = 8 + 4 = 12 triangles.
+    Renderer::Object* buildStumpyPyramid(int32_t baseHalf, int32_t waistHalf, int32_t waistY,
+                                         int32_t height, Renderer::Material* mat) {
+        Renderer::Object* obj = new Renderer::Object();
+        const int32_t bx[4] = {  baseHalf,  baseHalf, -baseHalf, -baseHalf };
+        const int32_t bz[4] = {  baseHalf, -baseHalf, -baseHalf,  baseHalf };
+        const int32_t wx[4] = {  waistHalf,  waistHalf, -waistHalf, -waistHalf };
+        const int32_t wz[4] = {  waistHalf, -waistHalf, -waistHalf,  waistHalf };
+
+        for (int i = 0; i < 4; ++i) {
+            int j = (i + 1) % 4;
+            Vector3 v0{bx[i], 0, bz[i]}, v1{bx[j], 0, bz[j]};
+            Vector3 v2{wx[j], waistY, wz[j]}, v3{wx[i], waistY, wz[i]};
+            Vector3 n = outwardQuadNormal(v0, v1, v2, v3);
+
+            uint16_t b = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ v0, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v1, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v2, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v3, Vector2{0, 0}, n });
+            obj->addFace(b, b + 1, b + 2, b + 3, mat);
+        }
+
+        const Vector3 apex{0, height, 0};
+        for (int i = 0; i < 4; ++i) {
+            int j = (i + 1) % 4;
+            Vector3 v0{wx[i], waistY, wz[i]}, v1{wx[j], waistY, wz[j]};
+            float e1x = (float)(v1.x - v0.x), e1z = (float)(v1.z - v0.z);
+            float e2x = (float)(apex.x - v0.x), e2y = (float)(apex.y - v0.y), e2z = (float)(apex.z - v0.z);
+            // cross(e1, e2) with e1.y == 0 (waist ring is flat), expanded by hand
+            float nx = -e1z * e2y;
+            float ny = e1z * e2x - e1x * e2z;
+            float nz = e1x * e2y;
+            float len = sqrtf(nx * nx + ny * ny + nz * nz);
+            if (len > 0.0001f) { nx /= len; ny /= len; nz /= len; }
+            float cx = (float)(v0.x + v1.x) / 2.0f, cz = (float)(v0.z + v1.z) / 2.0f;
+            if (nx * cx + nz * cz < 0.0f) { nx = -nx; ny = -ny; nz = -nz; }
+            Vector3 n{ (int32_t)(nx * FIXED_POINT_SCALE), (int32_t)(ny * FIXED_POINT_SCALE),
+                      (int32_t)(nz * FIXED_POINT_SCALE) };
+
+            uint16_t b = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ v0, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ v1, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ apex, Vector2{0, 0}, n });
+            obj->addTriangle(b, b + 1, b + 2, mat);
         }
 
         obj->calculateBoundingBox();
@@ -898,12 +1025,25 @@ private:
             Renderer::Material* mat;
             int32_t baseY;
             switch (o.shape) {
-                case SHAPE_PYRAMID:
-                    // createPyramid puts its base at local y=0.
+                case SHAPE_PYRAMID: {
+                    // Mixed to make hills read as varied rather than
+                    // identical cones — deterministic per obstacle (index)
+                    // rather than random, so the arena layout stays fixed
+                    // across runs like every other obstacle here. All
+                    // three variants put their base at local y=0.
                     mat = &_obstaclePyramidMat;
-                    obj = Primitives::createPyramid(o.size, (o.size * 5) / 4, mat);
+                    int variant = i % 3;
+                    if (variant == 0) {
+                        obj = Primitives::createPyramid(o.size, (o.size * 5) / 4, mat);
+                    } else if (variant == 1) {
+                        obj = buildPyramidFrustum(o.size / 2, (o.size * 2) / 5, (o.size * 9) / 10, mat);
+                    } else {
+                        obj = buildStumpyPyramid(o.size / 2, (o.size * 17) / 40, (o.size * 1) / 2,
+                                                 (o.size * 11) / 10, mat);
+                    }
                     baseY = groundY;
                     break;
+                }
                 case SHAPE_ROCK:
                     // "Rock" = an irregular cube (non-uniform proportions +
                     // rotation), not a round primitive — see the material
@@ -940,10 +1080,11 @@ private:
         for (int i = 0; i < REPAIR_COUNT; ++i) {
             const int32_t REPAIR_ARM_HALF = 26;   // half-width of the cross arms
             const int32_t REPAIR_EXT_HALF = 62;   // half-length from center to arm tip
-            const int32_t REPAIR_HEIGHT = 70;      // full extrusion depth
-            _kits[i].obj = buildRepairCross(REPAIR_ARM_HALF, REPAIR_EXT_HALF, REPAIR_HEIGHT, &_kitMat);
-            // old cube clearance was 90-65=25; cross half-height is 35, so +60 keeps the same clearance
-            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 60,
+            const int32_t REPAIR_DEPTH = 22;      // thin front-to-back extrusion
+            _kits[i].obj = buildRepairCross(REPAIR_ARM_HALF, REPAIR_EXT_HALF, REPAIR_DEPTH, &_kitMat);
+            // upright now, so the vertical half-extent is REPAIR_EXT_HALF (62), not
+            // a height/2 — same ~25-unit ground clearance as before: 62+25=87
+            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 87,
                                       REPAIRS[i].z);
             _scene->addObject(_kits[i].obj);
         }
