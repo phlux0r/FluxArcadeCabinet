@@ -75,6 +75,7 @@ private:
     static const int32_t RIVER_Y       = 6;
     static const int32_t RIVER_WIDTH   = 260;
     static const int32_t RIVER_SEGMENTS = 8;
+    static constexpr float RIVER_SPEED_MULT = 0.5f;   // player and enemies slow down in the water
 
     // --- Arena layout placement (generateArenaLayout()) -----------------------
     // Shared by every category placeCircle() finds a spot for.
@@ -176,7 +177,10 @@ private:
     static const int KILLS_PER_LEVEL = 4;
     static const int MAX_LEVEL = 6;
 
-    static const int MAX_ENEMY_SHELLS = 4;
+    static const int MAX_ENEMY_SHELLS = 6;   // room for a boss spread (3) plus regular fire
+    // Delay between an enemy committing to a shot (barrel glows, warning
+    // tone) and the shell actually leaving — the player's cue to move.
+    static const unsigned long FIRE_TELEGRAPH_MS = 350;
     // Slow enough that breaking sideways actually outruns the shell: you need
     // to clear HIT_RADIUS before it arrives, so this is the number that
     // decides whether "keep moving broadside" is a real defence or a
@@ -241,6 +245,19 @@ private:
     static const int32_t   BOSS_STANDOFF   = 1500;
     static constexpr float BOSS_AIM_TOLERANCE = 8.0f;
     static constexpr float BOSS_SPEED_MULT = 0.8f;   // applied on top of enemySpeed()
+    // Boss volleys alternate between a spread and a burst (see fireVolley()).
+    static constexpr float BOSS_SPREAD_DEG = 14.0f;
+    static const int BOSS_BURST_SHOTS = 3;
+    static const unsigned long BOSS_BURST_GAP_MS = 220;
+    // Rear armour: a shell travelling within 60° of the boss's own facing
+    // (cos 60° = 0.5) hit it from behind and does extra damage.
+    static constexpr float BOSS_REAR_ARC_COS = 0.5f;
+    static const int BOSS_REAR_DAMAGE = 2;
+    // Kill-speed bonus: BOSS_TIME_BONUS_MAX, minus this per second the
+    // fight lasted, floored at 0 (100s to reach zero).
+    static const long BOSS_TIME_BONUS_MAX = 1000;
+    static const long BOSS_TIME_BONUS_PER_SEC = 10;
+    static const unsigned long BOSS_BONUS_SHOW_MS = 3000;
     static const int32_t BOSS_HULL_W = 448, BOSS_HULL_H = 176, BOSS_HULL_D = 608;
     static const int32_t BOSS_TURRET_W = 240, BOSS_TURRET_H = 144;
     static const int32_t BOSS_BARREL_R = 32, BOSS_BARREL_LEN = 272;
@@ -370,6 +387,10 @@ private:
         int hp = 1;
         int maxHp = 1;
         bool playerBumping = false;   // rising-edge guard for resolveEnemyCollision()'s bump damage
+        unsigned long fireAt = 0;     // non-zero while telegraphing a shot
+        int volley = 0;               // boss only: alternates spread/burst
+        int burstShotsLeft = 0;       // boss only: follow-up shots in a burst
+        unsigned long nextBurstAt = 0;
     };
     Enemy _enemies[MAX_ENEMIES];
 
@@ -381,6 +402,9 @@ private:
     unsigned long _bossAlertUntil = 0;   // updateEnemies() won't call trySpawnBoss() before this
     int   _nextBossAt  = BOSS_EVERY_KILLS;
     int   _bossesDefeated = 0;   // drives the next boss's HP — see BOSS_HP_STEP
+    unsigned long _bossSpawnedAt = 0;   // start of the current fight, for the time bonus
+    long  _bossBonus = 0;               // last time bonus awarded, for drawBossBonus()
+    unsigned long _bossBonusUntil = 0;
 
     // Arena-shift transition cue (regenerateArena()) — deferred the same way
     // _bossAlertUntil is, so the new-arena chime doesn't cut off the boss's
@@ -508,6 +532,8 @@ private:
     Renderer::Material _bossTurretMat{ 0xFFFF };
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
+    // Swapped onto an enemy's barrel while it telegraphs a shot.
+    Renderer::Material _barrelHotMat{ ArcadeConfig::COLOR_WHITE };
     // Pine trees: GOURAUD like the other obstacles, so they pick up the
     // same live _sun/_amb lighting instead of a baked colour — the two
     // canopy tiers get slightly different greens so the step between them
@@ -531,6 +557,7 @@ private:
 
     // --- Tank state ----------------------------------------------------------
     float _x = 0.0f, _z = 0.0f;
+    float _vx = 0.0f, _vz = 0.0f;   // last frame's actual movement, for leading enemy aim
     float _headingDeg = 0.0f;
     float _speed = 0.0f;
 
@@ -614,6 +641,11 @@ private:
         float cx = x0 + t * dx, cz = z0 + t * dz;
         float ex = px - cx, ez = pz - cz;
         return sqrtf(ex * ex + ez * ez);
+    }
+
+    static bool inRiver(float x, float z) {
+        return distToSegment(x, z, (float)RIVER_X0, (float)RIVER_Z0,
+                             (float)RIVER_X1, (float)RIVER_Z1) < (float)RIVER_WIDTH / 2.0f;
     }
 
     // A placed obstacle/tree/kit's own footprint, tracked only for the
@@ -1201,6 +1233,7 @@ private:
         _kitMat.shadingMode         = Renderer::ShadingMode::UNLIT;
         _playerShellMat.shadingMode = Renderer::ShadingMode::UNLIT;
         _enemyShellMat.shadingMode  = Renderer::ShadingMode::UNLIT;
+        _barrelHotMat.shadingMode   = Renderer::ShadingMode::UNLIT;
 
         _scene->setDirectionalLight(&_sun);
         _scene->setAmbientLight(&_amb);
@@ -1365,6 +1398,28 @@ private:
         return degrees(atan2f(toX - fromX, toZ - fromZ));
     }
 
+    int32_t tankRadius(const Enemy &e) const {
+        return (&e == &_boss) ? BOSS_RADIUS : ENEMY_RADIUS;
+    }
+
+    // Would putting `self` at (x,z) overlap tank `o`? For a move (not a
+    // spawn) it only counts if the move also brings them closer, so two
+    // tanks that already overlap can still drive apart instead of locking.
+    bool crowdsTank(const Enemy &self, const Enemy &o, float x, float z, bool spawning) const {
+        if (!within(x, z, o.x, o.z, tankRadius(self) + tankRadius(o))) return false;
+        if (spawning) return true;
+        float nx = x - o.x, nz = z - o.z;
+        float cx = self.x - o.x, cz = self.z - o.z;
+        return nx * nx + nz * nz < cx * cx + cz * cz;
+    }
+
+    bool blockedByTank(const Enemy &self, float x, float z, bool spawning) const {
+        for (const auto &o : _enemies) {
+            if (&o != &self && o.alive && crowdsTank(self, o, x, z, spawning)) return true;
+        }
+        return _bossActive && &self != &_boss && crowdsTank(self, _boss, x, z, spawning);
+    }
+
     bool blockedFor(float x, float z, int32_t radius) const {
         for (int i = 0; i < OBSTACLE_COUNT; ++i) {
             float dx = x - (float)OBSTACLES[i].x;
@@ -1487,6 +1542,8 @@ private:
         float headRad = radians(_headingDeg);
         float fx = sinf(headRad);
         float fz = cosf(headRad);
+        const float terrainMult = inRiver(_x, _z) ? RIVER_SPEED_MULT : 1.0f;
+        const float prevX = _x, prevZ = _z;
 
         float nx, nz;
         if (input.btnB) {
@@ -1496,14 +1553,14 @@ private:
             // _speed/SPEED_SMOOTH so strafing eases in/out exactly like
             // normal driving does, just along a different axis.
             float strafeDrive = STRAFE_SIGN * input.joyX;
-            float target = strafeDrive * STRAFE_SPEED;
+            float target = strafeDrive * STRAFE_SPEED * terrainMult;
             _speed += (target - _speed) * SPEED_SMOOTH;
             float rx = fz, rz = -fx;
             nx = _x + rx * _speed;
             nz = _z + rz * _speed;
         } else {
             float drive  = DRIVE_SIGN * input.joyX;
-            float target = drive * (drive >= 0.0f ? FWD_SPEED : REV_SPEED);
+            float target = drive * (drive >= 0.0f ? FWD_SPEED : REV_SPEED) * terrainMult;
             _speed += (target - _speed) * SPEED_SMOOTH;
             nx = _x + fx * _speed;
             nz = _z + fz * _speed;
@@ -1516,6 +1573,8 @@ private:
         const float limit = (float)(ARENA_HALF - TANK_RADIUS);
         _x = constrain(_x, -limit, limit);
         _z = constrain(_z, -limit, limit);
+        _vx = _x - prevX;
+        _vz = _z - prevZ;
 
         _camera.setPosition((int32_t)_x, EYE_HEIGHT, (int32_t)_z);
         _camera.setRotation(0, (int32_t)_headingDeg, 0);
@@ -1567,6 +1626,21 @@ private:
         for (auto &tri : obj->triangles) tri.material = mat;
     }
 
+    void setBarrelHot(Enemy &e, bool hot) {
+        Renderer::Material* normal = (&e == &_boss) ? &_bossTurretMat : &_enemyBarrelMat;
+        setObjectMaterial(e.barrel, hot ? &_barrelHotMat : normal);
+    }
+
+    // Cancels a telegraphed shot or unfinished burst — on death/spawn, so
+    // a tank never comes back with a glowing barrel or a queued shot.
+    void resetFireState(Enemy &e) {
+        e.fireAt = 0;
+        e.volley = 0;
+        e.burstShotsLeft = 0;
+        e.playerBumping = false;
+        setBarrelHot(e, false);
+    }
+
     void spawnEnemy(Enemy &e) {
         // Spawn out on the perimeter, and not right on top of the player.
         for (int attempt = 0; attempt < 12; ++attempt) {
@@ -1575,12 +1649,13 @@ private:
             float ex  = sinf(ang) * r;
             float ez  = cosf(ang) * r;
             if (blockedFor(ex, ez, ENEMY_RADIUS)) continue;
+            if (blockedByTank(e, ex, ez, true)) continue;
             if (within(ex, ez, _x, _z, 1600)) continue;
             e.x = ex;
             e.z = ez;
             e.headingDeg = bearingTo(ex, ez, _x, _z);
             e.alive = true;
-            e.playerBumping = false;
+            resetFireState(e);
             e.tankClass = pickEnemyClass();
             e.hp = e.maxHp = CLASS_HP[e.tankClass];
             setObjectMaterial(e.turret, e.tankClass == CLASS_1 ? &_enemyTurretMat
@@ -1598,20 +1673,20 @@ private:
         e.respawnAt = millis() + 400;
     }
 
-    // A hit that doesn't kill: multi-hp classes and the boss both need
-    // this now, so it's split out from destroyEnemy() rather than folded
-    // back in — a smaller spark burst and a plain clang tone (distinct
-    // from tryFire()'s 950Hz shot and the explosion.wav a kill gets), so
-    // "that connected but didn't finish it" reads differently from both.
-    void hitEnemy(Enemy &e, AudioEngine &audio) {
-        e.hp--;
+    // A hit that doesn't kill gets a small spark burst and a clang tone,
+    // distinct from the shot sound and the explosion a kill gets. A
+    // damage > 1 hit (boss rear armour) gets a higher clang and more
+    // sparks so the player learns that flanking paid off.
+    void hitEnemy(Enemy &e, AudioEngine &audio, int damage = 1) {
+        e.hp -= damage;
         if (e.hp <= 0) {
             destroyEnemy(e, audio);
             return;
         }
+        bool heavy = damage > 1;
         _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
-                              Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 10);
-        audio.playTone(650, 50);
+                              Renderer::Vec3f{ 0, 1, 0 }, 300.0f, heavy ? 24 : 10);
+        audio.playTone(heavy ? 1300 : 650, heavy ? 90 : 50);
     }
 
     // Fresh obstacle/tree/kit layout on every boss kill — reuses
@@ -1642,6 +1717,7 @@ private:
         _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
                               Renderer::Vec3f{ 0, 1, 0 }, 520.0f, isBoss ? 46 : 26);
         e.alive = false;
+        resetFireState(e);
         e.hull->enabled = false;
         e.turret->enabled = false;
         e.barrel->enabled = false;
@@ -1660,7 +1736,11 @@ private:
             // death toward _kills risks it landing on another multiple of
             // BOSS_EVERY_KILLS and re-triggering itself immediately.
             _bossActive = false;
-            _score += BOSS_SCORE;
+            long fightSecs = (long)((millis() - _bossSpawnedAt) / 1000UL);
+            _bossBonus = BOSS_TIME_BONUS_MAX - fightSecs * BOSS_TIME_BONUS_PER_SEC;
+            if (_bossBonus < 0) _bossBonus = 0;
+            _bossBonusUntil = millis() + BOSS_BONUS_SHOW_MS;
+            _score += BOSS_SCORE + _bossBonus;
             _bossesDefeated++;   // next boss spawns with BOSS_HP_STEP more HP
             audio.playTone(1900, 300);   // bigger fanfare than the regular level-up cue
             regenerateArena();
@@ -1708,12 +1788,14 @@ private:
             float ex  = sinf(ang) * r;
             float ez  = cosf(ang) * r;
             if (blockedFor(ex, ez, BOSS_RADIUS)) continue;
+            if (blockedByTank(_boss, ex, ez, true)) continue;
             if (within(ex, ez, _x, _z, BOSS_MIN_SPAWN_DIST)) continue;
             _boss.x = ex;
             _boss.z = ez;
             _boss.headingDeg = bearingTo(ex, ez, _x, _z);
             _boss.alive = true;
-            _boss.playerBumping = false;
+            resetFireState(_boss);
+            _bossSpawnedAt = millis();
             _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
             _boss.hull->enabled   = true;
             _boss.turret->enabled = true;
@@ -1739,20 +1821,32 @@ private:
         float turnRate     = isBoss ? BOSS_TURN_RATE     : ENEMY_TURN_RATE;
         float standoff     = isBoss ? (float)BOSS_STANDOFF : (float)ENEMY_STANDOFF;
         float aimTolerance = isBoss ? BOSS_AIM_TOLERANCE : ENEMY_AIM_TOLERANCE;
-
-        float want = bearingTo(e.x, e.z, _x, _z);
-        float err  = angleDiff(want, e.headingDeg);
-        e.headingDeg = wrapAngle(e.headingDeg +
-                                 constrain(err, -turnRate, turnRate));
+        const int32_t radius = tankRadius(e);
 
         float dx = _x - e.x, dz = _z - e.z;
         float dist = sqrtf(dx * dx + dz * dz);
 
+        // Class 3 leads its target: aims where the player will be when a
+        // shell covering `dist` arrives. Everything else aims straight at
+        // the player, so steady strafing still beats the easier tanks.
+        float aimX = _x, aimZ = _z;
+        if (!isBoss && e.tankClass == CLASS_3) {
+            float framesToImpact = dist / ENEMY_SHELL_SPEED;
+            aimX += _vx * framesToImpact;
+            aimZ += _vz * framesToImpact;
+        }
+
+        float want = bearingTo(e.x, e.z, aimX, aimZ);
+        float err  = angleDiff(want, e.headingDeg);
+        e.headingDeg = wrapAngle(e.headingDeg +
+                                 constrain(err, -turnRate, turnRate));
+
         if (dist > standoff) {
+            float step = inRiver(e.x, e.z) ? speed * RIVER_SPEED_MULT : speed;
             float hr = radians(e.headingDeg);
-            float nx = e.x + sinf(hr) * speed;
-            float nz = e.z + cosf(hr) * speed;
-            if (!blockedFor(nx, nz, ENEMY_RADIUS)) {
+            float nx = e.x + sinf(hr) * step;
+            float nz = e.z + cosf(hr) * step;
+            if (!blockedFor(nx, nz, radius) && !blockedByTank(e, nx, nz, false)) {
                 e.x = nx;
                 e.z = nz;
             } else {
@@ -1760,29 +1854,72 @@ private:
                 // grinding against it forever.
                 e.headingDeg = wrapAngle(e.headingDeg + 9.0f);
             }
-            const float limit = (float)(ARENA_HALF - ENEMY_RADIUS);
+            const float limit = (float)(ARENA_HALF - radius);
             e.x = constrain(e.x, -limit, limit);
             e.z = constrain(e.z, -limit, limit);
         }
 
-        if (fabsf(err) < aimTolerance && dist < (float)ENEMY_FIRE_RANGE &&
-            (long)(millis() - e.nextFireAt) >= 0) {
-            for (auto &s : _enemyShells) {
-                if (s.active) continue;
-                float hr = radians(e.headingDeg);
-                fireShell(s, e.x + sinf(hr) * 220.0f, e.z + cosf(hr) * 220.0f,
-                          e.headingDeg, ENEMY_SHELL_SPEED);
-                // Shared /audio/shot.wav — same asset and call as the
-                // player's own tryFire(). playWAV() stops whatever's
-                // currently playing first (same as playExplosionSound()),
-                // so a shot fired right after a kill can cut its
-                // explosion.wav short; accepted, matches how every other
-                // sound in this single-channel setup already behaves.
-                audio.playWAV("/audio/shot.wav");
-                break;
-            }
-            e.nextFireAt = fireDelay();
+        // Follow-up shots of a boss burst, along its current heading.
+        if (e.burstShotsLeft > 0 && (long)(millis() - e.nextBurstAt) >= 0) {
+            fireEnemyShell(e, e.headingDeg);
+            e.burstShotsLeft--;
+            e.nextBurstAt = millis() + BOSS_BURST_GAP_MS;
         }
+
+        if (e.fireAt != 0) {
+            // Telegraph running: fire when it ends, wherever it's now aimed.
+            if ((long)(millis() - e.fireAt) >= 0) {
+                e.fireAt = 0;
+                setBarrelHot(e, false);
+                fireVolley(e, audio);
+                e.nextFireAt = fireDelay();
+            }
+        } else if (e.burstShotsLeft == 0 && fabsf(err) < aimTolerance &&
+                   dist < (float)ENEMY_FIRE_RANGE && (long)(millis() - e.nextFireAt) >= 0) {
+            // Commit to a shot: barrel glows and a warning tone plays, so
+            // the player gets FIRE_TELEGRAPH_MS to get out of the way.
+            e.fireAt = millis() + FIRE_TELEGRAPH_MS;
+            setBarrelHot(e, true);
+            audio.playTone(isBoss ? 330 : 520, 40);
+        }
+    }
+
+    // One shell from `e`'s muzzle along headingDeg. Returns false if the
+    // shared shell pool is full.
+    bool fireEnemyShell(Enemy &e, float headingDeg) {
+        const float muzzle = (&e == &_boss) ? 360.0f : 220.0f;
+        for (auto &s : _enemyShells) {
+            if (s.active) continue;
+            float hr = radians(headingDeg);
+            fireShell(s, e.x + sinf(hr) * muzzle, e.z + cosf(hr) * muzzle,
+                      headingDeg, ENEMY_SHELL_SPEED);
+            return true;
+        }
+        return false;
+    }
+
+    // Regular tanks fire one shell. The boss alternates a 3-shell spread
+    // (hard to dodge sideways, easy to back out of) with a 3-shot burst
+    // down one line (easy to sidestep, punishing to sit still in).
+    void fireVolley(Enemy &e, AudioEngine &audio) {
+        bool fired;
+        if (&e == &_boss) {
+            if (e.volley++ % 2 == 0) {
+                fired  = fireEnemyShell(e, e.headingDeg - BOSS_SPREAD_DEG);
+                fired |= fireEnemyShell(e, e.headingDeg);
+                fired |= fireEnemyShell(e, e.headingDeg + BOSS_SPREAD_DEG);
+            } else {
+                fired = fireEnemyShell(e, e.headingDeg);
+                e.burstShotsLeft = BOSS_BURST_SHOTS - 1;
+                e.nextBurstAt = millis() + BOSS_BURST_GAP_MS;
+            }
+        } else {
+            fired = fireEnemyShell(e, e.headingDeg);
+        }
+        // playWAV() stops whatever's playing first, so this can cut a
+        // just-started explosion.wav short — accepted on this
+        // single-channel setup, same as the player's own shot.
+        if (fired) audio.playWAV("/audio/shot.wav");
     }
 
     // createCylinder's local axis is Y; rotX=90 tips it onto its side, and
@@ -1883,7 +2020,12 @@ private:
             }
             if (!hit && _bossActive &&
                 within(_playerShell.x, _playerShell.z, _boss.x, _boss.z, BOSS_KILL_RADIUS)) {
-                hitEnemy(_boss, audio);
+                // Rear hit: the shell is travelling roughly the same way
+                // the boss faces, i.e. it came from behind.
+                float hr = radians(_boss.headingDeg);
+                float sv = sqrtf(_playerShell.vx * _playerShell.vx + _playerShell.vz * _playerShell.vz);
+                float along = (_playerShell.vx * sinf(hr) + _playerShell.vz * cosf(hr)) / sv;
+                hitEnemy(_boss, audio, along > BOSS_REAR_ARC_COS ? BOSS_REAR_DAMAGE : 1);
                 killShell(_playerShell);
             }
         }
@@ -1951,6 +2093,8 @@ private:
         audio.stopLoop();   // same call AsteroidFluxGame uses to end its attract loop
         _x = 0.0f;
         _z = 0.0f;
+        _vx = 0.0f;
+        _vz = 0.0f;
         _headingDeg = 0.0f;
         _speed = 0.0f;
         _health = HEALTH_MAX;
@@ -1968,7 +2112,7 @@ private:
         for (auto &s : _enemyShells) killShell(s);
         for (int i = 0; i < MAX_ENEMIES; ++i) {
             _enemies[i].alive = false;
-            _enemies[i].playerBumping = false;
+            resetFireState(_enemies[i]);
             _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
             _enemies[i].barrel->enabled = false;
@@ -1979,7 +2123,7 @@ private:
             _enemies[i].respawnAt = millis() + 1200;
         }
         _boss.alive = false;
-        _boss.playerBumping = false;
+        resetFireState(_boss);
         _boss.hull->enabled   = false;
         _boss.turret->enabled = false;
         _boss.barrel->enabled = false;
@@ -1989,6 +2133,7 @@ private:
         _bossPending = false;
         _nextBossAt  = BOSS_EVERY_KILLS;
         _bossesDefeated = 0;
+        _bossBonusUntil = 0;
         _quitHoldStart = 0;
         _arenaShiftCuePending = false;
         _arenaShiftFlashUntil = 0;
@@ -2198,6 +2343,23 @@ private:
             canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
             canvas.print(msg);
         }
+    }
+
+    // Shown for BOSS_BONUS_SHOW_MS after a boss kill, in the strip the
+    // boss health bar used during the fight.
+    void drawBossBonus(GFXcanvas16 &canvas) {
+        if ((long)(millis() - _bossBonusUntil) >= 0) return;
+        char buf[24];
+        snprintf(buf, sizeof(buf), "TIME BONUS +%ld", _bossBonus);
+        canvas.setFont();
+        canvas.setTextSize(1);
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        canvas.getTextBounds(buf, 0, 0, &tbx, &tby, &tbw, &tbh);
+        const int y = 13;
+        canvas.fillRect(0, y - 2, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5, ArcadeConfig::COLOR_BLACK);
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
+        canvas.print(buf);
     }
 
     // Feedback while A+B is held, so a quit doesn't come as a surprise and
@@ -2472,6 +2634,7 @@ public:
         drawRadar(canvas);
         drawHUD(canvas);
         drawBossAlert(canvas);
+        drawBossBonus(canvas);
         drawQuitHint(canvas);
 
         if (_health <= 0) {
