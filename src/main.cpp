@@ -2,7 +2,7 @@
 // FLUX MASTER ARCADE — v2.0
 // Main state machine orchestrator.
 //
-// To add a new game:
+// To add a new game (see also src/games/IGame.h):
 //   1. #include its header below
 //   2. Instantiate it in the "Game instances" section
 //   3. Add it to the gameRegistry[] array
