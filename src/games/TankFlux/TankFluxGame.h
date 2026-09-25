@@ -127,6 +127,9 @@ private:
     // B alone is strafe during play, so quitting mid-game needs both
     // buttons held together.
     static const unsigned long QUIT_HOLD_MS = 2000;
+    // Fire (A) while strafing (B) is common, so the quit hint only appears
+    // once both have been held clearly longer than a normal shot press.
+    static const unsigned long QUIT_HINT_DELAY_MS = 650;
 
     // --- Combat --------------------------------------------------------------
     // Shells fly flat at a fixed height: gameplay is entirely on the ground
@@ -400,6 +403,8 @@ private:
     bool  _bossActive  = false;
     bool  _bossPending = false;   // trigger fired but perimeter spawn hasn't found a spot yet
     unsigned long _bossAlertUntil = 0;   // updateEnemies() won't call trySpawnBoss() before this
+    unsigned long _bossKlaxonAt = 0;     // next alert beep
+    int _bossKlaxonBeat = 0;
     int   _nextBossAt  = BOSS_EVERY_KILLS;
     int   _bossesDefeated = 0;   // drives the next boss's HP — see BOSS_HP_STEP
     unsigned long _bossSpawnedAt = 0;   // start of the current fight, for the time bonus
@@ -1759,7 +1764,7 @@ private:
             _nextBossAt += BOSS_EVERY_KILLS;
             _bossPending = true;
             _bossAlertUntil = millis() + BOSS_ALERT_MS;
-            audio.playTone(1100, 150);   // warning cue, distinct from the arrival tone at spawn
+            _bossKlaxonAt = millis();   // see updateEnemies()
         }
     }
 
@@ -2001,8 +2006,17 @@ private:
         if (_bossActive) {
             updateEnemyAI(_boss, enemySpeed() * BOSS_SPEED_MULT, audio);
             updateBossTransform();
-        } else if (_bossPending && millis() >= _bossAlertUntil) {
-            if (trySpawnBoss(audio)) _bossPending = false;
+        } else if (_bossPending) {
+            if ((long)(millis() - _bossAlertUntil) >= 0) {
+                if (trySpawnBoss(audio)) _bossPending = false;
+            } else if ((long)(millis() - _bossKlaxonAt) >= 0) {
+                // Two-tone klaxon through the alert window. playTone() is
+                // skipped while a WAV plays, so the beeps that land during
+                // the triggering kill's explosion are lost but later ones
+                // still get through.
+                audio.playTone((_bossKlaxonBeat++ % 2) ? 660 : 880, 180);
+                _bossKlaxonAt = millis() + 400;
+            }
         }
     }
 
@@ -2322,27 +2336,26 @@ private:
         }
     }
 
-    // BOSS_ALERT_MS warning shown between the boss trigger and trySpawnBoss()
-    // actually being allowed to run (see updateEnemies()) — a fast blink so
-    // it reads as urgent rather than a static banner, drawn over a black bar
-    // so it stays legible against the 3D scene behind it. Sits directly
-    // under the HUD strip rather than screen-centre: regular enemies can
-    // still be alive and on-screen during the alert window, and a centred
-    // banner was covering the gunsight and whatever you were aiming at.
+    // Shown between the boss trigger and its spawn. Directly under the HUD
+    // rather than screen-centre, so it doesn't cover the gunsight while
+    // regular enemies are still around. The bar itself flashes red/black
+    // (text stays visible in both phases) because small blinking text on
+    // its own was easy to miss mid-fight.
     void drawBossAlert(GFXcanvas16 &canvas) {
-        if (!_bossPending || millis() >= _bossAlertUntil) return;
+        if (!_bossPending || (long)(millis() - _bossAlertUntil) >= 0) return;
         const char* msg = "BOSS ALERT";
         canvas.setFont();
-        canvas.setTextSize(1);
+        canvas.setTextSize(2);
         int16_t tbx, tby; uint16_t tbw, tbh;
         canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
-        const int y = 13;   // just below the HUD strip's divider line at y=10
-        canvas.fillRect(0, y - 2, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5, ArcadeConfig::COLOR_BLACK);
-        if (millis() % 400 < 250) {
-            canvas.setTextColor(ArcadeConfig::COLOR_RED);
-            canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
-            canvas.print(msg);
-        }
+        const int y = 14;   // HUD divider is at y=10
+        bool on = millis() % 400 < 200;
+        canvas.fillRect(0, y - 3, ArcadeConfig::LANDSCAPE_WIDTH, (int)tbh + 5,
+                        on ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_BLACK);
+        canvas.setTextColor(on ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_RED);
+        canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - (int16_t)tbw) / 2, y);
+        canvas.print(msg);
+        canvas.setTextSize(1);
     }
 
     // Shown for BOSS_BONUS_SHOW_MS after a boss kill, in the strip the
@@ -2366,12 +2379,15 @@ private:
     // an accidental press is obvious. Same strip as drawBossAlert().
     void drawQuitHint(GFXcanvas16 &canvas) {
         if (_quitHoldStart == 0) return;
-        const int y = 13;
-        const int w = ArcadeConfig::LANDSCAPE_WIDTH;
+        const unsigned long delay = QUIT_HINT_DELAY_MS;
         const unsigned long total = QUIT_HOLD_MS;
         unsigned long held = millis() - _quitHoldStart;
+        if (held < delay) return;
         if (held > total) held = total;
-        int fillW = (int)((unsigned long)(w - 2) * held / total);
+        const int y = 13;
+        const int w = ArcadeConfig::LANDSCAPE_WIDTH;
+        // Bar fills over the visible part of the hold, not the whole 2s.
+        int fillW = (int)((unsigned long)(w - 2) * (held - delay) / (total - delay));
         canvas.fillRect(0, y - 2, w, 12, ArcadeConfig::COLOR_BLACK);
         canvas.fillRect(1, y + 8, fillW, 2, ArcadeConfig::COLOR_AMBER);
         canvas.setFont();
