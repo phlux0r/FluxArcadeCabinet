@@ -185,6 +185,11 @@ private:
     static const int32_t HIT_RADIUS  = 190;   // enemy shell vs player
     static const int32_t KILL_RADIUS = 250;   // player shell vs enemy
     static const int SCORE_PER_KILL = 100;
+    // Ramming a tank costs a little health too, not just being shot —
+    // driving through enemies read as a free pass before resolveEnemyCollision()
+    // existed at all. Deliberately light next to HIT_DAMAGE: this is a
+    // side-effect of a bad approach, not a real attack.
+    static const int BUMP_DAMAGE = 5;
 
     // --- Enemy classes & boss --------------------------------------------
     // Class 1 is the original single-hit tank, unchanged. Classes 2/3 only
@@ -219,6 +224,20 @@ private:
     // "BOSS ALERT" banner delay before trySpawnBoss() actually runs — gives
     // the player a beat of warning instead of the boss just appearing.
     static const unsigned long BOSS_ALERT_MS = 2500;
+    // Own AI tuning, used in updateEnemyAI() instead of the regular
+    // ENEMY_* values when the caller is the boss (see the isBoss check
+    // there) — playtest feedback was that reusing the regular tank's
+    // numbers made it home in and line up shots too easily for something
+    // meant to be a set-piece fight, not just a bigger regular tank.
+    // Slower turning is what actually lets you flank it (same idea
+    // ENEMY_TURN_RATE's own comment gives for the regular pool, just
+    // tuned further given how much longer a boss fight runs); the wider
+    // standoff and tighter aim cone both buy more reaction time before
+    // it's willing to fire.
+    static constexpr float BOSS_TURN_RATE  = 0.8f;
+    static const int32_t   BOSS_STANDOFF   = 1500;
+    static constexpr float BOSS_AIM_TOLERANCE = 8.0f;
+    static constexpr float BOSS_SPEED_MULT = 0.8f;   // applied on top of enemySpeed()
     static const int32_t BOSS_HULL_W = 448, BOSS_HULL_H = 176, BOSS_HULL_D = 608;
     static const int32_t BOSS_TURRET_W = 240, BOSS_TURRET_H = 144;
     static const int32_t BOSS_BARREL_R = 32, BOSS_BARREL_LEN = 272;
@@ -347,6 +366,7 @@ private:
         EnemyClass tankClass = CLASS_1;
         int hp = 1;
         int maxHp = 1;
+        bool playerBumping = false;   // rising-edge guard for resolveEnemyCollision()'s bump damage
     };
     Enemy _enemies[MAX_ENEMIES];
 
@@ -1375,6 +1395,39 @@ private:
         }
     }
 
+    // Same push-out as resolveObstacleCollision(), against enemy tanks and
+    // the boss — driving straight through them read as a free pass before
+    // this existed. Also charges BUMP_DAMAGE the first frame contact
+    // starts (e.playerBumping is the rising-edge guard, so leaning on a
+    // tank continuously doesn't drain health every single frame).
+    void resolveEnemyCollision(float &x, float &z, AudioEngine &audio) {
+        for (auto &e : _enemies) {
+            if (e.alive) bumpTank(e, ENEMY_RADIUS, x, z, audio);
+        }
+        if (_bossActive) bumpTank(_boss, BOSS_RADIUS, x, z, audio);
+    }
+
+    void bumpTank(Enemy &e, int32_t enemyRadius, float &x, float &z, AudioEngine &audio) {
+        float dx = x - e.x, dz = z - e.z;
+        float r  = (float)(TANK_RADIUS + enemyRadius);
+        float d2 = dx * dx + dz * dz;
+        if (d2 < r * r) {
+            float d = sqrtf(d2);
+            if (d < 0.0001f) { dx = r; dz = 0.0f; d = r; }
+            float push = (r - d) / d;
+            x += dx * push;
+            z += dz * push;
+            if (!e.playerBumping) {
+                e.playerBumping = true;
+                _health -= BUMP_DAMAGE;
+                _damageFlashUntil = millis() + 120;
+                audio.playTone(180, 70);   // dull collision thud, distinct from a shell hit
+            }
+        } else {
+            e.playerBumping = false;
+        }
+    }
+
     static bool within(float ax, float az, float bx, float bz, int32_t radius) {
         float dx = ax - bx, dz = az - bz;
         return dx * dx + dz * dz < (float)radius * (float)radius;
@@ -1420,7 +1473,7 @@ private:
         return true;
     }
 
-    void updateDriving(const InputState &input) {
+    void updateDriving(const InputState &input, AudioEngine &audio) {
         _headingDeg += TURN_SIGN * input.joyY * TURN_RATE;
         while (_headingDeg >= 360.0f) _headingDeg -= 360.0f;
         while (_headingDeg <    0.0f) _headingDeg += 360.0f;
@@ -1450,6 +1503,7 @@ private:
             nz = _z + fz * _speed;
         }
         resolveObstacleCollision(nx, nz);
+        resolveEnemyCollision(nx, nz, audio);
         _x = nx;
         _z = nz;
 
@@ -1520,6 +1574,7 @@ private:
             e.z = ez;
             e.headingDeg = bearingTo(ex, ez, _x, _z);
             e.alive = true;
+            e.playerBumping = false;
             e.tankClass = pickEnemyClass();
             e.hp = e.maxHp = CLASS_HP[e.tankClass];
             setObjectMaterial(e.turret, e.tankClass == CLASS_1 ? &_enemyTurretMat
@@ -1652,6 +1707,7 @@ private:
             _boss.z = ez;
             _boss.headingDeg = bearingTo(ex, ez, _x, _z);
             _boss.alive = true;
+            _boss.playerBumping = false;
             _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
             _boss.hull->enabled   = true;
             _boss.turret->enabled = true;
@@ -1671,15 +1727,22 @@ private:
     // handled here since the boss uses different offsets for its larger
     // geometry; see updateEnemyTransform()/updateBossTransform().
     void updateEnemyAI(Enemy &e, float speed, AudioEngine &audio) {
+        // Boss gets its own (slower/further-back) tuning instead of the
+        // regular pool's — see BOSS_TURN_RATE's own comment for why.
+        bool isBoss = (&e == &_boss);
+        float turnRate     = isBoss ? BOSS_TURN_RATE     : ENEMY_TURN_RATE;
+        float standoff     = isBoss ? (float)BOSS_STANDOFF : (float)ENEMY_STANDOFF;
+        float aimTolerance = isBoss ? BOSS_AIM_TOLERANCE : ENEMY_AIM_TOLERANCE;
+
         float want = bearingTo(e.x, e.z, _x, _z);
         float err  = angleDiff(want, e.headingDeg);
         e.headingDeg = wrapAngle(e.headingDeg +
-                                 constrain(err, -ENEMY_TURN_RATE, ENEMY_TURN_RATE));
+                                 constrain(err, -turnRate, turnRate));
 
         float dx = _x - e.x, dz = _z - e.z;
         float dist = sqrtf(dx * dx + dz * dz);
 
-        if (dist > (float)ENEMY_STANDOFF) {
+        if (dist > standoff) {
             float hr = radians(e.headingDeg);
             float nx = e.x + sinf(hr) * speed;
             float nz = e.z + cosf(hr) * speed;
@@ -1696,7 +1759,7 @@ private:
             e.z = constrain(e.z, -limit, limit);
         }
 
-        if (fabsf(err) < ENEMY_AIM_TOLERANCE && dist < (float)ENEMY_FIRE_RANGE &&
+        if (fabsf(err) < aimTolerance && dist < (float)ENEMY_FIRE_RANGE &&
             (long)(millis() - e.nextFireAt) >= 0) {
             for (auto &s : _enemyShells) {
                 if (s.active) continue;
@@ -1793,7 +1856,7 @@ private:
         }
 
         if (_bossActive) {
-            updateEnemyAI(_boss, enemySpeed(), audio);
+            updateEnemyAI(_boss, enemySpeed() * BOSS_SPEED_MULT, audio);
             updateBossTransform();
         } else if (_bossPending && millis() >= _bossAlertUntil) {
             if (trySpawnBoss(audio)) _bossPending = false;
@@ -1899,6 +1962,7 @@ private:
         for (auto &s : _enemyShells) killShell(s);
         for (int i = 0; i < MAX_ENEMIES; ++i) {
             _enemies[i].alive = false;
+            _enemies[i].playerBumping = false;
             _enemies[i].hull->enabled   = false;
             _enemies[i].turret->enabled = false;
             _enemies[i].barrel->enabled = false;
@@ -1909,6 +1973,7 @@ private:
             _enemies[i].respawnAt = millis() + 1200;
         }
         _boss.alive = false;
+        _boss.playerBumping = false;
         _boss.hull->enabled   = false;
         _boss.turret->enabled = false;
         _boss.barrel->enabled = false;
@@ -2339,7 +2404,7 @@ public:
         }
 
         // ---- PHASE: PLAYING ----
-        updateDriving(input);
+        updateDriving(input, audio);
         updateKits(audio);
         tryFire(input, audio);
         updateEnemies(audio);
