@@ -92,6 +92,35 @@ void TankFluxGame::buildTankModel(Enemy &e, const TankSpec &spec, Renderer::Mate
     _scene->addObject(e.trackR);
 }
 
+// Jet's Scene doesn't own the objects added to it, so delete them first.
+// Every object this game creates is added to the scene exactly once.
+void TankFluxGame::releaseScene() {
+    if (!_scene) return;
+    for (Renderer::Object* obj : _scene->getObjects()) delete obj;
+    delete _scene;
+    _scene = nullptr;
+
+    _ground = nullptr;
+    _river  = nullptr;
+    for (auto &o : _obstacleObjs) o = nullptr;
+    for (int i = 0; i < TREE_COUNT; ++i) {
+        _treeTrunks[i] = _treeCanopyLo[i] = _treeCanopyHi[i] = nullptr;
+    }
+    for (auto &k : _kits) k.obj = nullptr;
+    _playerShell.obj = nullptr;
+    _playerShell.active = false;
+    for (auto &s : _enemyShells) { s.obj = nullptr; s.active = false; }
+    auto dropTank = [](Enemy &e) {
+        e.hull = e.turret = e.barrel = e.trackL = e.trackR = nullptr;
+        e.alive = false;
+    };
+    for (auto &e : _enemies) dropTank(e);
+    dropTank(_boss);
+    _bossActive = false;
+    _bossPending = false;
+    _phase = PHASE_ATTRACT;   // nothing may touch the (now missing) objects before a new game
+}
+
 void TankFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     if (_scene) return;
 

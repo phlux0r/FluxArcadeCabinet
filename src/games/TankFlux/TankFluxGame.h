@@ -34,9 +34,13 @@ namespace tankflux {
 class TankFluxGame : public IGame {
 public:
     TankFluxGame() {}
+    ~TankFluxGame() override { releaseScene(); }
 
     void init(AudioEngine &audio) override;
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override;
+    // The Jet scene (meshes, render queue) is the bulk of this game's heap;
+    // it's rebuilt by the next update() after init().
+    void onExit() override { releaseScene(); }
 
     uint8_t getRotation() const override { return 1; }
     const char* getName()  const override { return "Tank Flux"; }
@@ -201,6 +205,7 @@ private:
 
     // --- TankFluxScene.cpp -----------------------------------------------------
     void ensureSceneReady(GFXcanvas16 &canvas);
+    void releaseScene();
     void buildSkyGround(int h);
     void setupMaterials();
     void buildTankModel(Enemy &e, const TankSpec &spec, Renderer::Material* hullMat,

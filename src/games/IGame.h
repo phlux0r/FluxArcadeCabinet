@@ -46,6 +46,11 @@ public:
 
     // Short display name shown in the launcher menu (max ~16 chars)
     virtual const char* getName() const = 0;
+
+    // Called when the game hands control back to the launcher (after
+    // update() returns false). Free large allocations here so the heap is
+    // available to other games; init() runs again on the next launch.
+    virtual void onExit() {}
 };
 
 #endif // IGAME_H

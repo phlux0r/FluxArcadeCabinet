@@ -99,6 +99,7 @@ void launchGame(IGame* game) {
 }
 
 void returnToLauncher() {
+    if (activeGame) activeGame->onExit();
     activeGame = nullptr;
     tft.setRotation(2);  // Portrait for menu
     launcher.onEnter(audio);
