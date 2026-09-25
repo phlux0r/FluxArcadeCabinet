@@ -80,10 +80,10 @@ private:
     // Shared by every category placeCircle() finds a spot for.
     static const int32_t ARENA_MARGIN       = 300;   // stay clear of the arena edge itself
     static const int32_t PLACEMENT_MIN_GAP  = 150;   // extra clearance beyond two circles' own radii
-    static const int32_t SPAWN_CLEARANCE    = 700;   // keep the player's own start point (origin) open
+    static const int32_t SPAWN_CLEARANCE    = 700;   // open space kept around the player's current position
     static const int32_t TREE_PLACEMENT_RADIUS = 160;   // canopy footprint, wider than the trunk itself
     static const int32_t KIT_PLACEMENT_RADIUS  = 150;   // visual clearance around a repair cross
-    static const int PLACEMENT_ATTEMPTS = 24;
+    static const int PLACEMENT_ATTEMPTS = 40;
 
     // --- Tank ----------------------------------------------------------------
     static const int32_t EYE_HEIGHT  = 120;
@@ -123,6 +123,9 @@ private:
     static const int32_t REPAIR_Y_OFFSET = 87;
 
     static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
+    // B alone is strafe during play, so quitting mid-game needs both
+    // buttons held together.
+    static const unsigned long QUIT_HOLD_MS = 2000;
 
     // --- Combat --------------------------------------------------------------
     // Shells fly flat at a fixed height: gameplay is entirely on the ground
@@ -252,10 +255,10 @@ private:
     // are no longer fixed: generateArenaLayout() (see there) randomizes x/z
     // for every obstacle, tree and repair kit at scene setup and again on
     // every boss kill, rejecting any spot too close to the river, the
-    // player's start point, or another placed object. These initializer
-    // values only matter as a fallback if that search somehow can't find
-    // room (see placeCircle()) — they're deliberately NOT constexpr since
-    // generateArenaLayout() overwrites x/z in place.
+    // player, a live tank, or another placed object. These initializer
+    // values only matter as a fallback if that search can't find room
+    // (see placeCircle()) — not constexpr, since generateArenaLayout()
+    // overwrites x/z in place.
     enum ObstacleShape : uint8_t { SHAPE_CUBE, SHAPE_PYRAMID, SHAPE_ROCK };
     struct ObstacleDef { int32_t x, z, size; ObstacleShape shape; };
     static const int OBSTACLE_COUNT = 12;
@@ -385,6 +388,8 @@ private:
     bool _arenaShiftCuePending = false;
     unsigned long _arenaShiftCueAt = 0;
     unsigned long _arenaShiftFlashUntil = 0;
+
+    unsigned long _quitHoldStart = 0;   // 0 = A+B not currently both held
 
     // --- Jet scene state -----------------------------------------------------
     // Scene needs a framebuffer pointer, which only exists once update() hands
@@ -616,12 +621,10 @@ private:
     struct PlacedCircle { float x, z, r; };
 
     // Random rejection sampling within the arena: reject a candidate point
-    // if it's too close to the river, the player's own start point (arena
-    // origin), or an already-placed circle. PLACEMENT_ATTEMPTS tries before
-    // giving up — the same bounded-retry shape as trySpawnBoss()'s own
-    // perimeter search. Returns false (leaving outX/outZ untouched) if the
-    // arena's simply too packed to find room; callers fall back to that
-    // slot's original hand-placed coordinates in that case.
+    // if it's too close to the river or to anything already in `placed`
+    // (which generateArenaLayout() seeds with the player and any live
+    // tanks). Returns false (leaving outX/outZ untouched) if no spot is
+    // found; the caller then keeps that slot's previous position.
     bool placeCircle(float radius, const PlacedCircle* placed, int placedCount,
                      float &outX, float &outZ) {
         const int32_t bound = ARENA_HALF - ARENA_MARGIN;
@@ -631,7 +634,6 @@ private:
             if (distToSegment(x, z, (float)RIVER_X0, (float)RIVER_Z0,
                               (float)RIVER_X1, (float)RIVER_Z1) <
                 (float)RIVER_WIDTH / 2.0f + radius + (float)PLACEMENT_MIN_GAP) continue;
-            if (sqrtf(x * x + z * z) < (float)SPAWN_CLEARANCE + radius) continue;
             bool ok = true;
             for (int i = 0; i < placedCount; ++i) {
                 float dx = x - placed[i].x, dz = z - placed[i].z;
@@ -651,8 +653,17 @@ private:
     // never moves, so this is what actually guarantees nothing gets placed
     // on top of it rather than that being hand-verified once.
     void generateArenaLayout() {
-        PlacedCircle placed[OBSTACLE_COUNT + TREE_COUNT + REPAIR_COUNT];
+        PlacedCircle placed[1 + MAX_ENEMIES + 1 + OBSTACLE_COUNT + TREE_COUNT + REPAIR_COUNT];
         int placedCount = 0;
+
+        // Keep clear of where the player and any live tanks are right now,
+        // not just the origin: on a boss-kill regenerate the player can be
+        // anywhere, and a tank left inside a new obstacle can't drive out.
+        placed[placedCount++] = { _x, _z, (float)SPAWN_CLEARANCE };
+        for (const auto &e : _enemies) {
+            if (e.alive) placed[placedCount++] = { e.x, e.z, (float)ENEMY_RADIUS };
+        }
+        if (_bossActive) placed[placedCount++] = { _boss.x, _boss.z, (float)BOSS_RADIUS };
 
         for (int i = 0; i < OBSTACLE_COUNT; ++i) {
             float r = (float)obstacleRadius(OBSTACLES[i]);
@@ -1978,6 +1989,7 @@ private:
         _bossPending = false;
         _nextBossAt  = BOSS_EVERY_KILLS;
         _bossesDefeated = 0;
+        _quitHoldStart = 0;
         _arenaShiftCuePending = false;
         _arenaShiftFlashUntil = 0;
         for (auto &p : _particles.pool) p.active = false;
@@ -2188,6 +2200,28 @@ private:
         }
     }
 
+    // Feedback while A+B is held, so a quit doesn't come as a surprise and
+    // an accidental press is obvious. Same strip as drawBossAlert().
+    void drawQuitHint(GFXcanvas16 &canvas) {
+        if (_quitHoldStart == 0) return;
+        const int y = 13;
+        const int w = ArcadeConfig::LANDSCAPE_WIDTH;
+        const unsigned long total = QUIT_HOLD_MS;
+        unsigned long held = millis() - _quitHoldStart;
+        if (held > total) held = total;
+        int fillW = (int)((unsigned long)(w - 2) * held / total);
+        canvas.fillRect(0, y - 2, w, 12, ArcadeConfig::COLOR_BLACK);
+        canvas.fillRect(1, y + 8, fillW, 2, ArcadeConfig::COLOR_AMBER);
+        canvas.setFont();
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+        const char* msg = "HOLD TO QUIT";
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        canvas.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
+        canvas.setCursor((w - (int16_t)tbw) / 2, y - 1);
+        canvas.print(msg);
+    }
+
     // Real title art (assets/TitleScreen.h) replaces the old placeholder
     // (a code-drawn tank icon + "TANK FLUX" text) now that it exists —
     // same full-screen PROGMEM blit every other game's splash uses. The
@@ -2222,13 +2256,8 @@ private:
         canvas.print(hiBuf);
     }
 
-    // Updated for: strafe (BTN B now moves, doesn't quit, during PLAYING —
-    // see updateDriving()/the top of update()), green (not white) repair
-    // kits, and the boss. Ten more content lines than the version this
-    // replaced had to fit in the same 128px height, so pitch is tightened
-    // to 10px between lines (still setTextSize(1), the smallest built-in
-    // font available here — there's no separate "small font" to switch
-    // to) rather than dropping any line.
+    // 10px line pitch at setTextSize(1) (the smallest built-in font) so
+    // every line fits in 128px without dropping any.
     void renderAttractInfo(GFXcanvas16 &canvas) {
         canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
         canvas.setFont();
@@ -2239,18 +2268,20 @@ private:
         canvas.print("HOW TO PLAY");
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(4, 20);
+        canvas.setCursor(4, 18);
         canvas.print("[JOY]   DRIVE / TURN");
-        canvas.setCursor(4, 30);
+        canvas.setCursor(4, 28);
         canvas.print("[BTN A] FIRE (1 SHELL)");
-        canvas.setCursor(4, 40);
+        canvas.setCursor(4, 38);
         canvas.print("[HOLD B]+JOY STRAFE");
+        canvas.setCursor(4, 48);
+        canvas.print("[HOLD A+B] QUIT");
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(4, 56);
-        canvas.print("GREEN CUBES = REPAIR");
+        canvas.setCursor(4, 60);
+        canvas.print("GREEN CROSS = REPAIR");
         canvas.setTextColor(ArcadeConfig::COLOR_RED);
-        canvas.setCursor(4, 66);
+        canvas.setCursor(4, 70);
         canvas.print("RED DOTS ON RADAR = FOES");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
@@ -2399,6 +2430,19 @@ public:
         }
 
         // ---- PHASE: PLAYING ----
+        if (input.btnA && input.btnB) {
+            if (_quitHoldStart == 0) {
+                _quitHoldStart = millis();
+            } else if (millis() - _quitHoldStart > QUIT_HOLD_MS) {
+                _quitHoldStart = 0;
+                if (_score > _highScore) { _highScore = _score; saveHighScore(); }
+                audio.mute();
+                return false;
+            }
+        } else {
+            _quitHoldStart = 0;
+        }
+
         updateDriving(input, audio);
         updateKits(audio);
         tryFire(input, audio);
@@ -2428,6 +2472,7 @@ public:
         drawRadar(canvas);
         drawHUD(canvas);
         drawBossAlert(canvas);
+        drawQuitHint(canvas);
 
         if (_health <= 0) {
             if (_score > _highScore) { _highScore = _score; saveHighScore(); }
