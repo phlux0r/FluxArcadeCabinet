@@ -706,6 +706,78 @@ private:
         });
     }
 
+    // Repair kit: a 3D plus/cross rather than a cube, per explicit request
+    // — 14 facets (12 side walls + top + bottom). Hand-authored the same
+    // way buildTerrain() is (per-face, non-shared vertices; a real
+    // cross-product-derived normal per side quad), plus a centre-point
+    // triangle fan for the top/bottom caps. The fan is valid specifically
+    // because a plus shape is star-shaped from its own centroid — every
+    // boundary point is visible from the centre along a straight line
+    // that stays inside the shape, so it can't produce a flipped or
+    // self-intersecting triangle the way fanning an arbitrary concave
+    // polygon could.
+    //
+    // Side-wall outward normal ((-dz, 0, dx) from each edge's own (dx,dz)
+    // direction) was verified by hand against three edges in different
+    // quadrants of the outline before trusting it here, the same
+    // discipline as the barrel's rotation math earlier this session — but
+    // cullingMode is still set to NO_CULLING below regardless, the same
+    // safety net buildRiverStrip() already uses for hand-authored winding,
+    // since a normal only affects lighting here, not which way the
+    // rasteriser's own backface test (screen-space triangle winding,
+    // unrelated to the stored vertex normal) decides to cull.
+    //
+    // 12 side quads (24 tris) + 12+12 cap fan triangles = 48 triangles —
+    // 4x a plain cube, but there are only ever 3 of these on screen at
+    // once and they're otherwise motionless, unlike the ground/obstacles/
+    // trees this session was careful to keep cheap because there can be
+    // many of them or they move every frame.
+    Renderer::Object* buildRepairCross(int32_t armHalf, int32_t extHalf, int32_t height,
+                                       Renderer::Material* mat) {
+        Renderer::Object* obj = new Renderer::Object();
+        const int32_t halfH = height / 2;
+        const int N = 12;
+        const int32_t ox[12] = {  armHalf,  extHalf,  extHalf,  armHalf,  armHalf, -armHalf,
+                                  -armHalf, -extHalf, -extHalf, -armHalf, -armHalf,  armHalf };
+        const int32_t oz[12] = {  armHalf,  armHalf, -armHalf, -armHalf, -extHalf, -extHalf,
+                                  -armHalf, -armHalf,  armHalf,  armHalf,  extHalf,  extHalf };
+
+        for (int i = 0; i < N; ++i) {
+            int j = (i + 1) % N;
+            int32_t dx = ox[j] - ox[i], dz = oz[j] - oz[i];
+            float len = sqrtf((float)dx * dx + (float)dz * dz);
+            float s = (len > 0.0001f) ? ((float)FIXED_POINT_SCALE / len) : 0.0f;
+            Vector3 n{ (int32_t)(-(float)dz * s), 0, (int32_t)((float)dx * s) };
+
+            uint16_t b = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], -halfH, oz[i]}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], -halfH, oz[j]}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j],  halfH, oz[j]}, Vector2{0, 0}, n });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i],  halfH, oz[i]}, Vector2{0, 0}, n });
+            obj->addFace(b, b + 1, b + 2, b + 3, mat);
+        }
+
+        const Vector3 upN{0, FIXED_POINT_SCALE, 0}, downN{0, -FIXED_POINT_SCALE, 0};
+        for (int i = 0; i < N; ++i) {
+            int j = (i + 1) % N;
+            uint16_t bt = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, halfH, 0}, Vector2{0, 0}, upN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], halfH, oz[i]}, Vector2{0, 0}, upN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], halfH, oz[j]}, Vector2{0, 0}, upN });
+            obj->addTriangle(bt, bt + 1, bt + 2, mat);
+
+            uint16_t bb = (uint16_t)obj->vertices.size();
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{0, -halfH, 0}, Vector2{0, 0}, downN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[i], -halfH, oz[i]}, Vector2{0, 0}, downN });
+            obj->addVertex(Renderer::Object::Vertex{ Vector3{ox[j], -halfH, oz[j]}, Vector2{0, 0}, downN });
+            obj->addTriangle(bb, bb + 1, bb + 2, mat);
+        }
+
+        obj->calculateBoundingBox();
+        obj->cullingMode = Renderer::CullingMode::NO_CULLING;   // hand-authored winding, unverified
+        return obj;
+    }
+
     void ensureSceneReady(GFXcanvas16 &canvas) {
         if (_scene) return;
 
@@ -866,8 +938,12 @@ private:
         }
 
         for (int i = 0; i < REPAIR_COUNT; ++i) {
-            _kits[i].obj = Primitives::createCube(130, 130, 130, &_kitMat);
-            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 90,
+            const int32_t REPAIR_ARM_HALF = 26;   // half-width of the cross arms
+            const int32_t REPAIR_EXT_HALF = 62;   // half-length from center to arm tip
+            const int32_t REPAIR_HEIGHT = 70;      // full extrusion depth
+            _kits[i].obj = buildRepairCross(REPAIR_ARM_HALF, REPAIR_EXT_HALF, REPAIR_HEIGHT, &_kitMat);
+            // old cube clearance was 90-65=25; cross half-height is 35, so +60 keeps the same clearance
+            _kits[i].obj->setPosition(REPAIRS[i].x, hillHeight(REPAIRS[i].x, REPAIRS[i].z) + 60,
                                       REPAIRS[i].z);
             _scene->addObject(_kits[i].obj);
         }
