@@ -127,6 +127,9 @@ FluxArcadeCabinet/
             └── assets/             # Attract-screen art, 160x128 landscape
 ```
 
+`test/` sits alongside `src/` and holds the desktop harness (see Testing and
+Profiling). `pio run` ignores it, so it never reaches a firmware build.
+
 ## Audio
 
 All audio is routed through the MAX98357A via I2S. `AudioEngine` runs playback
@@ -156,6 +159,44 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
 16-bit signed PCM. Keep them small: they stream from the SD card over the SPI
 bus the display also uses.
+
+## Testing and Profiling
+
+`test/` runs Tank Flux's real game logic and the real Jet rasteriser on a
+desktop against a fake clock and a seeded RNG, hashing game state and the
+framebuffer each frame. The same trace before and after a change means
+behaviour was preserved — which is how the Tank Flux file split was verified,
+and how the 3D scene leaking on exit to the launcher was found (it builds with
+AddressSanitizer). It is not `pio test` and does not need the board.
+
+```bash
+test/build.sh                # build, run all scenarios, print summaries
+test/build.sh god 30000      # one scenario, full trace
+test/build.sh profile 40000  # per-frame render cost by what was on screen
+```
+
+See `test/README.md` for the scenarios, how to diff a change, and — just as
+important — what it cannot see (audio, how anything looks or plays, real
+timing, the other four games).
+
+For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
+It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial
+once a second. The peak column is the useful one: a single stalled frame is
+invisible in the average.
+
+Two things dominate the frame budget and are worth knowing before chasing a
+slow frame:
+
+- **The display push is a fixed cost.** 160x128x2 = 40KB per frame over SPI,
+  about 8ms at `TFT_SPI_SPEED`'s current 40MHz (12ms at the old 26.67MHz).
+  Nothing in game code makes that cheaper.
+- **Per-object work beats triangle count in Tank Flux.** Three enemy tanks
+  cost more per frame than a boss does, despite fewer triangles between them —
+  it is the object count Jet walks, not the geometry.
+
+Tank Flux scales its movement by measured frame time (`REFERENCE_FRAME_MS` in
+`TankFluxConfig.h`), so it plays at the same speed whether it is running at 40
+or 22fps. The other games do not; their speed still follows the frame rate.
 
 ## Adding a New Game
 
