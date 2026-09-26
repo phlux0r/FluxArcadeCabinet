@@ -378,12 +378,17 @@ private:
         i2s_write(I2S_PORT, sil, count * 2 * sizeof(int16_t), &bw, 0);
     }
 
+    // Signal only — never blocks. Every caller of this reaches it from the
+    // game loop, so a wait here is a frame-rate stall on every sound effect
+    // (it was 50ms, i.e. three dropped frames per shot or jump). No wait is
+    // needed: the streaming loop in audioTask() polls stopRequested/startWAV/
+    // startPROGMEM between i2s_write() calls, closes the file and drops back
+    // to the command check on its own. The old delay's stated reason -
+    // restoring the I2S clock - no longer applies either, since every WAV is
+    // 44.1kHz and the clock is never reconfigured.
     void stopAudioTask() {
         _audioState.stopRequested = true;
         _audioState.playing       = false;
-        // Give the audio task time to finish its current i2s_write and
-        // restore the I2S clock before we start a new file
-        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
 public:

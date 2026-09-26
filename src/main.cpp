@@ -170,6 +170,71 @@ void setup() {
 }
 
 // =============================================================================
+// FRAME RATE INSTRUMENTATION — build with -DSHOW_FPS (see platformio.ini)
+//
+// loop() caps the frame rate, so "fps" sits at 60 whenever there's headroom
+// and only drops once a frame overruns. The work figures are the real
+// measurement: how long a frame's input, update and render actually took
+// against that budget. Games move by a fixed amount per frame, so sustained
+// work at or above the budget is what makes them play slow.
+//
+// Reported once a second, to the screen and to serial. On screen it reads
+// "fps avgMs/peakMs" in magenta, low on the left — clear of every game's
+// HUD text, though it does sit over the play area. Drawing it costs a
+// little, counted against the next frame rather than the one reported.
+// =============================================================================
+#ifdef SHOW_FPS
+namespace {
+uint32_t fpsFrames = 0, fpsWorkSumUs = 0, fpsPeakUs = 0, fpsWindowStartUs = 0;
+uint32_t fpsLastFps = 0, fpsLastAvgUs = 0, fpsLastPeakUs = 0;
+
+void fpsAccumulate(uint32_t workUs) {
+    fpsWorkSumUs += workUs;
+    if (workUs > fpsPeakUs) fpsPeakUs = workUs;
+    ++fpsFrames;
+
+    if (micros() - fpsWindowStartUs < 1000000UL) return;
+    fpsLastFps    = fpsFrames;
+    fpsLastAvgUs  = fpsWorkSumUs / fpsFrames;
+    fpsLastPeakUs = fpsPeakUs;
+    fpsFrames = fpsWorkSumUs = fpsPeakUs = 0;
+    fpsWindowStartUs = micros();
+    Serial.printf("[FPS] %u fps | work avg %u.%02ums peak %u.%02ums | budget %u.%02ums\n",
+                  (unsigned)fpsLastFps,
+                  (unsigned)(fpsLastAvgUs / 1000), (unsigned)((fpsLastAvgUs % 1000) / 10),
+                  (unsigned)(fpsLastPeakUs / 1000), (unsigned)((fpsLastPeakUs % 1000) / 10),
+                  (unsigned)(ArcadeConfig::FRAME_INTERVAL_US / 1000),
+                  (unsigned)((ArcadeConfig::FRAME_INTERVAL_US % 1000) / 10));
+}
+
+void fpsDraw() {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%uf %u/%ums", (unsigned)fpsLastFps,
+             (unsigned)((fpsLastAvgUs + 500) / 1000),
+             (unsigned)((fpsLastPeakUs + 500) / 1000));
+
+    // Sits above the bottom edge, where no game puts text: Tank Flux's
+    // health bar is lower still, its radar is on the right, and the
+    // portrait games keep this strip clear. tft.height() follows the
+    // current rotation, so this lands correctly either way.
+    const int16_t boxH = 9;
+    const int16_t boxY = tft.height() - boxH - 9;
+    const int16_t boxW = (int16_t)(strlen(buf) * 6 + 4);
+
+    // One filled rect plus transparent text is far fewer pixel writes than
+    // opaque text, which redraws every glyph's blank pixels too. This runs
+    // every frame, so the difference is worth having.
+    tft.fillRect(0, boxY, boxW, boxH, ArcadeConfig::COLOR_BLACK);
+    tft.setFont();
+    tft.setTextSize(1);
+    tft.setTextColor(ArcadeConfig::COLOR_MAGENTA);
+    tft.setCursor(2, boxY + 1);
+    tft.print(buf);
+}
+}  // namespace
+#endif
+
+// =============================================================================
 // MAIN LOOP
 // =============================================================================
 void loop() {
@@ -269,4 +334,9 @@ void loop() {
             returnToLauncher();
             break;
     }
+
+#ifdef SHOW_FPS
+    fpsAccumulate(micros() - lastFrameUs);   // before the overlay's own cost
+    fpsDraw();
+#endif
 }

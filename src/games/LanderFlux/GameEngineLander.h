@@ -60,8 +60,10 @@ private:
     int _padX;
     const int _padWidth = 24;
 
-    // Button B release guard
+    // Button B: release guard, then hold EXIT_HOLD_MS to leave
     bool _btnBWasHeld = false;
+    unsigned long _btnBHoldStart = 0;
+    static const unsigned long EXIT_HOLD_MS = 2000UL;
 
     // Game-over attract timeout
     unsigned long _gameOverEnteredMs = 0;
@@ -232,12 +234,20 @@ public:
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
                 int joyX, int joyY, AudioEngine &audio) {
 
-        // Button B release guard
+        // Button B: require release first, then hold 2s to exit — the same
+        // convention Asteroid Flux, Platform Flux and Tank Flux use. A bare
+        // press exited instantly, so brushing the button lost a run.
         if (_btnBWasHeld) {
             if (!btnB) _btnBWasHeld = false;
         } else if (btnB) {
-            audio.mute();
-            return false;
+            if (_btnBHoldStart == 0) _btnBHoldStart = millis();
+            if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
+                _btnBHoldStart = 0;
+                audio.mute();
+                return false;
+            }
+        } else {
+            _btnBHoldStart = 0;
         }
 
         // ---- ATTRACT / TITLE SCREEN ----

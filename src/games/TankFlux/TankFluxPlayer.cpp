@@ -3,7 +3,7 @@
 namespace tankflux {
 
 void TankFluxGame::updateDriving(const InputState &input, AudioEngine &audio) {
-    _headingDeg += TURN_SIGN * input.joyY * TURN_RATE;
+    _headingDeg += TURN_SIGN * input.joyY * TURN_RATE * _frameScale;
     while (_headingDeg >= 360.0f) _headingDeg -= 360.0f;
     while (_headingDeg <    0.0f) _headingDeg += 360.0f;
 
@@ -13,22 +13,30 @@ void TankFluxGame::updateDriving(const InputState &input, AudioEngine &audio) {
     const float terrainMult = inRiver(_x, _z) ? RIVER_SPEED_MULT : 1.0f;
     const float prevX = _x, prevZ = _z;
 
+    // Ease in/out at a constant real-world rate: a slow frame is several
+    // reference frames' worth of smoothing. Linear rather than exponential,
+    // which is exact at _frameScale 1 and close enough over the range the
+    // frame rate actually moves in.
+    float smooth = SPEED_SMOOTH * _frameScale;
+    if (smooth > 1.0f) smooth = 1.0f;
+
     // Strafe (hold B) and drive share _speed/SPEED_SMOOTH, so both ease in
     // and out the same way; strafe moves along the right vector (cos h, -sin h).
+    // _speed stays in units per reference frame, so displacement scales.
     float nx, nz;
     if (input.btnB) {
         float strafeDrive = STRAFE_SIGN * input.joyX;
         float target = strafeDrive * STRAFE_SPEED * terrainMult;
-        _speed += (target - _speed) * SPEED_SMOOTH;
+        _speed += (target - _speed) * smooth;
         float rx = fz, rz = -fx;
-        nx = _x + rx * _speed;
-        nz = _z + rz * _speed;
+        nx = _x + rx * _speed * _frameScale;
+        nz = _z + rz * _speed * _frameScale;
     } else {
         float drive  = DRIVE_SIGN * input.joyX;
         float target = drive * (drive >= 0.0f ? FWD_SPEED : REV_SPEED) * terrainMult;
-        _speed += (target - _speed) * SPEED_SMOOTH;
-        nx = _x + fx * _speed;
-        nz = _z + fz * _speed;
+        _speed += (target - _speed) * smooth;
+        nx = _x + fx * _speed * _frameScale;
+        nz = _z + fz * _speed * _frameScale;
     }
     _arena.pushOut(nx, nz, TANK_RADIUS);
     resolveEnemyCollision(nx, nz, audio);
@@ -101,9 +109,9 @@ void TankFluxGame::killShell(Shell &s) {
 // Moves a shell one frame; returns false once it's gone (out of range, out
 // of the arena, or into an obstacle, which is what makes obstacles cover).
 bool TankFluxGame::advanceShell(Shell &s, int32_t range) {
-    s.x += s.vx;
-    s.z += s.vz;
-    s.travelled += sqrtf(s.vx * s.vx + s.vz * s.vz);
+    s.x += s.vx * _frameScale;
+    s.z += s.vz * _frameScale;
+    s.travelled += sqrtf(s.vx * s.vx + s.vz * s.vz) * _frameScale;
     s.obj->setPosition((int32_t)s.x, SHELL_Y, (int32_t)s.z);
 
     if (s.travelled > (float)range ||
@@ -168,7 +176,10 @@ void TankFluxGame::updateKits(AudioEngine &audio) {
             }
             continue;
         }
-        k.obj->rotate(0, 3, 0);   // slow spin, so pickups read as pickups
+        // Slow spin, so pickups read as pickups. Whole degrees, so round
+        // rather than truncate and never stall at zero on a fast frame.
+        int32_t spin = (int32_t)(3.0f * _frameScale + 0.5f);
+        k.obj->rotate(0, spin < 1 ? 1 : spin, 0);
 
         // Collected on contact even at full health: a kit that silently
         // refuses to be picked up reads as a bug.

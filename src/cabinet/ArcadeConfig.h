@@ -19,7 +19,17 @@ struct ArcadeConfig {
     static const int TFT_DC   = 8;
     static const int TFT_BLK  = 7;
 
-    static const uint32_t TFT_SPI_SPEED = 27000000UL;
+    // Every frame pushes the whole canvas to the panel: 160x128 at 2 bytes is
+    // 40KB, so this clock sets a fixed per-frame cost that no amount of
+    // rendering work changes. It was ~12ms at the previous 27MHz, a third of
+    // a frame at the 30fps the cabinet manages; 40MHz brings that to ~8ms.
+    //
+    // The ESP32-S3 divides 80MHz, so the usable steps are 80/40/26.7/20 —
+    // 27 was really running at 26.7. If the display shows noise, tearing or
+    // wrong colours, drop back to 26670000; 80000000 is worth trying if this
+    // panel and its wiring are happy at 40. The SD card is unaffected: both
+    // drivers set their own clock per transaction.
+    static const uint32_t TFT_SPI_SPEED = 40000000UL;
     static const uint32_t SPI_BUS_SPEED = 40000000UL;
 
     // -------------------------------------------------------------------------

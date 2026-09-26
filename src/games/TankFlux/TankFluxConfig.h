@@ -53,6 +53,19 @@ inline constexpr int     CAMERA_FOV  = 88;
 inline constexpr int32_t CAMERA_NEAR = 48;
 inline constexpr int32_t CAMERA_FAR  = 5200;
 
+// --- Frame pacing ------------------------------------------------------------
+// Speeds below are per frame, tuned on hardware that runs at roughly this
+// rate. Every per-frame movement is multiplied by TankFluxGame's _frameScale
+// (real frame time / REFERENCE_FRAME_MS), so a slow frame moves things
+// further and real-world speed stays constant whatever the frame rate. At
+// exactly REFERENCE_FRAME_MS the scale is 1.0 and nothing changes, which is
+// what keeps the existing tuning intact.
+inline constexpr unsigned long REFERENCE_FRAME_MS = 33;   // ~30fps
+// Outside this range a "frame" is really a stall — the first frame after the
+// scene is built, or an SD access — and scaling by it would teleport things.
+inline constexpr unsigned long MIN_FRAME_MS = 8;
+inline constexpr unsigned long MAX_FRAME_MS = 100;
+
 // --- Player tank -------------------------------------------------------------
 inline constexpr int32_t EYE_HEIGHT  = 120;
 inline constexpr int32_t TANK_RADIUS = 150;
