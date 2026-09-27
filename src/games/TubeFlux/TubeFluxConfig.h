@@ -72,6 +72,27 @@ inline constexpr float THROTTLE_SMOOTH = 0.08f;
 inline constexpr float TIER_DISTANCE  = 55000.0f;
 inline constexpr int   MAX_TIER       = 9;
 
+// --- Bends --------------------------------------------------------------------
+// The tunnel ahead curves: each ring (and each block) is shifted sideways by
+// bend * (z / BEND_REF_Z)^2, so the offset grows with distance and shrinks
+// to nothing as a ring reaches you. Steering and collisions near the ship
+// are unaffected (at SHIP_Z the shift is ~1% of the bend); what you lose is
+// sight of what's coming. "bend" is the shift at BEND_REF_Z, in world units.
+//
+// Past ~4 x TUBE_RADIUS the far end would swing behind the near walls, and
+// blocks there would show through them (Jet draws blocks after the tunnel),
+// so BEND_SHARP stays under that.
+inline constexpr float BEND_REF_Z      = 5000.0f;
+inline constexpr int   BEND_START_TIER = 4;       // gentle curves from here
+inline constexpr int   BEND_SHARP_TIER = 6;       // sharper ones from here
+inline constexpr float BEND_GENTLE     = 700.0f;
+inline constexpr float BEND_SHARP      = 1400.0f;
+// A new curve every BEND_SEGMENT of distance (~5s at tier 4), easing in
+// and out; BEND_STRAIGHT_PCT of them are straight, so curves come and go.
+inline constexpr float BEND_SEGMENT      = 13000.0f;
+inline constexpr int   BEND_STRAIGHT_PCT = 30;
+inline constexpr float BEND_EASE         = 0.025f;   // per frame, towards the target
+
 // --- Obstacles ----------------------------------------------------------------
 inline constexpr int     OBSTACLE_POOL  = 10;
 inline constexpr int     MAX_BLOCK_LANES = 3;

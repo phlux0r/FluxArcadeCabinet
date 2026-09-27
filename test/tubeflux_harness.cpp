@@ -161,8 +161,9 @@ int main(int argc, char** argv) {
         if (getenv("DUMP_STATE")) {
             for (int i = 0; i < dumper.n; ++i)
                 if (dumper.at[i] == f)
-                    printf("  state f=%ld angle=%.3f roll=%.3f dist=%.1f camRot=(%.3f,%.3f,%.3f)\n", f, g._angle,
-                           g._rollVel, g._dist, g._camera.rotation.x, g._camera.rotation.y, g._camera.rotation.z);
+                    printf("  state f=%ld tier=%d angle=%.3f roll=%.3f dist=%.1f bend=(%.0f,%.0f) camRot=(%.3f,%.3f,%.3f)\n",
+                           f, g._tier, g._angle, g._rollVel, g._dist, g._bendX, g._bendY,
+                           g._camera.rotation.x, g._camera.rotation.y, g._camera.rotation.z);
         }
 
         if (profile && g._phase == TubeFluxGame::PHASE_PLAYING && g._scene) {
@@ -199,9 +200,9 @@ int main(int argc, char** argv) {
         lastPhase = g._phase;
         if (g._tier > maxTier) maxTier = g._tier;
 
-        int32_t st[8] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
-                          (int32_t)g._dist, (int32_t)(g._angle * 10), (int32_t)(g._speed * 10),
-                          (int32_t)g._safeLane };
+        int32_t st[10] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
+                           (int32_t)g._dist, (int32_t)(g._angle * 10), (int32_t)(g._speed * 10),
+                           (int32_t)g._safeLane, (int32_t)g._bendX, (int32_t)g._bendY };
         traceHash = fnv(st, sizeof(st), traceHash);
         if (f % 60 == 0) {
             traceHash = fnv(canvas.getBuffer(),

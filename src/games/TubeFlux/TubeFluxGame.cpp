@@ -62,6 +62,8 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
     _newHighScore = false;
     _invulnUntil = _hitFlashUntil = _nearMissUntil = _tierBannerUntil = 0;
     _safeLane = _prevSafeLane = 0;   // start straight down the lane you're in
+    _bendX = _bendY = _bendTargetX = _bendTargetY = 0.0f;
+    _nextBendAt = 0.0f;
     _safeLaneMovedAt = 0.0f;
     // First block a little way in, so the opening is a moment to settle.
     _nextSpawnAt = SPAWN_AHEAD * 0.6f;
@@ -116,6 +118,8 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 
 void TubeFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
+    // The how-to-play slide flies a straight tunnel, whatever the last run ended on.
+    _bendX = _bendY = _bendTargetX = _bendTargetY = 0.0f;
     _phaseEnteredMs = millis();
     _attractSlide = SLIDE_TITLE;
     _attractSlideAt = millis();
@@ -161,6 +165,7 @@ bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     updateSteering(input);
     updateSpeed(input);
     updateTier(audio);
+    updateBend();
     spawnObstacles();
     updateObstacles(audio);
     _score = (long)(_dist * SCORE_PER_UNIT) + _bonus;

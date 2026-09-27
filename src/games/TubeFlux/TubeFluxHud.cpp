@@ -52,7 +52,10 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     // Both sit just under the HUD strip, clear of the tunnel's middle where
     // the next blocks come from. The tier number is already in the HUD.
     if (before(_tierBannerUntil)) {
-        if ((millis() / 200) & 1) drawCentred(canvas, "SPEED UP", 13, ArcadeConfig::COLOR_CYAN);
+        // Where bends start or sharpen, say so: it's a new thing to deal with.
+        const char* msg = _tier == BEND_START_TIER ? "CURVES AHEAD"
+                        : _tier == BEND_SHARP_TIER ? "SHARPER CURVES" : "SPEED UP";
+        if ((millis() / 200) & 1) drawCentred(canvas, msg, 13, ArcadeConfig::COLOR_CYAN);
     } else if (before(_nearMissUntil)) {
         char buf[16];
         snprintf(buf, sizeof(buf), "CLOSE +%d", NEAR_MISS_POINTS);

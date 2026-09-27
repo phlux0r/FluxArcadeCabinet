@@ -70,9 +70,43 @@ void TubeFluxGame::updateTier(AudioEngine &audio) {
     _bonus += TIER_POINTS;
     applyTierPalette();
     _tierBannerUntil = millis() + TIER_BANNER_MS;
+    // A new curve straight away when bends start, not up to a segment later.
+    if (_tier == BEND_START_TIER || _tier == BEND_SHARP_TIER) _nextBendAt = _dist;
     static const int n[] = { 660, 880, 1100, 1320 };
     static const int d[] = {  60,  60,   60,  140 };
     audio.playMelody(n, d, 4);
+}
+
+// Picks a new curve every BEND_SEGMENT once bends have started: a random
+// direction, straight now and then, gentle until BEND_SHARP_TIER. The
+// current bend eases towards it, so curves swing in and out rather than
+// snapping.
+void TubeFluxGame::updateBend() {
+    if (_dist >= _nextBendAt) {
+        _nextBendAt = _dist + BEND_SEGMENT;
+        float maxBend = _tier >= BEND_SHARP_TIER ? BEND_SHARP
+                      : _tier >= BEND_START_TIER ? BEND_GENTLE : 0.0f;
+        if (maxBend == 0.0f || random(0, 100) < BEND_STRAIGHT_PCT) {
+            _bendTargetX = _bendTargetY = 0.0f;
+        } else {
+            float dir = radians((float)random(0, 360));
+            float mag = maxBend * (0.5f + 0.5f * (float)random(0, 1001) / 1000.0f);
+            _bendTargetX = mag * cosf(dir);
+            _bendTargetY = mag * sinf(dir);
+        }
+    }
+    float ease = BEND_EASE * _frameScale;
+    if (ease > 1.0f) ease = 1.0f;
+    _bendX += (_bendTargetX - _bendX) * ease;
+    _bendY += (_bendTargetY - _bendY) * ease;
+}
+
+// Sideways shift of the tunnel's centre line at depth z ahead of the camera.
+void TubeFluxGame::bendOffset(float z, float &x, float &y) const {
+    float k = z / BEND_REF_Z;
+    k *= k;
+    x = _bendX * k;
+    y = _bendY * k;
 }
 
 // Keeps blocks queued out to SPAWN_AHEAD, one every spawnGap().
@@ -121,7 +155,10 @@ void TubeFluxGame::spawnBlock(float at) {
 }
 
 void TubeFluxGame::placeObstacle(Obstacle &o) {
-    o.obj->setPosition(0, 0, (int32_t)(o.at - _dist));
+    // Blocks follow the bend, so they stay on the walls they're attached to.
+    float z = o.at - _dist, bx, by;
+    bendOffset(z, bx, by);
+    o.obj->setPosition((int32_t)lroundf(bx), (int32_t)lroundf(by), (int32_t)z);
     o.obj->setRotation(0, 0, OBSTACLE_ROLL_SIGN * o.lane * (int32_t)LANE_DEG);
 }
 

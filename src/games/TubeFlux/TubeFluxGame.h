@@ -77,6 +77,11 @@ private:
     float _dist = 0.0f;          // distance flown this run
     float _nextSpawnAt = 0.0f;   // distance at which the next block appears
     int   _safeLane = 0;         // never blocked; see SAFE_LANE_SHIFT
+    // Bends (see BEND_REF_Z): the current curve eases towards the target,
+    // which is re-picked every BEND_SEGMENT of distance.
+    float _bendX = 0.0f, _bendY = 0.0f;
+    float _bendTargetX = 0.0f, _bendTargetY = 0.0f;
+    float _nextBendAt = 0.0f;
     int   _prevSafeLane = 0;     // also kept open until the move's transition ends
     float _safeLaneMovedAt = 0.0f;
     int   _tier = 1;
@@ -146,6 +151,8 @@ private:
     void  updateSteering(const InputState &input);
     void  updateSpeed(const InputState &input);
     void  updateTier(AudioEngine &audio);
+    void  updateBend();
+    void  bendOffset(float z, float &x, float &y) const;
     void  spawnObstacles();
     void  spawnBlock(float at);
     void  placeObstacle(Obstacle &o);

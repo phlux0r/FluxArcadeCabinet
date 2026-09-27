@@ -97,9 +97,9 @@ void TubeFluxGame::applyTierPalette() {
 // placeCamera() sets them, then x * f / z from the centre), so the blocks
 // Jet draws on top sit on these walls.
 //
-// No panel can hide another from inside a convex tube, so draw order
-// doesn't matter and nothing needs sorting or clipping beyond keeping every
-// ring in front of the camera.
+// Straight, no panel could hide another from inside the tube; bent, a far
+// ring can swing behind a nearer wall, so sections are painted far to near.
+// Nothing needs clipping beyond keeping every ring in front of the camera.
 void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
     const int w = canvas.width(), h = canvas.height();
     uint16_t* buf = canvas.getBuffer();
@@ -113,14 +113,19 @@ void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
     const float f = _camera.fovFactor;
     const float cx = (float)(w / 2), cy = (float)(h / 2);
 
-    // Screen positions of each octagon corner on one ring.
-    float ringX[2][TUBE_SIDES], ringY[2][TUBE_SIDES];
+    // Screen positions of each octagon corner on every ring. Ring 0 is just
+    // in front of the camera; ring k > 0 is the k-th ring boundary ahead.
+    // Each ring's centre is shifted by the bend at its depth.
+    float ringX[RING_COUNT + 2][TUBE_SIDES], ringY[RING_COUNT + 2][TUBE_SIDES];
+    float ringZ[RING_COUNT + 2];
     auto project = [&](float z, float* xs, float* ys) {
         const float s = f / z;
+        float bx, by;
+        bendOffset(z, bx, by);
         for (int j = 0; j < TUBE_SIDES; ++j) {
             float ca = radians(((float)j - 0.5f) * LANE_DEG);
-            float x = TUBE_RADIUS * sinf(ca) - camX;
-            float y = -TUBE_RADIUS * cosf(ca) - camY;
+            float x = TUBE_RADIUS * sinf(ca) + bx - camX;
+            float y = -TUBE_RADIUS * cosf(ca) + by - camY;
             xs[j] = cx + (x * cr - y * sr) * s;
             ys[j] = cy - (x * sr + y * cr) * s;
         }
@@ -129,33 +134,27 @@ void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
     // Ring n sits at distance n * RING_SPACING along the run. The first one
     // ahead is n0; the section before it starts just in front of the camera.
     const long n0 = (long)floorf(_dist / (float)RING_SPACING) + 1;
-    float zPrev = (float)CAMERA_NEAR;
-    project(zPrev, ringX[0], ringY[0]);
-    for (int k = 0; k <= RING_COUNT; ++k) {
-        const long n = n0 + k;                       // this section ends at ring n
-        const float z = (float)n * RING_SPACING - _dist;
-        float* nx = ringX[(k + 1) & 1];
-        float* ny = ringY[(k + 1) & 1];
-        const float* px = ringX[k & 1];
-        const float* py = ringY[k & 1];
-        project(z, nx, ny);
+    ringZ[0] = (float)CAMERA_NEAR;
+    for (int k = 0; k <= RING_COUNT; ++k) ringZ[k + 1] = (float)(n0 + k) * RING_SPACING - _dist;
+    for (int k = 0; k < RING_COUNT + 2; ++k) project(ringZ[k], ringX[k], ringY[k]);
 
-        float t = ((zPrev + z) * 0.5f - TUNNEL_FOG_NEAR) / (TUNNEL_FOG_FAR - TUNNEL_FOG_NEAR);
+    // Far to near, so where a bend puts a far ring behind a nearer wall on
+    // screen, the nearer wall covers it. The hole at the far end goes first.
+    fillConvex(buf, w, h, ringX[RING_COUNT + 1], ringY[RING_COUNT + 1], TUBE_SIDES, _backdrop[0]);
+    for (int k = RING_COUNT; k >= 0; --k) {
+        const long n = n0 + k;                       // this section ends at ring n
+        float t = ((ringZ[k] + ringZ[k + 1]) * 0.5f - TUNNEL_FOG_NEAR) / (TUNNEL_FOG_FAR - TUNNEL_FOG_NEAR);
         t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
         const uint16_t colA = lerp565(_wallA, _backdrop[0], t);
         const uint16_t colB = lerp565(_wallB, _backdrop[0], t);
+        const float *px = ringX[k], *py = ringY[k], *nx = ringX[k + 1], *ny = ringY[k + 1];
         for (int j = 0; j < TUBE_SIDES; ++j) {
             int j1 = (j + 1 == TUBE_SIDES) ? 0 : j + 1;
             float qx[4] = { px[j], px[j1], nx[j1], nx[j] };
             float qy[4] = { py[j], py[j1], ny[j1], ny[j] };
             fillConvex(buf, w, h, qx, qy, 4, ((n - 1 + j) & 1) ? colB : colA);
         }
-        zPrev = z;
     }
-    // The hole at the far end.
-    const float* ex = ringX[(RING_COUNT + 1) & 1];
-    const float* ey = ringY[(RING_COUNT + 1) & 1];
-    fillConvex(buf, w, h, ex, ey, TUBE_SIDES, _backdrop[0]);
 }
 
 // A slab standing off the wall across `lanes` panels, starting at lane 0

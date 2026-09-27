@@ -19,7 +19,8 @@ river, fighting tanks that flank and fire back, with a boss every 15 kills
 that re-rolls the arena when it dies. In Tube Flux you fly down an endless
 octagonal tunnel, rolling round its wall to dodge blocks; every ~30 seconds
 a gate raises the tier, which speeds things up, packs the blocks closer and
-brings in wider ones.
+brings in wider ones; from tier 4 the tunnel starts to curve, hiding what's
+coming, and the curves get sharper from tier 6.
 
 ## Build
 
