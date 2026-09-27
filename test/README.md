@@ -39,6 +39,7 @@ Scenarios (both games have the first four):
 | `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout |
 | `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier |
 | `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) |
+| `idle` | | No input: the attract cycle (title image, then how-to-play) |
 
 `profile` reports Jet's per-frame triangle counts and host render time,
 bucketed by how many tanks were on screen, plus the scene's total object and

@@ -80,11 +80,13 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 //   menus    attract exit, in-game hold-B quit, game-over timeout
 //   profile  god, plus per-frame render cost by tier
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
+//   idle     no input at all: the attract cycle (title and how-to-play)
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
     const bool profile = strcmp(mode, "profile") == 0;
     const bool god   = strcmp(mode, "god") == 0 || profile;
     const bool menus = strcmp(mode, "menus") == 0;
+    const bool idle  = strcmp(mode, "idle") == 0;
     const long frames = argc > 2 ? atol(argv[2]) : 20000;
     const unsigned long stepMs = argc > 3 ? (unsigned long)atol(argv[3]) : 16;
 
@@ -146,6 +148,7 @@ int main(int argc, char** argv) {
             else if (f > 2000 && g._phase == TubeFluxGame::PHASE_GAMEOVER) { a = false; b = false; }
         }
 
+        if (idle) { in = InputState{}; a = b = false; }
         in.btnA = a; in.btnB = b;
         in.btnAPressed = a && !prevA;
         in.btnBPressed = b && !prevB;

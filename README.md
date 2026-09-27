@@ -143,13 +143,15 @@ FluxArcadeCabinet/
             ├── TubeFluxScene.cpp   # Tunnel (drawn directly), block meshes, ship sprite
             ├── TubeFluxPlay.cpp    # Steering, speed, tiers, spawning, collisions
             ├── TubeFluxHud.cpp     # HUD, overlays, menu screens
-            └── TubeShipSprite.h    # GENERATED ship sprite (tools/tube_ship_sprite.py)
+            ├── TubeShipSprite.h    # GENERATED ship sprite (tools/tube_ship_sprite.py)
+            └── assets/             # GENERATED title screen (tools/tube_title_screen.py)
 ```
 
 `test/` sits alongside `src/` and holds the desktop harnesses (see Testing
 and Profiling). `pio run` ignores it, so it never reaches a firmware build.
-`tools/` holds asset generators; Tube Flux's ship sprite is edited as text
-art in `tools/tube_ship_sprite.py`, which writes the header.
+`tools/` holds asset generators. Tube Flux's ship sprite is edited as text
+art in `tools/tube_ship_sprite.py`, and its title screen is rendered by
+`tools/tube_title_screen.py` (needs numpy and Pillow); each writes its header.
 
 ## Audio
 

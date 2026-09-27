@@ -38,8 +38,7 @@ void TubeFluxGame::updateFrameScale() {
 
 void TubeFluxGame::init(AudioEngine &audio) {
     loadHighScore();
-    _phase = PHASE_ATTRACT;
-    _phaseEnteredMs = millis();
+    enterAttract();
     _btnBWasHeld = true;
     _btnBHoldStart = 0;
     _lastFrameMs = millis();
@@ -115,12 +114,29 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     }
 }
 
-// The tunnel keeps flowing behind the menu screens, empty, at tier 1 speed.
+void TubeFluxGame::enterAttract() {
+    _phase = PHASE_ATTRACT;
+    _phaseEnteredMs = millis();
+    _attractSlide = SLIDE_TITLE;
+    _attractSlideAt = millis();
+}
+
+// Title image and how-to-play alternate. Behind how-to-play the tunnel
+// keeps flowing, empty, at tier 1 speed; the title is a full-screen image,
+// so the world isn't rendered at all while it shows.
 bool TubeFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    _dist += BASE_SPEED * _frameScale;
-    _angle = fmodf(_angle + 0.6f * _frameScale, 360.0f);
-    renderWorld(canvas);
-    renderAttract(canvas);
+    if (millis() - _attractSlideAt > ATTRACT_SLIDE_MS) {
+        _attractSlide = (_attractSlide == SLIDE_TITLE) ? SLIDE_INFO : SLIDE_TITLE;
+        _attractSlideAt = millis();
+    }
+    if (_attractSlide == SLIDE_TITLE) {
+        renderAttractTitle(canvas);
+    } else {
+        _dist += BASE_SPEED * _frameScale;
+        _angle = fmodf(_angle + 0.6f * _frameScale, 360.0f);
+        renderWorld(canvas);
+        renderAttractInfo(canvas);
+    }
     if (input.btnAPressed) startNewGame(audio);
     return true;
 }
@@ -136,8 +152,7 @@ bool TubeFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
         startNewGame(audio);
     } else if (elapsed > GAMEOVER_TIMEOUT_MS) {
         for (auto &o : _obstacles) { o.active = false; o.obj->enabled = false; }
-        _phase = PHASE_ATTRACT;
-        _phaseEnteredMs = millis();
+        enterAttract();
     }
     return true;
 }

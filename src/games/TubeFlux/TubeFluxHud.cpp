@@ -1,4 +1,6 @@
 #include "TubeFluxGame.h"
+#include "assets/TubeTitleScreen.h"
+#include <string.h>
 
 namespace tubeflux {
 
@@ -71,9 +73,24 @@ void TubeFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
     canvas.fillRect(32, 22, fill, 2, ArcadeConfig::COLOR_AMBER);
 }
 
-void TubeFluxGame::renderAttract(GFXcanvas16 &canvas) {
+// The pre-rendered title (tools/tube_title_screen.py) with the start prompt
+// and high score in its black bottom strip, where Tank Flux puts them.
+void TubeFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
+    // Same layout and pixel format as the canvas: one copy, rather than
+    // 20480 drawPixel() calls.
+    if (canvas.width() == TITLE_W && canvas.height() == TITLE_H) {
+        memcpy(canvas.getBuffer(), TITLE_SCREEN, sizeof(TITLE_SCREEN));
+    }
+    if (millis() % 1000 < 600) drawCentred(canvas, "[BTN A] TO PLAY", TITLE_STRIP_Y + 5, ArcadeConfig::COLOR_WHITE);
+    char buf[20];
+    snprintf(buf, sizeof(buf), "HI: %ld", _highScore);
+    drawCentred(canvas, buf, TITLE_STRIP_Y + 14, ArcadeConfig::COLOR_YELLOW);
+    drawQuitHint(canvas);
+}
+
+void TubeFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.fillRect(14, 22, W - 28, 84, PANEL);
-    drawCentred(canvas, "TUBE FLUX", 28, ArcadeConfig::COLOR_CYAN, 2);
+    drawCentred(canvas, "HOW TO PLAY", 32, ArcadeConfig::COLOR_CYAN);
     drawCentred(canvas, "ROLL: JOYSTICK L/R", 52, ArcadeConfig::COLOR_WHITE);
     drawCentred(canvas, "BOOST: UP  BRAKE: DOWN", 62, ArcadeConfig::COLOR_GREY);
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 78, ArcadeConfig::COLOR_YELLOW);

@@ -48,6 +48,7 @@ public:
 
 private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
+    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO };
 
     struct Obstacle {
         Renderer::Object* obj = nullptr;   // one mesh per width, see _blockMeshes
@@ -63,6 +64,8 @@ private:
     bool          _btnBWasHeld = false;   // B must be released before hold-to-exit counts
     unsigned long _btnBHoldStart = 0;
     unsigned long _phaseEnteredMs = 0;
+    AttractSlide  _attractSlide = SLIDE_TITLE;
+    unsigned long _attractSlideAt = 0;
     float         _frameScale = 1.0f;
     unsigned long _lastFrameMs = 0;
 
@@ -154,7 +157,9 @@ private:
     void drawOverlays(GFXcanvas16 &canvas);
     void drawQuitHint(GFXcanvas16 &canvas);
     void drawCentred(GFXcanvas16 &canvas, const char* text, int y, uint16_t colour, uint8_t size = 1);
-    void renderAttract(GFXcanvas16 &canvas);
+    void enterAttract();
+    void renderAttractTitle(GFXcanvas16 &canvas);
+    void renderAttractInfo(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
 };
 
