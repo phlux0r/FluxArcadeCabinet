@@ -174,6 +174,51 @@ inline constexpr unsigned long SHOT_RELOAD_MS = 220;
 // Where shots and the pickup sit: off the floor at the ship's height.
 inline constexpr float         FLY_HEIGHT    = 70.0f;
 
+// --- Drone chase ------------------------------------------------------------------
+// A two-part fight. First the drone is behind you, where you can't see it:
+// before each shot the lane it's aiming down flashes red on the walls,
+// then a bolt streaks past down that lane. No blocks spawn while it hunts
+// you, so the bolts are the whole test. Then it overtakes, overhead, and
+// holds station ahead, weaving between lanes and dropping crystals: now
+// it's in front of your gun. Destroy it for a big bonus, or it escapes
+// after DRONE_ESCAPE_MS, no penalty. Each chase is harder than the last.
+//
+// The first comes at the tier-6 gate (the 5th gate, when the gun is long
+// since available); tiers stop at 9, so later ones are every CHASE_EVERY
+// of distance after the last one ended.
+inline constexpr int           CHASE_FIRST_TIER   = 6;
+// Every 5th gate's worth of distance: ~70s of normal play at tier 9 between
+// chases (at 2.5 tiers, chases were ~40% of top-tier play).
+inline constexpr float         CHASE_EVERY        = 5.0f * TIER_DISTANCE;
+inline constexpr unsigned long CHASE_PURSUE_MS    = 10000;  // drone behind you, firing
+inline constexpr unsigned long CHASE_FIRST_SHOT_MS = 2500;  // lets the blocks already queued pass
+inline constexpr unsigned long DRONE_SHOT_MS      = 1500;   // between volleys, first chase
+inline constexpr unsigned long DRONE_SHOT_MS_STEP = 250;    // faster each chase...
+inline constexpr unsigned long DRONE_SHOT_MS_MIN  = 800;    // ...down to this
+inline constexpr unsigned long DRONE_WARN_MS      = 700;    // lane flashes red this long before a bolt
+inline constexpr unsigned long DRONE_WARN_MS_MIN  = 500;
+inline constexpr int           DRONE_TWIN_VOLLEY_CHASE = 2; // from the 3rd chase, two lanes at once
+inline constexpr float         DRONE_BOLT_SPEED   = 170.0f; // relative to you, units per frame
+inline constexpr float         DRONE_BOLT_HALF_DEG = 10.0f;
+inline constexpr float         DRONE_BOLT_DEPTH   = 300.0f;
+inline constexpr float         DRONE_WARN_DEPTH   = 3200.0f; // how far along the lane the warning shows
+inline constexpr unsigned long CHASE_OVERTAKE_MS  = 1500;
+inline constexpr float         DRONE_AHEAD_Z      = 1500.0f; // where it holds station
+inline constexpr float         DRONE_HEIGHT       = 150.0f;  // off the wall it flies over
+inline constexpr float         DRONE_HALF_DEG     = 22.0f;   // for shots
+inline constexpr float         DRONE_DEPTH        = 280.0f;
+inline constexpr float         DRONE_WEAVE_RATE   = 2.5f;    // degrees per frame
+inline constexpr unsigned long DRONE_RETARGET_MS  = 1400;    // picks a new lane to weave to
+inline constexpr unsigned long DRONE_DROP_MS      = 1100;    // drops a crystal
+inline constexpr unsigned long DRONE_ESCAPE_MS    = 14000;   // time you get to shoot it down
+inline constexpr int           DRONE_HP           = 8;
+inline constexpr int           DRONE_HP_PER_CHASE = 3;
+inline constexpr int           DRONE_POINTS       = 2000;
+inline constexpr int           DRONE_POINTS_PER_CHASE = 1000;
+inline constexpr unsigned long DRONE_HIT_FLASH_MS = 80;
+inline constexpr unsigned long CHASE_BANNER_MS    = 2500;
+inline constexpr int           DRONE_BOLT_POOL    = 4;
+
 // --- Shield and scoring ---------------------------------------------------------
 inline constexpr int           SHIELD_MAX       = 3;
 inline constexpr unsigned long HIT_INVULN_MS    = 1400;

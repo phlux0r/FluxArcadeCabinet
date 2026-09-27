@@ -24,7 +24,11 @@ coming, and the curves get sharper from tier 6. You start unarmed: a yellow
 chevron late in tier 3 is the gun, and from tier 4 orange crystals appear
 that it can shoot, some of them sitting in the only open lane. Magenta
 chevrons upgrade it to twin guns (tier 7) and rapid fire (tier 9), and a
-green cross restores a shield when you've lost one.
+green cross restores a shield when you've lost one. From the tier-6 gate,
+and every five gates' distance after, a drone chases you: behind you first,
+where lanes flash red before its bolts come down them, then overtaking to
+fly ahead, weaving and dropping crystals, until you shoot it down or it
+escapes.
 
 ## Build
 
@@ -147,7 +151,9 @@ FluxArcadeCabinet/
             ├── TubeFluxConfig.h    # All tuning: tunnel, speed, tiers, spacing, fairness
             ├── TubeFluxGame.cpp    # Lifecycle, phases, per-frame update loop
             ├── TubeFluxScene.cpp   # Tunnel (drawn directly), block meshes, ship sprite
-            ├── TubeFluxPlay.cpp    # Steering, speed, tiers, spawning, collisions
+            ├── TubeFluxPlay.cpp    # Steering, speed, tiers, bends, spawning, pickups, shots
+            ├── TubeFluxChase.cpp   # The drone chase: warnings, bolts, overtake, the fight
+            ├── TubeMath.h          # Angle and timing helpers
             ├── TubeFluxHud.cpp     # HUD, overlays, menu screens
             ├── TubeShipSprite.h    # GENERATED ship sprite (tools/tube_ship_sprite.py)
             └── assets/             # GENERATED title screen (tools/tube_title_screen.py)

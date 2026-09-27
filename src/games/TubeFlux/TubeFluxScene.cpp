@@ -147,12 +147,19 @@ void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
         t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
         const uint16_t colA = lerp565(_wallA, _backdrop[0], t);
         const uint16_t colB = lerp565(_wallB, _backdrop[0], t);
+        // A lane the drone is about to fire down flashes red along the
+        // near stretch of wall (drone chase).
+        const bool warnOn = _warnLanes && ((millis() / 90) & 1) &&
+                            (ringZ[k] + ringZ[k + 1]) * 0.5f < DRONE_WARN_DEPTH;
+        const uint16_t colWarn = lerp565(rgb565(31, 6, 2), _backdrop[0], t);
         const float *px = ringX[k], *py = ringY[k], *nx = ringX[k + 1], *ny = ringY[k + 1];
         for (int j = 0; j < TUBE_SIDES; ++j) {
             int j1 = (j + 1 == TUBE_SIDES) ? 0 : j + 1;
             float qx[4] = { px[j], px[j1], nx[j1], nx[j] };
             float qy[4] = { py[j], py[j1], ny[j1], ny[j] };
-            fillConvex(buf, w, h, qx, qy, 4, ((n - 1 + j) & 1) ? colB : colA);
+            uint16_t col = ((n - 1 + j) & 1) ? colB : colA;
+            if (warnOn && (_warnLanes & (1u << j))) col = colWarn;
+            fillConvex(buf, w, h, qx, qy, 4, col);
         }
     }
 }
@@ -267,6 +274,52 @@ Renderer::Object* TubeFluxGame::buildCross() {
     return o;
 }
 
+// The drone, built flying over lane 0 and centred on its own origin, so
+// placeDrone() can put it at any angle and height. You only ever see it
+// from behind, so it's designed from behind: a broad armoured hexagonal
+// tail plate, wider at the top, with two engines glowing on it, tapering
+// forward to a nose. A flat wedge read as a 5-pixel sliver edge-on; this
+// is ~26 x 11 pixels at DRONE_AHEAD_Z.
+Renderer::Object* TubeFluxGame::buildDrone() {
+    auto* o = new Renderer::Object();
+    const int32_t zr = -110;                              // tail plate
+    static const int16_t hex[6][2] = { { -195, 25 }, { -115, 90 }, { 115, 90 },
+                                       { 195, 25 }, { 115, -75 }, { -115, -75 } };
+    uint16_t rim[6];
+    for (int i = 0; i < 6; ++i) rim[i] = addPoint(o, { hex[i][0], hex[i][1], zr });
+    uint16_t c    = addPoint(o, { 0, 8, zr });            // tail centre
+    uint16_t nose = addPoint(o, { 0, 10, 230 });
+    for (int i = 0; i < 6; ++i) {
+        int j = (i + 1) % 6;
+        // Tail plate: the face you see, dark armour.
+        o->addTriangle(c, rim[i], rim[j], &_droneDarkMat);
+        // Sides to the nose: upper ones catch the light.
+        bool upper = hex[i][1] > 0 && hex[j][1] > 0;
+        o->addTriangle(rim[i], nose, rim[j], upper ? &_droneTopMat : &_droneHullMat);
+    }
+    // A red band round the tail plate's edge, just proud of it, so the
+    // silhouette reads against dark walls.
+    for (int i = 0; i < 6; ++i) {
+        int j = (i + 1) % 6;
+        uint16_t a0 = addPoint(o, { hex[i][0], hex[i][1], zr - 2 });
+        uint16_t a1 = addPoint(o, { hex[j][0], hex[j][1], zr - 2 });
+        uint16_t b1 = addPoint(o, { (int32_t)(hex[j][0] * 0.8f), (int32_t)(hex[j][1] * 0.8f + 2), zr - 2 });
+        uint16_t b0 = addPoint(o, { (int32_t)(hex[i][0] * 0.8f), (int32_t)(hex[i][1] * 0.8f + 2), zr - 2 });
+        o->addFace(a0, a1, b1, b0, &_droneHullMat);
+    }
+    // Two engines on the tail plate.
+    for (int32_t ex : { -70, 70 }) {
+        uint16_t e0 = addPoint(o, { ex - 42, 40, zr - 4 }), e1 = addPoint(o, { ex + 42, 40, zr - 4 });
+        uint16_t e2 = addPoint(o, { ex + 42, -20, zr - 4 }), e3 = addPoint(o, { ex - 42, -20, zr - 4 });
+        o->addFace(e0, e1, e2, e3, &_droneEngineMat);
+    }
+    o->calculateBoundingBox();
+    o->cullingMode = Renderer::CullingMode::NO_CULLING;
+    o->preciseDepthSort = true;
+    o->enabled = false;
+    return o;
+}
+
 // The camera sits CAMERA_OFFSET out from the axis towards the ship and
 // rolls with it, so the ship's lane is always straight down the screen.
 void TubeFluxGame::placeCamera() {
@@ -306,6 +359,9 @@ void TubeFluxGame::releaseScene() {
     for (auto &o : _crystals) { o.obj = nullptr; o.active = false; }
     for (auto &s : _shots) { s.obj = nullptr; s.active = false; }
     _chevronObj = _crossObj = nullptr;
+    _droneObj = nullptr;
+    for (auto &b : _bolts) { b.obj = nullptr; b.active = false; }
+    _chase = CHASE_NONE;
     _pickupActive = false;
     _phase = PHASE_ATTRACT;   // nothing may touch the (now missing) objects before a new game
 }
@@ -325,6 +381,7 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
 
     for (Renderer::Material* m : { &_blockFrontMat, &_blockTopMat, &_blockSideMat,
                                    &_crystalMatA, &_crystalMatB, &_shotMat, &_pickupMat, &_crossMat,
+                                   &_droneHullMat, &_droneTopMat, &_droneDarkMat, &_droneEngineMat, &_boltMat,
                                    &_shipLevelMat, &_shipBankMat }) {
         m->shadingMode = Renderer::ShadingMode::UNLIT;
     }
@@ -335,6 +392,7 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _crystalMatB.color   = rgb565(26, 18, 2);    // deeper, so the facets show
     _shotMat.color       = rgb565(12, 60, 31);   // cyan bolt
     _pickupMat.color     = rgb565(31, 60, 4);    // yellow; flashes white (updatePickup)
+    _boltMat.color       = rgb565(31, 10, 6);    // drone bolts: hot red, not your cyan
     applyTierPalette();
 
     // Slot widths cycle 1,2,3: with the pool sized well past what's ever on
@@ -365,6 +423,13 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _scene->addObject(_chevronObj);
     _crossObj = buildCross();
     _scene->addObject(_crossObj);
+    _droneObj = buildDrone();
+    _scene->addObject(_droneObj);
+    for (auto &b : _bolts) {
+        b.obj = Primitives::createCube(44, 44, (int32_t)DRONE_BOLT_DEPTH, &_boltMat);
+        b.obj->enabled = false;
+        _scene->addObject(b.obj);
+    }
 
     _shipLevelTex = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_LEVEL), true, 0x0000);
     _shipBankTex  = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_BANK),  true, 0x0000);

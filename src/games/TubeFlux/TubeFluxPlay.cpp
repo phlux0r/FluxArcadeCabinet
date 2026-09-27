@@ -2,23 +2,6 @@
 
 namespace tubeflux {
 
-namespace {
-
-inline float wrapDeg(float a) {
-    while (a >= 360.0f) a -= 360.0f;
-    while (a <    0.0f) a += 360.0f;
-    return a;
-}
-
-// Shortest signed difference between two angles round the tunnel.
-inline float deltaDeg(float a, float b) {
-    float d = a - b;
-    while (d >  180.0f) d -= 360.0f;
-    while (d < -180.0f) d += 360.0f;
-    return d;
-}
-
-}  // namespace
 
 int TubeFluxGame::tierFor(float dist) const {
     int t = 1 + (int)(dist / TIER_DISTANCE);
@@ -111,6 +94,13 @@ void TubeFluxGame::bendOffset(float z, float &x, float &y) const {
 
 // Keeps blocks queued out to SPAWN_AHEAD, one every spawnGap().
 void TubeFluxGame::spawnObstacles() {
+    // Nothing spawns during a chase: the drone's bolts, then its crystals,
+    // are the whole test. Keep the spawn point at the front, so blocks
+    // resume at the edge of the fog afterwards rather than in a backlog.
+    if (chasing()) {
+        if (_nextSpawnAt < _dist + SPAWN_AHEAD) _nextSpawnAt = _dist + SPAWN_AHEAD;
+        return;
+    }
     while (_nextSpawnAt < _dist + SPAWN_AHEAD) {
         spawnBlock(_nextSpawnAt);
         _nextSpawnAt += spawnGap();
@@ -394,6 +384,15 @@ void TubeFluxGame::updateShots(AudioEngine &audio) {
         for (auto &o : _obstacles) consider(o);
         for (auto &c : _crystals) consider(c);
 
+        // The drone, unless something nearer took the shot first.
+        if (droneShotAt(from, s.at, s.angle) &&
+            (!hit || _dist + _droneZ - DRONE_DEPTH * 0.5f < hit->at)) {
+            s.active = false;
+            s.obj->enabled = false;
+            hitDrone(audio);
+            continue;
+        }
+
         if (hit) {
             s.active = false;
             s.obj->enabled = false;
@@ -428,7 +427,12 @@ void TubeFluxGame::destroyCrystal(Obstacle &o, AudioEngine &audio) {
 
 void TubeFluxGame::hitShip(Obstacle &o, AudioEngine &audio) {
     o.resolved = true;
-    if ((long)(millis() - _invulnUntil) < 0) return;   // still blinking from the last hit
+    damageShip(audio);
+}
+
+// Anything that costs a shield: blocks, crystals, drone bolts.
+void TubeFluxGame::damageShip(AudioEngine &audio) {
+    if (before(_invulnUntil)) return;   // still blinking from the last hit
 
     --_shield;
     _invulnUntil   = millis() + HIT_INVULN_MS;

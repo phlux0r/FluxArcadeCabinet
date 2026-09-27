@@ -6,6 +6,7 @@
 #include <Jet.hpp>
 
 #include "TubeFluxConfig.h"
+#include "TubeMath.h"
 
 // =============================================================================
 // TUBE FLUX: fly down an endless octagonal tunnel, rolling round its wall to
@@ -50,6 +51,9 @@ private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
     enum AttractSlide { SLIDE_TITLE, SLIDE_INFO };
     enum PickupKind : uint8_t { PICKUP_GUN, PICKUP_UPGRADE, PICKUP_SHIELD };
+    // See DRONE_* in TubeFluxConfig.h. ESCAPE is the drone flying off ahead
+    // after surviving; the chase is over once it's gone.
+    enum ChasePhase : uint8_t { CHASE_NONE, CHASE_PURSUE, CHASE_OVERTAKE, CHASE_AHEAD, CHASE_ESCAPE };
 
     struct Obstacle {
         Renderer::Object* obj = nullptr;   // one mesh per width, see _blockMeshes
@@ -59,6 +63,15 @@ private:
         float at = 0.0f;                   // distance along the run where it sits
         bool  resolved = false;            // already hit or scored as it passed
         bool  crystal = false;             // destructible (lives in _crystals)
+    };
+
+    // A drone bolt: comes from behind the camera down one lane.
+    struct Bolt {
+        Renderer::Object* obj = nullptr;
+        bool  active = false;
+        bool  resolved = false;            // already hit you or went past
+        float z = 0.0f;                    // depth ahead of the camera
+        float angle = 0.0f;
     };
 
     struct Shot {
@@ -122,6 +135,26 @@ private:
     float _nextGunAt = WEAPON_FIRST_AT;
     float _nextUpgradeAt = 0.0f;
     float _nextShieldAt = 0.0f;
+    // --- Drone chase (TubeFluxChase.cpp) ---
+    ChasePhase    _chase = CHASE_NONE;
+    int           _chaseCount = 0;          // chases started this run
+    int           _chaseIndex = 0;          // this chase's number, from 0: sets difficulty
+    float         _nextChaseAt = 0.0f;
+    unsigned long _chasePhaseAt = 0;        // when the current phase began
+    unsigned long _nextVolleyAt = 0;
+    unsigned long _volleyFireAt = 0;        // warned lanes fire then; 0 = none pending
+    uint8_t       _warnLanes = 0;           // bit per lane, flashing red on the walls
+    Bolt          _bolts[DRONE_BOLT_POOL];
+    Renderer::Object* _droneObj = nullptr;
+    float         _droneAngle = 0.0f, _droneTargetAngle = 0.0f;
+    float         _droneZ = 0.0f;
+    unsigned long _droneRetargetAt = 0, _droneDropAt = 0, _droneFlashUntil = 0;
+    int           _droneHp = 0, _droneMaxHp = 1;
+    int           _dronesDestroyed = 0, _dronesEscaped = 0;
+    unsigned long _chaseBannerUntil = 0;
+    char          _chaseBanner[24] = "";
+    uint16_t      _chaseBannerColour = 0xFFFF;
+
     // One line of news under the HUD when a pickup is collected.
     unsigned long _pickupBannerUntil = 0;
     const char*   _pickupBanner = "";
@@ -148,6 +181,13 @@ private:
     Renderer::Material _shotMat{ 0xFFFF };
     Renderer::Material _pickupMat{ 0xFFFF };
     Renderer::Material _crossMat{ 0xFFFF };
+    // The drone: dark red hull, a brighter top, a glowing engine. All flash
+    // white when hit (TubeFluxChase.cpp).
+    Renderer::Material _droneHullMat{ 0xFFFF };
+    Renderer::Material _droneTopMat{ 0xFFFF };
+    Renderer::Material _droneDarkMat{ 0xFFFF };
+    Renderer::Material _droneEngineMat{ 0xFFFF };
+    Renderer::Material _boltMat{ 0xFFFF };
     // One mesh per obstacle slot; widths are fixed per slot (see
     // ensureSceneReady), which is what lets blocks be pooled.
 
@@ -183,6 +223,7 @@ private:
     Renderer::Object* buildCrystal();
     Renderer::Object* buildPickup();
     Renderer::Object* buildCross();
+    Renderer::Object* buildDrone();
     void placeCamera();
     void updateShipSprite();
 
@@ -200,6 +241,7 @@ private:
     void  placeObstacle(Obstacle &o);
     void  updateObstacles(AudioEngine &audio);
     void  hitShip(Obstacle &o, AudioEngine &audio);
+    void  damageShip(AudioEngine &audio);
     void  updateObstacle(Obstacle &o, AudioEngine &audio);
     bool  spawnCrystal(float at, int open, int openLanes);
     void  lanePoint(float angle, float radius, float z, float &x, float &y) const;
@@ -212,6 +254,22 @@ private:
     void  tryFire(const InputState &input, AudioEngine &audio);
     void  updateShots(AudioEngine &audio);
     void  destroyCrystal(Obstacle &o, AudioEngine &audio);
+
+    // --- TubeFluxChase.cpp -----------------------------------------------------
+    bool  chasing() const { return _chase != CHASE_NONE; }
+    void  startChase(AudioEngine &audio);
+    void  updateChase(AudioEngine &audio);
+    void  warnVolley(AudioEngine &audio);
+    void  fireVolley(AudioEngine &audio);
+    void  updateBolts(AudioEngine &audio);
+    void  updateDroneAhead(AudioEngine &audio);
+    void  dropCrystal(int lane, float at);
+    void  placeDrone();
+    bool  droneShotAt(float from, float to, float angle) const;
+    void  hitDrone(AudioEngine &audio);
+    void  endChase(bool destroyed);
+    void  setChaseBanner(const char* text, uint16_t colour);
+    void  hideChase();
 
     // --- TubeFluxHud.cpp -------------------------------------------------------
     void drawHUD(GFXcanvas16 &canvas);

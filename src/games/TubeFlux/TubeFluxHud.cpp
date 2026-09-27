@@ -8,7 +8,6 @@ namespace {
 constexpr int16_t W = ArcadeConfig::LANDSCAPE_WIDTH;
 constexpr uint16_t PANEL = 0x0843;   // near-black blue, behind menu text
 
-inline bool before(unsigned long deadline) { return (long)(millis() - deadline) < 0; }
 }  // namespace
 
 void TubeFluxGame::drawCentred(GFXcanvas16 &canvas, const char* text, int y, uint16_t colour, uint8_t size) {
@@ -48,6 +47,13 @@ void TubeFluxGame::drawHUD(GFXcanvas16 &canvas) {
         }
     }
 
+    // Drone health, a thin bar under the strip while it's in front of you.
+    if (_chase == CHASE_AHEAD) {
+        int16_t bw = (int16_t)(100L * _droneHp / _droneMaxHp);
+        canvas.fillRect(30, 11, 100, 2, 0x4000);                  // dark red: what's gone
+        canvas.fillRect(30, 11, bw, 2, ArcadeConfig::COLOR_RED);
+    }
+
     // Shield pips, right-aligned: filled for each hit you can still take.
     for (int i = 0; i < SHIELD_MAX; ++i) {
         int16_t x = W - 3 - (SHIELD_MAX - i) * 9;
@@ -64,7 +70,9 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     // All sit on one line just under the HUD strip, clear of the tunnel's
     // middle where the next blocks come from; most important first. The
     // tier number is already in the HUD.
-    if (before(_pickupBannerUntil)) {
+    if (before(_chaseBannerUntil)) {
+        if ((millis() / 200) & 1) drawCentred(canvas, _chaseBanner, 13, _chaseBannerColour);
+    } else if (before(_pickupBannerUntil)) {
         if ((millis() / 200) & 1) drawCentred(canvas, _pickupBanner, 13, _pickupBannerColour);
     } else if (before(_tierBannerUntil)) {
         // Where bends start or sharpen, say so: it's a new thing to deal with.

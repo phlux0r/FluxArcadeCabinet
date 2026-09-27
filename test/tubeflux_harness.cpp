@@ -13,13 +13,6 @@ using namespace tubeflux;
 
 namespace {
 
-float deltaDeg(float a, float b) {
-    float d = a - b;
-    while (d >  180.0f) d -= 360.0f;
-    while (d < -180.0f) d += 360.0f;
-    return d;
-}
-
 // Lanes a block ahead (within `lookahead` of the ship) will cover.
 bool covers(const TubeFluxGame::Obstacle &o, int lane) {
     for (int k = 0; k < o.lanes; ++k) if ((o.lane + k) % TUBE_SIDES == lane) return true;
@@ -27,6 +20,11 @@ bool covers(const TubeFluxGame::Obstacle &o, int lane) {
 }
 
 bool laneBlocked(const TubeFluxGame &g, int lane, float lookahead) {
+    // Drone chase: a warned lane, or a bolt still coming down one.
+    if (g._warnLanes & (1u << lane)) return true;
+    for (const auto &b : g._bolts) {
+        if (b.active && !b.resolved && laneAt(b.angle) == lane) return true;
+    }
     for (const auto &o : g._obstacles) {
         if (!o.active || o.resolved) continue;
         float z = o.at - g._dist;
@@ -132,6 +130,34 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
         d.n = 1; d.at[0] = 0;
         d.maybeDump(0, canvas);
     }
+
+    // Drone chase: lane 0 and lane 3 warned (the flash is on for odd 90ms
+    // periods), then the drone ahead in lane 1, hit-flashing.
+    for (auto &sh : g._shots) { sh.active = false; sh.obj->enabled = false; }
+    g._chevronObj->enabled = g._crossObj->enabled = false;
+    g._pickupActive = false;
+    g._angle = 0;
+    g_fakeMillis = 90 * 101;
+    g._warnLanes = (1u << 0) | (1u << 3);
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_chase_warn"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    g._warnLanes = 0;
+    g._chase = TubeFluxGame::CHASE_AHEAD;
+    g._droneAngle = 45.0f; g._droneZ = DRONE_AHEAD_Z;
+    g._droneHp = 5; g._droneMaxHp = 8;
+    g._droneObj->enabled = true;
+    g.placeDrone();
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_chase_drone"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    g._droneFlashUntil = g_fakeMillis + 100;
+    g._droneAngle = 0.0f;
+    g.placeDrone();
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_chase_drone_hit"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    g.hideChase();
 }
 
 }  // namespace
@@ -198,6 +224,14 @@ int main(int argc, char** argv) {
             }
             if (g._pickupActive && g._pickupAt - g._dist < 3000.0f && !laneBlocked(g, g._pickupLane, 900.0f))
                 target = g._pickupLane;
+            // Drone ahead: line up on it, if that lane's clear.
+            // Every third drone it holds fire on, so the escape path runs too.
+            if (g._chase == TubeFluxGame::CHASE_AHEAD && g.armed() && g._chaseIndex % 3 != 2) {
+                int dl = laneAt(g._droneAngle);
+                if (!laneBlocked(g, dl, 900.0f)) target = dl;
+                if (fabsf(deltaDeg(g._angle, g._droneAngle)) < 15.0f &&
+                    (g._gunLevel >= GUN_MAX_LEVEL || (f % 4) == 0)) a = true;
+            }
             float err = deltaDeg((float)target * LANE_DEG, g._angle);
             // Fire at any crystal ahead in this lane.
             if (g.armed() && (g._gunLevel >= GUN_MAX_LEVEL || (f % 4) == 0)) {
@@ -275,10 +309,10 @@ int main(int argc, char** argv) {
         if (g.armed() && armedAtFrame < 0) armedAtFrame = f;
         if (g._gunLevel > maxGunLevel) maxGunLevel = g._gunLevel;
 
-        int32_t st[12] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
+        int32_t st[14] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
                            (int32_t)g._dist, (int32_t)(g._angle * 10), (int32_t)(g._speed * 10),
                            (int32_t)g._safeLane, (int32_t)g._bendX, (int32_t)g._bendY,
-                           g._gunLevel, g._crystalsDestroyed };
+                           g._gunLevel, g._crystalsDestroyed, (int32_t)g._chase, g._droneHp };
         traceHash = fnv(st, sizeof(st), traceHash);
         if (f % 60 == 0) {
             traceHash = fnv(canvas.getBuffer(),
@@ -299,6 +333,8 @@ int main(int argc, char** argv) {
     printf("weapon: first armed at f=%ld, max gun level=%d, crystals destroyed=%d, "
            "shields collected=%d, wavs=%d\n",
            armedAtFrame, maxGunLevel, g._crystalsDestroyed, g._shieldsCollected, audio.wavs);
+    printf("chase: started=%d destroyed=%d escaped=%d (last run)\n",
+           g._chaseCount, g._dronesDestroyed, g._dronesEscaped);
     printf("hits by tier:");
     for (int t = 1; t <= MAX_TIER; ++t) printf(" %d:%d", t, hitsByTier[t]);
     printf("\n");

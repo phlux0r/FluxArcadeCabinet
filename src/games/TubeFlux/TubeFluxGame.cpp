@@ -80,6 +80,9 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
     _nextGunAt = WEAPON_FIRST_AT;
     _nextUpgradeAt = 0.0f;
     _nextShieldAt = 0.0f;
+    _chaseCount = 0;
+    _dronesDestroyed = _dronesEscaped = 0;
+    _nextChaseAt = (float)(CHASE_FIRST_TIER - 1) * TIER_DISTANCE;   // the tier-6 gate
     for (auto &p : _particles.pool) p.active = false;
     applyTierPalette();
     _phase = PHASE_PLAYING;
@@ -97,6 +100,7 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     _pickupActive = false;
     _chevronObj->enabled = false;
     _crossObj->enabled = false;
+    hideChase();
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);
@@ -138,6 +142,7 @@ void TubeFluxGame::hideTransients() {
     _pickupActive = false;
     if (_chevronObj) _chevronObj->enabled = false;
     if (_crossObj) _crossObj->enabled = false;
+    hideChase();
 }
 
 void TubeFluxGame::enterAttract() {
@@ -192,10 +197,12 @@ bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     updateSpeed(input);
     updateTier(audio);
     updateBend();
+    updateChase(audio);
     spawnObstacles();
     updatePickup(audio);
     tryFire(input, audio);
     updateShots(audio);        // before collisions: a point-blank shot still saves you
+    updateBolts(audio);
     updateObstacles(audio);
     _score = (long)(_dist * SCORE_PER_UNIT) + _bonus;
 

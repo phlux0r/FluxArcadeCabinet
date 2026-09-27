@@ -69,7 +69,7 @@ else
     for s in "play 20000" "god 30000" "menus 12000"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086
-      "./${g}_harness" $s | tail -3
+      "./${g}_harness" $s | tail -4
     done
   done
 fi
