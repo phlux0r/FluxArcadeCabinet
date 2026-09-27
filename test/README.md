@@ -1,8 +1,8 @@
-# Host harness (Tank Flux)
+# Host harnesses (Tank Flux, Tube Flux)
 
-Runs Tank Flux's real game logic and the real Jet rasteriser on a desktop, so
-a change can be checked without flashing the board. The point is regression
-detection: the harness drives a scripted bot against a fake clock and a seeded
+Run the 3D games' real game logic and the real Jet rasteriser on a desktop,
+so a change can be checked without flashing the board. The point is regression
+detection: each harness drives a scripted bot against a fake clock and a seeded
 RNG, then hashes game state and the framebuffer each frame. **The same trace
 before and after a change means behaviour was preserved.**
 
@@ -13,9 +13,10 @@ build.
 ## Running
 
 ```bash
-test/build.sh                # build, run all scenarios, print summaries
-test/build.sh god 30000      # one scenario, full trace
-test/build.sh god 30000 45   # ...at a 45ms frame time (~22fps)
+test/build.sh                  # build, run every game's scenarios, print summaries
+test/build.sh god 30000        # one Tank Flux scenario, full trace
+test/build.sh god 30000 45     # ...at a 45ms frame time (~22fps)
+test/build.sh tube god 30000   # the same for Tube Flux (tank is the default)
 test/build.sh --build-only
 ```
 
@@ -29,20 +30,41 @@ Needs a host `g++` with C++17. Jet is picked up from `.pio/libdeps/` once
 `pio run` has fetched it, or from `JET_SRC=/path/to/Jet/src`. Build artifacts
 land in `test/.build/` (gitignored); delete it to force a rebuild.
 
-Scenarios:
+Scenarios (both games have the first four):
 
-| Mode | What it covers |
-|---|---|
-| `play` | Normal run — the bot dies and restarts, so game-over is covered |
-| `god` | Health pinned, so a long run reaches many bosses and arena resets |
-| `menus` | Attract exit, in-game A+B quit, game-over timeout |
-| `profile` | `god`, plus per-frame render cost grouped by what was on screen |
+| Mode | Tank Flux | Tube Flux |
+|---|---|---|
+| `play` | Normal run: the bot dies and restarts, so game over is covered | Same; the bot looks only a short way ahead, so it gets caught |
+| `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier |
+| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout |
+| `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier |
+| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) |
 
 `profile` reports Jet's per-frame triangle counts and host render time,
 bucketed by how many tanks were on screen, plus the scene's total object and
 triangle count as a drift check (an arena reset only moves existing objects,
 so the totals must not grow). Host microseconds aren't ESP32 microseconds —
 compare the buckets to each other, not to a frame budget.
+
+## Looking at frames
+
+The GFX stub keeps a real framebuffer, so any frame can be written out:
+
+```bash
+DUMP_AT=500,4000 test/build.sh tube play 5000   # tube_000500.ppm, tube_004000.ppm
+```
+
+Files land in `test/.build/`. The stub draws no text, so HUD text is absent;
+everything Jet or the game draws directly is there. For Tube Flux,
+`DUMP_STATE=1` also prints the angle, distance and camera rotation for each
+dumped frame, and `DEBUG_HITS=1` prints the situation (angle, roll speed,
+blocks nearby) every time the ship is hit.
+
+Tube Flux's `pose` mode renders set-ups chosen to check conventions by eye:
+a block in lane 2 must be on the right wall, and on the floor once the ship
+rolls to 90 degrees. That is how Jet's roll and object-rotation directions
+were confirmed (`CAMERA_ROLL_SIGN`, `OBSTACLE_ROLL_SIGN`), and how the
+hand-drawn tunnel was checked against Jet's own projection.
 
 ## Checking a change
 
@@ -68,9 +90,10 @@ being freed on exit to the launcher).
   whole cabinet once more than one `.cpp` included it.
 - **How it looks or plays.** A framebuffer hash notices that pixels changed,
   never whether they're right. Same for feel, timing and difficulty.
-- **Real timing.** The clock is fake and advanced a fixed 16ms per frame, so
-  nothing here reflects the frame rate on hardware.
-- **The other four games, and `main.cpp`.** Tank Flux only.
+- **Real timing.** The clock is fake and advanced a fixed step per frame, so
+  nothing here reflects the frame rate on hardware. `profile` compares
+  relative cost only.
+- **The four 2D games, and `main.cpp`.** Tank Flux and Tube Flux only.
 
 So a clean harness run means "nothing changed unintentionally", not "this is
 good to ship". Hardware still decides that.
@@ -79,8 +102,10 @@ good to ship". Hardware still decides that.
 
 ```
 test/
-├── build.sh                    # finds Jet, builds, runs
-├── tankflux_harness.cpp        # fake clock, seeded RNG, scripted bot, tracing
+├── build.sh                    # finds Jet, builds both harnesses, runs
+├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
+├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
+├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
 └── stub/                       # shadows the hardware headers (-I'd first)
     ├── Arduino.h               # millis()/random()/math, no hardware
     ├── Adafruit_GFX.h          # GFXcanvas16 with a real RGB565 buffer

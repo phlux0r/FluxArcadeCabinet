@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: five games behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: six games behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -10,12 +10,16 @@ the cabinet's display, audio, input and particle subsystems.
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner: platforms, boulders, flying enemies |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
+| Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
-Tank Flux is the cabinet's first 3D game, rendered with
+Tank Flux and Tube Flux are rendered with
 [Jet](https://github.com/CubeCoders/Jet), a dependency-free fixed-function
-rasteriser. You drive an arena of hills, rocks, trees and a river, fighting
-tanks that flank and fire back, with a boss every 15 kills that re-rolls the
-arena when it dies.
+rasteriser. In Tank Flux you drive an arena of hills, rocks, trees and a
+river, fighting tanks that flank and fire back, with a boss every 15 kills
+that re-rolls the arena when it dies. In Tube Flux you fly down an endless
+octagonal tunnel, rolling round its wall to dodge blocks; every ~30 seconds
+a gate raises the tier, which speeds things up, packs the blocks closer and
+brings in wider ones.
 
 ## Build
 
@@ -74,9 +78,16 @@ Tank Flux differs: **hold B** strafes while driving, so quitting mid-game is
 **hold A+B** for 2s instead (a progress bar appears once you've held them long
 enough for it not to be a normal shot).
 
+Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
+the speed (up boosts, down brakes). A starts a run; it has no in-game use yet.
+
+With six games the launcher's "[JOY] MOVE / [BTN A] GO" hint sits just below
+the background art's menu box, over the grid floor. Still readable, but a
+seventh game needs the list or the hint moved.
+
 ## Project Structure
 
-Everything is header-only except Tank Flux and `main.cpp`, so PlatformIO
+Everything is header-only except Tank Flux, Tube Flux and `main.cpp`, so PlatformIO
 compiles one translation unit per `.cpp` and pulls the rest in by include.
 
 ```
@@ -112,23 +123,33 @@ FluxArcadeCabinet/
         │                       # renderer, player, collectibles, sprites + assets/
         ├── PlatformFlux/       # PlatformFluxGame.h + platform/boulder/enemy/
         │                       # power-up managers, PlayerRunner.h + assets/
-        └── TankFlux/           # First-person 3D battle, rendered via Jet:
-            ├── TankFluxGame.h      # Class declaration (state + method groups)
-            ├── TankFluxConfig.h    # All tuning constants + per-tank-type TankSpec
-            ├── TankFluxGame.cpp    # Lifecycle, phases, per-frame update loop
-            ├── TankFluxScene.cpp   # Jet scene, materials, tank models
-            ├── TankFluxArena.cpp   # Arena layout -> 3D objects, boss-kill reset
-            ├── TankFluxPlayer.cpp  # Driving, collisions, shells, repair kits
-            ├── TankFluxEnemies.cpp # Enemy/boss spawning, AI, firing
-            ├── TankFluxHud.cpp     # HUD, radar, overlays, menu screens
-            ├── ArenaLayout.h/.cpp  # Obstacle/tree/kit placement + obstacle collision
-            ├── TankGeometry.h/.cpp # Mesh builders and terrain height
-            ├── TankMath.h          # Inline angle/distance/timing helpers
-            └── assets/             # Attract-screen art, 160x128 landscape
+        ├── TankFlux/           # First-person 3D battle, rendered via Jet:
+        │   ├── TankFluxGame.h      # Class declaration (state + method groups)
+        │   ├── TankFluxConfig.h    # All tuning constants + per-tank-type TankSpec
+        │   ├── TankFluxGame.cpp    # Lifecycle, phases, per-frame update loop
+        │   ├── TankFluxScene.cpp   # Jet scene, materials, tank models
+        │   ├── TankFluxArena.cpp   # Arena layout -> 3D objects, boss-kill reset
+        │   ├── TankFluxPlayer.cpp  # Driving, collisions, shells, repair kits
+        │   ├── TankFluxEnemies.cpp # Enemy/boss spawning, AI, firing
+        │   ├── TankFluxHud.cpp     # HUD, radar, overlays, menu screens
+        │   ├── ArenaLayout.h/.cpp  # Obstacle/tree/kit placement + obstacle collision
+        │   ├── TankGeometry.h/.cpp # Mesh builders and terrain height
+        │   ├── TankMath.h          # Inline angle/distance/timing helpers
+        │   └── assets/             # Attract-screen art, 160x128 landscape
+        └── TubeFlux/           # Tunnel runner, rendered via Jet:
+            ├── TubeFluxGame.h      # Class declaration
+            ├── TubeFluxConfig.h    # All tuning: tunnel, speed, tiers, spacing, fairness
+            ├── TubeFluxGame.cpp    # Lifecycle, phases, per-frame update loop
+            ├── TubeFluxScene.cpp   # Tunnel (drawn directly), block meshes, ship sprite
+            ├── TubeFluxPlay.cpp    # Steering, speed, tiers, spawning, collisions
+            ├── TubeFluxHud.cpp     # HUD, overlays, menu screens
+            └── TubeShipSprite.h    # GENERATED ship sprite (tools/tube_ship_sprite.py)
 ```
 
-`test/` sits alongside `src/` and holds the desktop harness (see Testing and
-Profiling). `pio run` ignores it, so it never reaches a firmware build.
+`test/` sits alongside `src/` and holds the desktop harnesses (see Testing
+and Profiling). `pio run` ignores it, so it never reaches a firmware build.
+`tools/` holds asset generators; Tube Flux's ship sprite is edited as text
+art in `tools/tube_ship_sprite.py`, which writes the header.
 
 ## Audio
 
@@ -162,22 +183,24 @@ bus the display also uses.
 
 ## Testing and Profiling
 
-`test/` runs Tank Flux's real game logic and the real Jet rasteriser on a
-desktop against a fake clock and a seeded RNG, hashing game state and the
-framebuffer each frame. The same trace before and after a change means
+`test/` runs the 3D games' real game logic (Tank Flux and Tube Flux) and the
+real Jet rasteriser on a desktop against a fake clock and a seeded RNG,
+hashing game state and the framebuffer each frame. The same trace before and after a change means
 behaviour was preserved — which is how the Tank Flux file split was verified,
 and how the 3D scene leaking on exit to the launcher was found (it builds with
 AddressSanitizer). It is not `pio test` and does not need the board.
 
 ```bash
-test/build.sh                # build, run all scenarios, print summaries
-test/build.sh god 30000      # one scenario, full trace
+test/build.sh                # build, run every scenario, print summaries
+test/build.sh god 30000      # one Tank Flux scenario, full trace
+test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
+DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```
 
 See `test/README.md` for the scenarios, how to diff a change, and — just as
 important — what it cannot see (audio, how anything looks or plays, real
-timing, the other four games).
+timing, the four 2D games).
 
 For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
 It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial
@@ -193,10 +216,19 @@ slow frame:
 - **Per-object work beats triangle count in Tank Flux.** Three enemy tanks
   cost more per frame than a boss does, despite fewer triangles between them —
   it is the object count Jet walks, not the geometry.
+- **Pixels Jet fills are expensive in this build.** Jet's fast span path for
+  flat unlit triangles needs half-width buffers and no depth fog, and this
+  project's `JetConfig.hpp` has neither, so every pixel Jet draws goes
+  through the general per-pixel path. A tunnel covers the whole screen, and
+  drawn by Jet it cost more than Tank Flux's worst case. Tube Flux therefore
+  fills its tunnel directly (`drawTunnel()`), using Jet's own projection, and
+  leaves Jet only the blocks and the sprite: about the cost of a typical Tank
+  Flux frame.
 
-Tank Flux scales its movement by measured frame time (`REFERENCE_FRAME_MS` in
-`TankFluxConfig.h`), so it plays at the same speed whether it is running at 40
-or 22fps. The other games do not; their speed still follows the frame rate.
+Tank Flux and Tube Flux scale their movement by measured frame time
+(`REFERENCE_FRAME_MS` in their config headers), so they play at the same
+speed whether running at 40 or 22fps. The other games do not; their speed
+still follows the frame rate.
 
 ## Adding a New Game
 
@@ -210,10 +242,13 @@ or 22fps. The other games do not; their speed still follows the frame rate.
 anything substantial: it's called when returning to the launcher, so the heap
 goes back to whatever runs next (Tank Flux frees its whole 3D scene there).
 
-## 3D Rendering (Tank Flux)
+## 3D Rendering (Tank Flux, Tube Flux)
 
 Jet is pulled in via `platformio.ini`'s `lib_deps` as a git dependency — it
-isn't on the PlatformIO registry. Jet expects each frontend to supply its own
+isn't on the PlatformIO registry — pinned to a commit, so every machine builds
+the same renderer. Tube Flux needs at least that commit (its ship is a
+`Sprite2D` using `FLIP_X`). To move the pin, change the hash and re-run
+`test/build.sh`: a changed trace shows what the new Jet changed. Jet expects each frontend to supply its own
 `JetConfig.hpp` on the include path; this project's copy is at
 `include/JetConfig.hpp`, tuned for the 160×128 canvas (no Z-buffer, no
 buffered post-FX). Read the comments there, and in `TankFluxConfig.h`, before

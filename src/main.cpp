@@ -32,6 +32,7 @@
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
 #include "games/TankFlux/TankFluxGame.h"
+#include "games/TubeFlux/TubeFluxGame.h"
 
 // Launcher
 #include "launcher/LauncherMenu.h"
@@ -61,6 +62,7 @@ LanderFluxGame   landerGame;
 MazeFluxGame     mazeGame;
 PlatformFluxGame platformGame;
 TankFluxGame     tankGame;
+TubeFluxGame     tubeGame;
 
 // =============================================================================
 // LAUNCHER
@@ -74,6 +76,7 @@ const GameEntry gameRegistry[] = {
     { "Maze", STATE_MAZE_FLUX },
     { "Runner",  STATE_PLATFORM_FLUX },
     { "Tank",  STATE_TANK_FLUX },
+    { "Tube",  STATE_TUBE_FLUX },
     // Add future games here: { "New Game", STATE_NEW_GAME },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
@@ -284,6 +287,9 @@ void loop() {
                     case STATE_TANK_FLUX:
                         launchGame(&tankGame);
                         break;
+                    case STATE_TUBE_FLUX:
+                        launchGame(&tubeGame);
+                        break;
                     default: returnToLauncher(); break;
                 }
             }
@@ -323,6 +329,14 @@ void loop() {
 
         case STATE_TANK_FLUX: {
             bool running = tankGame.update(canvasLandscape, state, audio);
+            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
+                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+            if (!running) returnToLauncher();
+            break;
+        }
+
+        case STATE_TUBE_FLUX: {
+            bool running = tubeGame.update(canvasLandscape, state, audio);
             tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
                               ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
             if (!running) returnToLauncher();
