@@ -11,7 +11,7 @@
 //
 // See test/README.md. Build and run with test/build.sh.
 
-#include <Arduino.h>
+#include "harness_common.h"
 #include <chrono>
 
 // The bot reads game state (health, enemy positions, phase) that the game
@@ -19,20 +19,6 @@
 #define private public
 #include "games/TankFlux/TankFluxGame.h"
 #undef private
-
-// --- Fake clock + deterministic RNG (see stub/Arduino.h) ---------------------
-unsigned long g_fakeMillis = 1000;
-static uint32_t g_rng = 12345;
-static uint32_t lcg() { g_rng = g_rng * 1103515245u + 12345u; return (g_rng >> 8) & 0xFFFFFF; }
-long random(long hi) { return hi <= 0 ? 0 : (long)(lcg() % (uint32_t)hi); }
-long random(long lo, long hi) { return hi <= lo ? lo : lo + (long)(lcg() % (uint32_t)(hi - lo)); }
-void randomSeed(unsigned long s) { g_rng = (uint32_t)s; }
-
-static uint32_t fnv(const void* p, size_t n, uint32_t h = 2166136261u) {
-    const uint8_t* b = (const uint8_t*)p;
-    for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 16777619u; }
-    return h;
-}
 
 // What the profile mode groups frames by, so cost can be attributed to what
 // was actually on screen.
@@ -83,6 +69,7 @@ int main(int argc, char** argv) {
     Bucket buckets[5] = { {"0 enemies"}, {"1 enemy"}, {"2 enemies"}, {"3 enemies"}, {"boss"} };
 
     GFXcanvas16 canvas(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+    FrameDumper dumper("tank");
     AudioEngine audio;
     TankFluxGame g;
     g.init(audio);
@@ -142,6 +129,7 @@ int main(int argc, char** argv) {
         auto t0 = std::chrono::steady_clock::now();
         bool keepRunning = g.update(canvas, in, audio);
         auto t1 = std::chrono::steady_clock::now();
+        dumper.maybeDump(f, canvas);
 
         if (profile && g._phase == TankFluxGame::PHASE_PLAYING && g._scene) {
             int objs = 0, tris = 0, verts = 0;
