@@ -229,6 +229,20 @@ inline constexpr int           TIER_POINTS      = 500;
 inline constexpr unsigned long NEAR_MISS_SHOW_MS = 600;
 inline constexpr unsigned long TIER_BANNER_MS    = 1600;
 
+// --- Attract demo -----------------------------------------------------------------
+// After the title and how-to-play, the autopilot plays a real run, silently,
+// from a random tier, with the gear a player would have by then, for a
+// random 30-45s (or until it loses its last shield). A starts a real game.
+inline constexpr unsigned long DEMO_MIN_MS    = 30000;
+inline constexpr unsigned long DEMO_MAX_MS    = 45000;
+inline constexpr int           DEMO_MIN_TIER  = 2;
+inline constexpr int           DEMO_MAX_TIER  = 8;
+inline constexpr int           DEMO_CHASE_PCT = 40;      // from tier 6: start near a drone chase
+// Good but not perfect, so it plays like a person: it only looks this far
+// ahead, and only rethinks its lane every DEMO_REPLAN_MS.
+inline constexpr float         DEMO_LOOKAHEAD = 1800.0f;
+inline constexpr unsigned long DEMO_REPLAN_MS = 140;
+
 // --- Menus ----------------------------------------------------------------------
 // The attract screen alternates the title image with a how-to-play slide.
 inline constexpr unsigned long ATTRACT_SLIDE_MS    = 8000;

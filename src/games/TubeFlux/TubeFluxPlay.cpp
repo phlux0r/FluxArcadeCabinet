@@ -57,7 +57,7 @@ void TubeFluxGame::updateTier(AudioEngine &audio) {
     if (_tier == BEND_START_TIER || _tier == BEND_SHARP_TIER) _nextBendAt = _dist;
     static const int n[] = { 660, 880, 1100, 1320 };
     static const int d[] = {  60,  60,   60,  140 };
-    audio.playMelody(n, d, 4);
+    sfxMelody(audio, n, d, 4);
 }
 
 // Picks a new curve every BEND_SEGMENT once bends have started: a random
@@ -214,7 +214,7 @@ void TubeFluxGame::updateObstacle(Obstacle &o, AudioEngine &audio) {
         if (edgeGap < SHIP_HALF_DEG + NEAR_MISS_DEG) {
             _bonus += NEAR_MISS_POINTS;
             _nearMissUntil = millis() + NEAR_MISS_SHOW_MS;
-            audio.playTone(1400, 30);
+            sfxTone(audio, 1400, 30);
         }
     }
 }
@@ -312,7 +312,7 @@ void TubeFluxGame::collectPickup(AudioEngine &audio) {
             break;
     }
     _pickupBannerUntil = millis() + PICKUP_BANNER_MS;
-    audio.playWAV("/audio/tube_powerup.wav");
+    sfxWAV(audio, "/audio/tube_powerup.wav");
 }
 
 void TubeFluxGame::missPickup() {
@@ -353,7 +353,7 @@ void TubeFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
         fireShot(_angle);
     }
     _reloadAt = millis() + (rapid ? RAPID_RELOAD_MS : SHOT_RELOAD_MS);
-    audio.playWAV("/audio/shot.wav");
+    sfxWAV(audio, "/audio/shot.wav");
 }
 
 // Shots fly down the lane they were fired from and stop at the first thing
@@ -422,7 +422,7 @@ void TubeFluxGame::destroyCrystal(Obstacle &o, AudioEngine &audio) {
     lanePoint((float)o.lane * LANE_DEG, floorR - CRYSTAL_HEIGHT * 0.5f, z, x, y);
     _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 0, -1 }, 520.0f, 26);
     _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 14);
-    audio.playWAV("/audio/explosion.wav");
+    sfxWAV(audio, "/audio/explosion.wav");
 }
 
 void TubeFluxGame::hitShip(Obstacle &o, AudioEngine &audio) {
@@ -442,7 +442,7 @@ void TubeFluxGame::damageShip(AudioEngine &audio) {
     const float r = TUBE_RADIUS * 0.8f;
     _particles.emitSparks(Renderer::Vec3f{ r * sinf(a), -r * cosf(a), SHIP_Z },
                           Renderer::Vec3f{ -sinf(a), cosf(a), 0 }, 320.0f, 18);
-    audio.playWAV("/audio/tube_bump.wav");
+    sfxWAV(audio, "/audio/tube_bump.wav");
 }
 
 }  // namespace tubeflux

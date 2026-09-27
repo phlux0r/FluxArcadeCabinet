@@ -14,34 +14,6 @@ using namespace tubeflux;
 namespace {
 
 // Lanes a block ahead (within `lookahead` of the ship) will cover.
-bool covers(const TubeFluxGame::Obstacle &o, int lane) {
-    for (int k = 0; k < o.lanes; ++k) if ((o.lane + k) % TUBE_SIDES == lane) return true;
-    return false;
-}
-
-bool laneBlocked(const TubeFluxGame &g, int lane, float lookahead) {
-    // Drone chase: a warned lane, or a bolt still coming down one.
-    if (g._warnLanes & (1u << lane)) return true;
-    for (const auto &b : g._bolts) {
-        if (b.active && !b.resolved && laneAt(b.angle) == lane) return true;
-    }
-    for (const auto &o : g._obstacles) {
-        if (!o.active || o.resolved) continue;
-        float z = o.at - g._dist;
-        if (z < SHIP_Z - BLOCK_DEPTH || z > SHIP_Z + lookahead) continue;
-        if (covers(o, lane)) return true;
-    }
-    for (const auto &c : g._crystals) {
-        if (!c.active || c.resolved) continue;
-        float z = c.at - g._dist;
-        // Armed, a crystal far enough off is a target, not a wall.
-        float reach = g.armed() ? 900.0f : lookahead;
-        if (z < SHIP_Z - CRYSTAL_WIDTH || z > SHIP_Z + reach) continue;
-        if (covers(c, lane)) return true;
-    }
-    return false;
-}
-
 // Renders fixed set-ups and dumps them, to check conventions by eye: which
 // way Jet rolls the camera and rotates objects about Z relative to the
 // game's angles. Writes pose_*.ppm.
@@ -168,7 +140,8 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 //   menus    attract exit, in-game hold-B quit, game-over timeout
 //   profile  god, plus per-frame render cost by tier
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
-//   idle     no input at all: the attract cycle (title and how-to-play)
+//   idle     no input at all: the attract cycle (title, how-to-play, demo)
+//   demoexit press A mid-demo: the real game must start clean (prints PASS/FAIL)
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
     const bool profile = strcmp(mode, "profile") == 0;
@@ -184,6 +157,37 @@ int main(int argc, char** argv) {
     TubeFluxGame g;
     g.init(audio);
 
+    if (strcmp(mode, "demoexit") == 0) {
+        // Idle into a demo, let it play a while, then press A.
+        InputState none{};
+        long f = 0;
+        for (; f < 20000 && !g.inDemo(); ++f) { g.update(canvas, none, audio); g_fakeMillis += 16; }
+        for (int i = 0; i < 600; ++i) { g.update(canvas, none, audio); g_fakeMillis += 16; }
+        printf("demo at tier %d, gun %d, dist %.0f, score %ld\n", g._tier, g._gunLevel, g._dist, g._score);
+        InputState press{}; press.btnA = true; press.btnAPressed = true;
+        g.update(canvas, press, audio);
+        g_fakeMillis += 16;
+        // Leftovers: anything from the demo still showing. The new run's
+        // first frame legitimately spawns blocks at the fog, so a block or
+        // crystal only counts if it isn't one of those.
+        int visible = 0;
+        auto stale = [&](const TubeFluxGame::Obstacle &o) {
+            return o.obj->enabled && !(o.active && o.at > g._dist && o.at < g._dist + SPAWN_AHEAD + 1000.0f);
+        };
+        for (auto &o : g._obstacles) visible += stale(o);
+        for (auto &c : g._crystals) visible += stale(c);
+        for (auto &b : g._bolts) visible += b.obj->enabled;
+        visible += g._droneObj->enabled + g._chevronObj->enabled + g._crossObj->enabled;
+        bool ok = g._phase == TubeFluxGame::PHASE_PLAYING && g._tier == 1 && g._gunLevel == 0 &&
+                  g._shield == SHIELD_MAX && g._score < 10 && g._chase == TubeFluxGame::CHASE_NONE &&
+                  !g._silent && visible == 0 && g._dist < 500.0f;
+        printf("after A: phase %d tier %d gun %d shield %d score %ld dist %.0f silent %d leftovers %d -> %s\n",
+               (int)g._phase, g._tier, g._gunLevel, g._shield, g._score, g._dist, (int)g._silent, visible,
+               ok ? "PASS" : "FAIL");
+        g.onExit();
+        return ok ? 0 : 1;
+    }
+
     if (strcmp(mode, "pose") == 0) {
         poses(g, canvas, audio);
         g.onExit();
@@ -197,6 +201,8 @@ int main(int argc, char** argv) {
     int quits = 0, gameOvers = 0, lastPhase = -1, maxTier = 0, hits = 0, lastShield = SHIELD_MAX;
     int hitsByTier[MAX_TIER + 1] = {};
     long armedAtFrame = -1;
+    int demosStarted = 0, demosDied = 0;
+    bool wasDemo = false;
     int maxGunLevel = 0;
     uint32_t traceHash = 2166136261u;
 
@@ -210,37 +216,12 @@ int main(int argc, char** argv) {
             if (god) g._shield = SHIELD_MAX;
             // Head for the nearest lane that's clear for a while. The play
             // bot looks less far ahead, so it gets caught by fast wide blocks.
-            float look = god ? 2600.0f : 900.0f;
-            int here = ((int)lroundf(g._angle / LANE_DEG)) % TUBE_SIDES;
-            int target = here;
-            // If nothing is clear for the whole look-ahead, settle for the
-            // lane that's clear the longest (halving the window each try).
-            for (float w = look; w >= 300.0f && laneBlocked(g, target, w); w *= 0.5f) {
-                for (int step = 1; step <= TUBE_SIDES / 2; ++step) {
-                    int r = (here + step) % TUBE_SIDES, l = (here - step + TUBE_SIDES) % TUBE_SIDES;
-                    if (!laneBlocked(g, r, w)) { target = r; break; }
-                    if (!laneBlocked(g, l, w)) { target = l; break; }
-                }
-            }
-            if (g._pickupActive && g._pickupAt - g._dist < 3000.0f && !laneBlocked(g, g._pickupLane, 900.0f))
-                target = g._pickupLane;
-            // Drone ahead: line up on it, if that lane's clear.
-            // Every third drone it holds fire on, so the escape path runs too.
-            if (g._chase == TubeFluxGame::CHASE_AHEAD && g.armed() && g._chaseIndex % 3 != 2) {
-                int dl = laneAt(g._droneAngle);
-                if (!laneBlocked(g, dl, 900.0f)) target = dl;
-                if (fabsf(deltaDeg(g._angle, g._droneAngle)) < 15.0f &&
-                    (g._gunLevel >= GUN_MAX_LEVEL || (f % 4) == 0)) a = true;
-            }
-            float err = deltaDeg((float)target * LANE_DEG, g._angle);
-            // Fire at any crystal ahead in this lane.
-            if (g.armed() && (g._gunLevel >= GUN_MAX_LEVEL || (f % 4) == 0)) {
-                for (const auto &c : g._crystals) {
-                    float z = c.at - g._dist;
-                    if (c.active && z > SHIP_Z && z < 3500.0f && covers(c, here)) { a = true; break; }
-                }
-            }
-            in.joyY = STEER_SIGN * constrain(err / 10.0f, -1.0f, 1.0f);
+            // The game's own autopilot (the attract demo's player), looking
+            // further ahead in god mode. Every third drone it holds fire on,
+            // so the escape path runs too.
+            InputState p = g.pilot(god ? 2600.0f : 900.0f, g._chaseIndex % 3 != 2, 0);
+            in.joyY = p.joyY;
+            a = p.btnA;
             // Boost and brake now and then, so the throttle is covered.
             long cycle = f % 900;
             if (cycle < 120)                     in.joyX = THROTTLE_SIGN * 1.0f;
@@ -306,6 +287,9 @@ int main(int argc, char** argv) {
         if (g._phase == TubeFluxGame::PHASE_GAMEOVER && lastPhase != TubeFluxGame::PHASE_GAMEOVER) ++gameOvers;
         lastPhase = g._phase;
         if (g._tier > maxTier) maxTier = g._tier;
+        if (g.inDemo() && !wasDemo) ++demosStarted;
+        if (!g.inDemo() && wasDemo && g._shield <= 0) ++demosDied;
+        wasDemo = g.inDemo();
         if (g.armed() && armedAtFrame < 0) armedAtFrame = f;
         if (g._gunLevel > maxGunLevel) maxGunLevel = g._gunLevel;
 
@@ -335,6 +319,7 @@ int main(int argc, char** argv) {
            armedAtFrame, maxGunLevel, g._crystalsDestroyed, g._shieldsCollected, audio.wavs);
     printf("chase: started=%d destroyed=%d escaped=%d (last run)\n",
            g._chaseCount, g._dronesDestroyed, g._dronesEscaped);
+    printf("demo: started=%d ended-by-crash=%d\n", demosStarted, demosDied);
     printf("hits by tier:");
     for (int t = 1; t <= MAX_TIER; ++t) printf(" %d:%d", t, hitsByTier[t]);
     printf("\n");

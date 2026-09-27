@@ -25,10 +25,15 @@ void TubeFluxGame::drawCentred(GFXcanvas16 &canvas, const char* text, int y, uin
 void TubeFluxGame::drawHUD(GFXcanvas16 &canvas) {
     canvas.fillRect(0, 0, W, 10, ArcadeConfig::COLOR_BLACK);
     canvas.setTextSize(1);
-    canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
     canvas.setCursor(3, 1);
-    canvas.print("SC ");
-    canvas.print(_score);
+    if (inDemo()) {
+        canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
+        canvas.print("DEMO");
+    } else {
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.print("SC ");
+        canvas.print(_score);
+    }
 
     canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
     canvas.setCursor(W / 2 + 6, 1);
@@ -63,6 +68,10 @@ void TubeFluxGame::drawHUD(GFXcanvas16 &canvas) {
 }
 
 void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
+    // Demo: the invitation, on its own line under the banner line.
+    if (inDemo() && ((millis() / 500) & 1)) {
+        drawCentred(canvas, "PRESS A TO PLAY", 23, ArcadeConfig::COLOR_WHITE);
+    }
     if (before(_hitFlashUntil)) {
         canvas.drawRect(0, 10, W, canvas.height() - 10, ArcadeConfig::COLOR_RED);
         canvas.drawRect(1, 11, W - 2, canvas.height() - 12, ArcadeConfig::COLOR_RED);

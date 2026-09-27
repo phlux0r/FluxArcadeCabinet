@@ -49,7 +49,7 @@ public:
 
 private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO };
+    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_DEMO };
     enum PickupKind : uint8_t { PICKUP_GUN, PICKUP_UPGRADE, PICKUP_SHIELD };
     // See DRONE_* in TubeFluxConfig.h. ESCAPE is the drone flying off ahead
     // after surviving; the chase is over once it's gone.
@@ -88,6 +88,12 @@ private:
     unsigned long _phaseEnteredMs = 0;
     AttractSlide  _attractSlide = SLIDE_TITLE;
     unsigned long _attractSlideAt = 0;
+    // Attract demo (TubeFluxDemo.cpp): the autopilot plays a real run.
+    unsigned long _demoUntil = 0;
+    bool          _silent = false;          // gameplay sounds off (the demo is silent)
+    bool          _pilotPrevA = false;      // so the autopilot's A makes presses
+    int           _pilotTarget = 0;         // lane it's heading for
+    unsigned long _pilotReplanAt = 0;
     float         _frameScale = 1.0f;
     unsigned long _lastFrameMs = 0;
 
@@ -206,6 +212,15 @@ private:
     void recordHighScore();
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
+    void resetRun();
+    void stepRun(const InputState &input, AudioEngine &audio);
+    void renderRun(GFXcanvas16 &canvas);
+    // Gameplay sound goes through these, so the demo can be silent.
+    void sfxWAV(AudioEngine &audio, const char* path) { if (!_silent) audio.playWAV(path); }
+    void sfxTone(AudioEngine &audio, int hz, int ms)  { if (!_silent) audio.playTone(hz, ms); }
+    void sfxMelody(AudioEngine &audio, const int* n, const int* d, int len) {
+        if (!_silent) audio.playMelody(n, d, len);
+    }
     void enterGameOver(AudioEngine &audio);
     void hideTransients();
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
@@ -270,6 +285,16 @@ private:
     void  endChase(bool destroyed);
     void  setChaseBanner(const char* text, uint16_t colour);
     void  hideChase();
+
+    // --- TubeFluxDemo.cpp ------------------------------------------------------
+    bool inDemo() const { return _phase == PHASE_ATTRACT && _attractSlide == SLIDE_DEMO; }
+    void startDemo();
+    void updateDemo(GFXcanvas16 &canvas, AudioEngine &audio);
+    void endDemo();
+public:   // the autopilot is also the host harness's bot (test/tubeflux_harness.cpp)
+    bool laneBlocked(int lane, float lookahead) const;
+    InputState pilot(float lookahead, bool shootDrone, unsigned long replanMs);
+private:
 
     // --- TubeFluxHud.cpp -------------------------------------------------------
     void drawHUD(GFXcanvas16 &canvas);

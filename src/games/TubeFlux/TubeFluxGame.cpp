@@ -50,6 +50,14 @@ void TubeFluxGame::init(AudioEngine &audio) {
 }
 
 void TubeFluxGame::startNewGame(AudioEngine &audio) {
+    resetRun();
+    _phase = PHASE_PLAYING;
+    _phaseEnteredMs = millis();
+    audio.playTone(900, 80);
+}
+
+// Everything a run starts from, shared by a real game and the attract demo.
+void TubeFluxGame::resetRun() {
     _angle = 0.0f;
     _rollVel = 0.0f;
     _throttle = 1.0f;
@@ -85,9 +93,6 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
     _nextChaseAt = (float)(CHASE_FIRST_TIER - 1) * TIER_DISTANCE;   // the tier-6 gate
     for (auto &p : _particles.pool) p.active = false;
     applyTierPalette();
-    _phase = PHASE_PLAYING;
-    _phaseEnteredMs = millis();
-    audio.playTone(900, 80);
 }
 
 void TubeFluxGame::enterGameOver(AudioEngine &audio) {
@@ -147,6 +152,7 @@ void TubeFluxGame::hideTransients() {
 
 void TubeFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
+    _shipSprite.enabled = false;   // the demo flies it
     // The how-to-play slide flies a straight tunnel, whatever the last run ended on.
     _bendX = _bendY = _bendTargetX = _bendTargetY = 0.0f;
     _phaseEnteredMs = millis();
@@ -157,20 +163,35 @@ void TubeFluxGame::enterAttract() {
 // Title image and how-to-play alternate. Behind how-to-play the tunnel
 // keeps flowing, empty, at tier 1 speed; the title is a full-screen image,
 // so the world isn't rendered at all while it shows.
+// Title, how-to-play, then a demo (TubeFluxDemo.cpp), round and round. A
+// starts a game from any of them.
 bool TubeFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (millis() - _attractSlideAt > ATTRACT_SLIDE_MS) {
-        _attractSlide = (_attractSlide == SLIDE_TITLE) ? SLIDE_INFO : SLIDE_TITLE;
-        _attractSlideAt = millis();
+    if (input.btnAPressed) {
+        startNewGame(audio);
+        return updatePlaying(canvas, InputState{}, audio);
     }
-    if (_attractSlide == SLIDE_TITLE) {
-        renderAttractTitle(canvas);
-    } else {
-        _dist += BASE_SPEED * _frameScale;
-        _angle = fmodf(_angle + 0.6f * _frameScale, 360.0f);
-        renderWorld(canvas);
-        renderAttractInfo(canvas);
+    if (_attractSlide != SLIDE_DEMO && millis() - _attractSlideAt > ATTRACT_SLIDE_MS) {
+        if (_attractSlide == SLIDE_TITLE) {
+            _attractSlide = SLIDE_INFO;
+            _attractSlideAt = millis();
+        } else {
+            startDemo();
+        }
     }
-    if (input.btnAPressed) startNewGame(audio);
+    switch (_attractSlide) {
+        case SLIDE_TITLE:
+            renderAttractTitle(canvas);
+            break;
+        case SLIDE_INFO:
+            _dist += BASE_SPEED * _frameScale;
+            _angle = fmodf(_angle + 0.6f * _frameScale, 360.0f);
+            renderWorld(canvas);
+            renderAttractInfo(canvas);
+            break;
+        case SLIDE_DEMO:
+            updateDemo(canvas, audio);
+            break;
+    }
     return true;
 }
 
@@ -193,6 +214,14 @@ bool TubeFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
 }
 
 bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    stepRun(input, audio);
+    renderRun(canvas);
+    if (_shield <= 0) enterGameOver(audio);
+    return true;
+}
+
+// One frame of a run: the same for a real game and the demo.
+void TubeFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
     updateSteering(input);
     updateSpeed(input);
     updateTier(audio);
@@ -205,15 +234,14 @@ bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     updateBolts(audio);
     updateObstacles(audio);
     _score = (long)(_dist * SCORE_PER_UNIT) + _bonus;
+}
 
+void TubeFluxGame::renderRun(GFXcanvas16 &canvas) {
     updateShipSprite();
     renderWorld(canvas);
     drawHUD(canvas);
     drawOverlays(canvas);
     drawQuitHint(canvas);
-
-    if (_shield <= 0) enterGameOver(audio);
-    return true;
 }
 
 // The tunnel (drawn directly), then Jet's pass for the blocks, then

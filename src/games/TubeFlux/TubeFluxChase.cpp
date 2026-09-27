@@ -35,7 +35,7 @@ void TubeFluxGame::startChase(AudioEngine &audio) {
     setChaseBanner("DRONE BEHIND YOU!", ArcadeConfig::COLOR_RED);
     static const int n[] = { 880, 620, 880, 620, 880 };   // klaxon
     static const int d[] = { 140, 140, 140, 140, 220 };
-    audio.playMelody(n, d, 5);
+    sfxMelody(audio, n, d, 5);
 }
 
 void TubeFluxGame::updateChase(AudioEngine &audio) {
@@ -63,7 +63,7 @@ void TubeFluxGame::updateChase(AudioEngine &audio) {
                 setChaseBanner("DRONE AHEAD: SHOOT IT!", ArcadeConfig::COLOR_ORANGE);
                 static const int n[] = { 300, 450, 700, 1100 };   // whoosh past
                 static const int d[] = {  60,  60,  60,  120 };
-                audio.playMelody(n, d, 4);
+                sfxMelody(audio, n, d, 4);
             }
             break;
 
@@ -119,7 +119,7 @@ void TubeFluxGame::warnVolley(AudioEngine &audio) {
     if (gap < (long)DRONE_SHOT_MS_MIN) gap = DRONE_SHOT_MS_MIN;
     _volleyFireAt = millis() + (unsigned long)warn;
     _nextVolleyAt = millis() + (unsigned long)gap;
-    audio.playTone(1200, 60);
+    sfxTone(audio, 1200, 60);
 }
 
 void TubeFluxGame::fireVolley(AudioEngine &audio) {
@@ -137,7 +137,7 @@ void TubeFluxGame::fireVolley(AudioEngine &audio) {
     }
     _warnLanes = 0;
     _volleyFireAt = 0;
-    audio.playTone(260, 120);
+    sfxTone(audio, 260, 120);
 }
 
 // Bolts overtake you down their lane; one that passes while you're in it
@@ -236,7 +236,7 @@ void TubeFluxGame::hitDrone(AudioEngine &audio) {
         _droneFlashUntil = millis() + DRONE_HIT_FLASH_MS;
         _particles.emitSparks(Renderer::Vec3f{ x, y, _droneZ - DRONE_DEPTH * 0.5f },
                               Renderer::Vec3f{ 0, 0, -1 }, 260.0f, 10);
-        audio.playTone(900, 40);
+        sfxTone(audio, 900, 40);
         return;
     }
     // Destroyed.
@@ -248,7 +248,7 @@ void TubeFluxGame::hitDrone(AudioEngine &audio) {
     char buf[24];
     snprintf(buf, sizeof(buf), "DRONE DOWN +%d", points);
     setChaseBanner(buf, ArcadeConfig::COLOR_YELLOW);
-    audio.playWAV("/audio/explosion.wav");
+    sfxWAV(audio, "/audio/explosion.wav");
     endChase(true);
 }
 

@@ -66,10 +66,13 @@ if [ $# -gt 0 ]; then
   "./${game}_harness" "$@"
 else
   for g in tankflux tubeflux; do
-    for s in "play 20000" "god 30000" "menus 12000"; do
+    scenarios=("play 20000" "god 30000" "menus 12000")
+    # Tube Flux's attract screen includes a demo run: idle sits through it.
+    [ "$g" = tubeflux ] && scenarios+=("idle 8000" "demoexit")
+    for s in "${scenarios[@]}"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086
-      "./${g}_harness" $s | tail -4
+      "./${g}_harness" $s | tail -5
     done
   done
 fi
