@@ -41,7 +41,7 @@ void TubeFluxGame::updateSpeed(const InputState &input) {
     if (smooth > 1.0f) smooth = 1.0f;
     _throttle += (want - _throttle) * smooth;
 
-    _speed = tierSpeed() * _throttle;
+    _speed = (inBonus() ? BONUS_SPEED : tierSpeed()) * _throttle;
     _dist += _speed * _frameScale;
 }
 
@@ -65,7 +65,9 @@ void TubeFluxGame::updateTier(AudioEngine &audio) {
 // current bend eases towards it, so curves swing in and out rather than
 // snapping.
 void TubeFluxGame::updateBend() {
-    if (_dist >= _nextBendAt) {
+    if (inBonus()) {
+        _bendTargetX = _bendTargetY = 0.0f;   // a straight tunnel for the bonus round
+    } else if (_dist >= _nextBendAt) {
         _nextBendAt = _dist + BEND_SEGMENT;
         float maxBend = _tier >= BEND_SHARP_TIER ? BEND_SHARP
                       : _tier >= BEND_START_TIER ? BEND_GENTLE : 0.0f;
@@ -97,7 +99,7 @@ void TubeFluxGame::spawnObstacles() {
     // Nothing spawns during a chase: the drone's bolts, then its crystals,
     // are the whole test. Keep the spawn point at the front, so blocks
     // resume at the edge of the fog afterwards rather than in a backlog.
-    if (chasing()) {
+    if (chasing() || inBonus()) {
         if (_nextSpawnAt < _dist + SPAWN_AHEAD) _nextSpawnAt = _dist + SPAWN_AHEAD;
         return;
     }
@@ -235,6 +237,7 @@ void TubeFluxGame::lanePoint(float angle, float radius, float z, float &x, float
 // the next gun upgrade once its tier is reached, then a shield if you're
 // missing one. A missed pickup comes round again.
 void TubeFluxGame::updatePickup(AudioEngine &audio) {
+    if (inBonus()) return;
     if (!_pickupActive && !spawnDuePickup(_dist + SPAWN_AHEAD)) return;
 
     const float z = _pickupAt - _dist;
@@ -383,6 +386,7 @@ void TubeFluxGame::updateShots(AudioEngine &audio) {
         };
         for (auto &o : _obstacles) consider(o);
         for (auto &c : _crystals) consider(c);
+        for (auto &g : _gems) consider(g);
 
         // The drone, unless something nearer took the shot first.
         if (droneShotAt(from, s.at, s.angle) &&
@@ -396,7 +400,9 @@ void TubeFluxGame::updateShots(AudioEngine &audio) {
         if (hit) {
             s.active = false;
             s.obj->enabled = false;
-            if (hit->crystal) {
+            if (hit->points > 0) {
+                hitGem(*hit, audio);
+            } else if (hit->crystal) {
                 destroyCrystal(*hit, audio);
             } else {
                 float x, y;

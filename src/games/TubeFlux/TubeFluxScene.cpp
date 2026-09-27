@@ -85,6 +85,11 @@ void TubeFluxGame::buildBackdrop(int h) {
 }
 
 void TubeFluxGame::applyTierPalette() {
+    if (inBonus()) {   // the bonus round's own deep blue
+        _wallA = rgb565(3, 10, 22);
+        _wallB = rgb565(1, 4, 11);
+        return;
+    }
     const Palette &p = TIER_PALETTES[(_tier - 1) % (int)(sizeof(TIER_PALETTES) / sizeof(TIER_PALETTES[0]))];
     _wallA = p.a;
     _wallB = p.b;
@@ -152,6 +157,14 @@ void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
         const bool warnOn = _warnLanes && ((millis() / 90) & 1) &&
                             (ringZ[k] + ringZ[k + 1]) * 0.5f < DRONE_WARN_DEPTH;
         const uint16_t colWarn = lerp565(rgb565(31, 6, 2), _backdrop[0], t);
+        // The bonus portal: its stretch of one lane flashes gold and white.
+        // Section k covers distance (n-1)..n rings along the run.
+        const float secFrom = (float)(n - 1) * RING_SPACING, secTo = (float)n * RING_SPACING;
+        const bool portalHere = _bonusPhase == BONUS_PORTAL &&
+                                secTo > _portalAt - PORTAL_LENGTH * 0.5f &&
+                                secFrom < _portalAt + PORTAL_LENGTH * 0.5f;
+        const uint16_t colPortal = lerp565(((millis() / 100) & 1) ? (uint16_t)0xFFFF : rgb565(31, 54, 4),
+                                           _backdrop[0], t * 0.5f);
         const float *px = ringX[k], *py = ringY[k], *nx = ringX[k + 1], *ny = ringY[k + 1];
         for (int j = 0; j < TUBE_SIDES; ++j) {
             int j1 = (j + 1 == TUBE_SIDES) ? 0 : j + 1;
@@ -159,6 +172,7 @@ void TubeFluxGame::drawTunnel(GFXcanvas16 &canvas) {
             float qy[4] = { py[j], py[j1], ny[j1], ny[j] };
             uint16_t col = ((n - 1 + j) & 1) ? colB : colA;
             if (warnOn && (_warnLanes & (1u << j))) col = colWarn;
+            if (portalHere && j == _portalLane) col = colPortal;
             fillConvex(buf, w, h, qx, qy, 4, col);
         }
     }
@@ -203,12 +217,24 @@ Renderer::Object* TubeFluxGame::buildBlock(int lanes) {
 // place like blocks). Spiky and hot-coloured, where blocks are boxy and
 // grey: the shape says "shoot me" before the colour does.
 Renderer::Object* TubeFluxGame::buildCrystal() {
+    return buildCrystalMesh(&_crystalMatA, &_crystalMatB, 1.0f);
+}
+
+// Bonus-round gems are crystals in their own colours, the better ones a
+// little smaller: green 100, cyan-white 250 (90%), gold 500 (80%).
+Renderer::Object* TubeFluxGame::buildGem(int type) {
+    static const float SCALE[3] = { 1.0f, 0.9f, 0.8f };
+    return buildCrystalMesh(&_gemMat[type][0], &_gemMat[type][1], SCALE[type]);
+}
+
+Renderer::Object* TubeFluxGame::buildCrystalMesh(Renderer::Material* matA, Renderer::Material* matB, float scale) {
     auto* o = new Renderer::Object();
     const float floorY = -TUBE_RADIUS * cosf(radians(LANE_DEG / 2));
-    const float w = CRYSTAL_WIDTH * 0.5f;
-    const float ye = floorY + CRYSTAL_HEIGHT * 0.4f;     // widest point
+    const float w = CRYSTAL_WIDTH * 0.5f * scale;
+    const float h = CRYSTAL_HEIGHT * scale;
+    const float ye = floorY + h * 0.4f;                   // widest point
     const Vector3 v[6] = {
-        { 0, (int32_t)(floorY + CRYSTAL_HEIGHT), 0 },     // tip, towards the axis
+        { 0, (int32_t)(floorY + h), 0 },                  // tip, towards the axis
         { 0, (int32_t)(floorY + 4), 0 },                   // base, on the wall
         { (int32_t)w, (int32_t)ye, 0 }, { (int32_t)-w, (int32_t)ye, 0 },
         { 0, (int32_t)ye, (int32_t)w }, { 0, (int32_t)ye, (int32_t)-w },
@@ -218,7 +244,7 @@ Renderer::Object* TubeFluxGame::buildCrystal() {
     static const uint8_t tris[8][3] = { {0,2,5},{0,5,3},{0,3,4},{0,4,2},{1,5,2},{1,3,5},{1,4,3},{1,2,4} };
     for (int t = 0; t < 8; ++t) {
         o->addTriangle(idx[tris[t][0]], idx[tris[t][1]], idx[tris[t][2]],
-                       (t & 1) ? &_crystalMatB : &_crystalMatA);
+                       (t & 1) ? matB : matA);
     }
     o->calculateBoundingBox();
     o->cullingMode = Renderer::CullingMode::NO_CULLING;
@@ -360,6 +386,8 @@ void TubeFluxGame::releaseScene() {
     for (auto &s : _shots) { s.obj = nullptr; s.active = false; }
     _chevronObj = _crossObj = nullptr;
     _droneObj = nullptr;
+    for (auto &g : _gems) { g.obj = nullptr; g.active = false; }
+    _bonusPhase = BONUS_NONE;
     for (auto &b : _bolts) { b.obj = nullptr; b.active = false; }
     _chase = CHASE_NONE;
     _pickupActive = false;
@@ -382,6 +410,8 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     for (Renderer::Material* m : { &_blockFrontMat, &_blockTopMat, &_blockSideMat,
                                    &_crystalMatA, &_crystalMatB, &_shotMat, &_pickupMat, &_crossMat,
                                    &_droneHullMat, &_droneTopMat, &_droneDarkMat, &_droneEngineMat, &_boltMat,
+                                   &_gemMat[0][0], &_gemMat[0][1], &_gemMat[1][0], &_gemMat[1][1],
+                                   &_gemMat[2][0], &_gemMat[2][1],
                                    &_shipLevelMat, &_shipBankMat }) {
         m->shadingMode = Renderer::ShadingMode::UNLIT;
     }
@@ -393,6 +423,12 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _shotMat.color       = rgb565(12, 60, 31);   // cyan bolt
     _pickupMat.color     = rgb565(31, 60, 4);    // yellow; flashes white (updatePickup)
     _boltMat.color       = rgb565(31, 10, 6);    // drone bolts: hot red, not your cyan
+    _gemMat[0][0].color  = rgb565(4, 60, 8);     // green gem
+    _gemMat[0][1].color  = rgb565(2, 38, 4);
+    _gemMat[1][0].color  = rgb565(22, 63, 31);   // cyan-white gem
+    _gemMat[1][1].color  = rgb565(8, 44, 26);
+    _gemMat[2][0].color  = rgb565(31, 56, 4);    // gold gem (pulses white: updateGems)
+    _gemMat[2][1].color  = rgb565(28, 40, 0);
     applyTierPalette();
 
     // Slot widths cycle 1,2,3: with the pool sized well past what's ever on
@@ -425,6 +461,17 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _scene->addObject(_crossObj);
     _droneObj = buildDrone();
     _scene->addObject(_droneObj);
+    static const int GEM_POINTS[3] = { GEM_POINTS_COMMON, GEM_POINTS_RARE, GEM_POINTS_JACKPOT };
+    for (int i = 0; i < BONUS_POOL; ++i) {
+        Obstacle &g = _gems[i];
+        int type = i < BONUS_POOL_COMMON ? 0 : i < BONUS_POOL_COMMON + BONUS_POOL_RARE ? 1 : 2;
+        g.lanes = 1;
+        g.crystal = true;
+        g.points = GEM_POINTS[type];
+        g.obj = buildGem(type);
+        g.active = false;
+        _scene->addObject(g.obj);
+    }
     for (auto &b : _bolts) {
         b.obj = Primitives::createCube(44, 44, (int32_t)DRONE_BOLT_DEPTH, &_boltMat);
         b.obj->enabled = false;

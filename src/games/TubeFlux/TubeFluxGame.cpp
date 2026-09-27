@@ -91,6 +91,9 @@ void TubeFluxGame::resetRun() {
     _chaseCount = 0;
     _dronesDestroyed = _dronesEscaped = 0;
     _nextChaseAt = (float)(CHASE_FIRST_TIER - 1) * TIER_DISTANCE;   // the tier-6 gate
+    _nextPortalAt = PORTAL_FIRST_AT;
+    _portalsEntered = _portalsMissed = _bonusPerfects = 0;
+    _gemsHit = _gemsTotal = 0;
     for (auto &p : _particles.pool) p.active = false;
     applyTierPalette();
 }
@@ -106,6 +109,7 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     _chevronObj->enabled = false;
     _crossObj->enabled = false;
     hideChase();
+    hideBonus();
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);
@@ -148,6 +152,7 @@ void TubeFluxGame::hideTransients() {
     if (_chevronObj) _chevronObj->enabled = false;
     if (_crossObj) _crossObj->enabled = false;
     hideChase();
+    hideBonus();
 }
 
 void TubeFluxGame::enterAttract() {
@@ -222,11 +227,17 @@ bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 
 // One frame of a run: the same for a real game and the demo.
 void TubeFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
+    // The bonus tally pauses the game: nothing moves until it's done.
+    if (_bonusPhase == BONUS_TALLY) {
+        if (millis() - _tallyAt >= BONUS_TALLY_MS) endBonus();
+        return;
+    }
     updateSteering(input);
     updateSpeed(input);
     updateTier(audio);
     updateBend();
     updateChase(audio);
+    updatePortal(audio);
     spawnObstacles();
     updatePickup(audio);
     tryFire(input, audio);

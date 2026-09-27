@@ -130,6 +130,29 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
     g.drawHUD(canvas);
     { FrameDumper d("pose_a000_chase_drone_hit"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
     g.hideChase();
+
+    // Bonus: the portal (lane 2, just ahead), then a round with a ring and
+    // a line of gems in front of you.
+    g._bonusPhase = TubeFluxGame::BONUS_PORTAL;
+    g._portalLane = 2; g._portalAt = g._dist + 1500;
+    g_fakeMillis = 100 * 11;   // gold, not white, this frame
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_bonus_portal"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    g._bonusPhase = TubeFluxGame::BONUS_ROUND;
+    g.applyTierPalette();
+    for (int i = 0; i < TUBE_SIDES; ++i) g.placeGem(i == 0 ? 1 : 0, i, g._dist + 2200);
+    for (int i = 0; i < 3; ++i) g.placeGem(i == 2 ? 2 : 0, 0, g._dist + 1000 + i * 320);
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_bonus_gems"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    // The three gem types side by side: green, cyan-white, gold.
+    for (auto &gm : g._gems) { gm.active = false; gm.obj->enabled = false; }
+    for (int t = 0; t < 3; ++t) g.placeGem(t, (TUBE_SIDES - 1 + t) % TUBE_SIDES, g._dist + 1100);
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    { FrameDumper d("pose_a000_bonus_types"); d.n = 1; d.at[0] = 0; d.maybeDump(0, canvas); }
+    g.hideBonus();
 }
 
 }  // namespace
@@ -255,7 +278,8 @@ int main(int argc, char** argv) {
         }
 
         if (profile && g._phase == TubeFluxGame::PHASE_PLAYING && g._scene) {
-            TierCost &c = cost[g._tier];
+            // Bonus-round frames get their own row (0): many gems on screen.
+            TierCost &c = cost[g._bonusPhase == TubeFluxGame::BONUS_ROUND ? 0 : g._tier];
             int objs = 0, tris = 0, verts = 0;
             g._scene->getStatistics(objs, tris, verts);
             ++c.frames;
@@ -320,6 +344,8 @@ int main(int argc, char** argv) {
     printf("chase: started=%d destroyed=%d escaped=%d (last run)\n",
            g._chaseCount, g._dronesDestroyed, g._dronesEscaped);
     printf("demo: started=%d ended-by-crash=%d\n", demosStarted, demosDied);
+    printf("bonus: portals entered=%d missed=%d perfect=%d, last round %d/%d gems (last run)\n",
+           g._portalsEntered, g._portalsMissed, g._bonusPerfects, g._gemsHit, g._gemsTotal);
     printf("hits by tier:");
     for (int t = 1; t <= MAX_TIER; ++t) printf(" %d:%d", t, hitsByTier[t]);
     printf("\n");
@@ -327,10 +353,11 @@ int main(int argc, char** argv) {
     if (profile) {
         // Relative only: host microseconds are not ESP32 microseconds.
         printf("\ntier  frames  drawnTris  rastTris  update_us   sceneObjs/sceneTris\n");
-        for (int t = 1; t <= MAX_TIER; ++t) {
+        for (int t = 0; t <= MAX_TIER; ++t) {
             const TierCost &c = cost[t];
             if (!c.frames) continue;
-            printf("%4d %7ld %10.0f %9.0f %10.1f   %d/%d\n", t, c.frames, c.drawn / c.frames,
+            printf(t == 0 ? "bonus" : "%4d", t);
+            printf(" %7ld %10.0f %9.0f %10.1f   %d/%d\n", c.frames, c.drawn / c.frames,
                    c.rast / c.frames, c.us / c.frames, c.objs, c.tris);
         }
     }

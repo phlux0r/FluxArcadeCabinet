@@ -229,6 +229,33 @@ inline constexpr int           TIER_POINTS      = 500;
 inline constexpr unsigned long NEAR_MISS_SHOW_MS = 600;
 inline constexpr unsigned long TIER_BANNER_MS    = 1600;
 
+// --- Bonus round -------------------------------------------------------------------
+// At tier 9 a stretch of one lane flashes gold: a portal. Fly through it
+// and the tunnel turns deep blue for a 30s round of gems in formations,
+// worth points only if shot. Nothing can hurt you in there, and flying
+// into a gem just breaks it for nothing. Then the game pauses on a tally,
+// with a big extra bonus for getting every gem, and play resumes where the
+// portal was. The portal is in the safe lane, so it's never walled off;
+// it needs the gun, and never comes during a drone chase.
+inline constexpr float         PORTAL_FIRST_AT    = 8.0f * TIER_DISTANCE + 20000.0f;  // soon after tier 9
+inline constexpr float         PORTAL_EVERY       = 450000.0f;   // ~2 minutes at tier 9
+inline constexpr float         PORTAL_LENGTH      = 1000.0f;     // two rings of flashing wall
+inline constexpr float         PORTAL_HALF_DEG    = 24.0f;       // how far off its lane still counts
+inline constexpr unsigned long BONUS_ROUND_MS     = 30000;
+inline constexpr unsigned long BONUS_SPAWN_STOP_MS = 26000;      // last gems still reach you in time
+inline constexpr float         BONUS_SPEED        = 70.0f;       // tier-3 pace: this is about aim
+inline constexpr float         BONUS_FORMATION_GAP = 2400.0f;   // ~60-95 gems a round: a perfect is hard, not impossible
+inline constexpr int           BONUS_POOL_COMMON  = 12;
+inline constexpr int           BONUS_POOL_RARE    = 6;
+inline constexpr int           BONUS_POOL_JACKPOT = 4;
+inline constexpr int           BONUS_POOL = BONUS_POOL_COMMON + BONUS_POOL_RARE + BONUS_POOL_JACKPOT;
+inline constexpr int           GEM_POINTS_COMMON  = 100;         // green
+inline constexpr int           GEM_POINTS_RARE    = 250;         // cyan-white
+inline constexpr int           GEM_POINTS_JACKPOT = 500;         // gold, pulsing
+inline constexpr int           BONUS_PERFECT_POINTS = 10000;
+inline constexpr unsigned long BONUS_TALLY_MS     = 4000;        // the game pauses on the tally
+inline constexpr float         BONUS_RESUME_GAP   = 3000.0f;     // chase held off at least this long after
+
 // --- Attract demo -----------------------------------------------------------------
 // After the title and how-to-play, the autopilot plays a real run, silently,
 // from a random tier, with the gear a player would have by then, for a
@@ -238,6 +265,7 @@ inline constexpr unsigned long DEMO_MAX_MS    = 45000;
 inline constexpr int           DEMO_MIN_TIER  = 2;
 inline constexpr int           DEMO_MAX_TIER  = 8;
 inline constexpr int           DEMO_CHASE_PCT = 40;      // from tier 6: start near a drone chase
+inline constexpr int           DEMO_BONUS_PCT = 25;      // start at tier 9 with a portal just ahead
 // Good but not perfect, so it plays like a person: it only looks this far
 // ahead, and only rethinks its lane every DEMO_REPLAN_MS.
 inline constexpr float         DEMO_LOOKAHEAD = 1800.0f;

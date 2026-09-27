@@ -79,7 +79,11 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     // All sit on one line just under the HUD strip, clear of the tunnel's
     // middle where the next blocks come from; most important first. The
     // tier number is already in the HUD.
-    if (before(_chaseBannerUntil)) {
+    if (_bonusPhase == BONUS_ROUND) {
+        drawBonusHud(canvas);
+    } else if (_bonusPhase == BONUS_TALLY) {
+        drawTally(canvas);
+    } else if (before(_chaseBannerUntil)) {
         if ((millis() / 200) & 1) drawCentred(canvas, _chaseBanner, 13, _chaseBannerColour);
     } else if (before(_pickupBannerUntil)) {
         if ((millis() / 200) & 1) drawCentred(canvas, _pickupBanner, 13, _pickupBannerColour);

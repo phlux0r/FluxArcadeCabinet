@@ -40,7 +40,7 @@ void TubeFluxGame::startChase(AudioEngine &audio) {
 
 void TubeFluxGame::updateChase(AudioEngine &audio) {
     if (_chase == CHASE_NONE) {
-        if (_dist >= _nextChaseAt) startChase(audio);
+        if (_dist >= _nextChaseAt && _bonusPhase == BONUS_NONE) startChase(audio);
         return;
     }
     const unsigned long inPhase = millis() - _chasePhaseAt;

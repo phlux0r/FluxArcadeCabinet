@@ -54,6 +54,9 @@ private:
     // See DRONE_* in TubeFluxConfig.h. ESCAPE is the drone flying off ahead
     // after surviving; the chase is over once it's gone.
     enum ChasePhase : uint8_t { CHASE_NONE, CHASE_PURSUE, CHASE_OVERTAKE, CHASE_AHEAD, CHASE_ESCAPE };
+    // Bonus round (TubeFluxBonus.cpp): a portal waiting ahead, the round,
+    // then the paused tally.
+    enum BonusPhase : uint8_t { BONUS_NONE, BONUS_PORTAL, BONUS_ROUND, BONUS_TALLY };
 
     struct Obstacle {
         Renderer::Object* obj = nullptr;   // one mesh per width, see _blockMeshes
@@ -63,6 +66,7 @@ private:
         float at = 0.0f;                   // distance along the run where it sits
         bool  resolved = false;            // already hit or scored as it passed
         bool  crystal = false;             // destructible (lives in _crystals)
+        int   points = 0;                  // bonus-round gems: what shooting it scores
     };
 
     // A drone bolt: comes from behind the camera down one lane.
@@ -161,6 +165,21 @@ private:
     char          _chaseBanner[24] = "";
     uint16_t      _chaseBannerColour = 0xFFFF;
 
+    // --- Bonus round (TubeFluxBonus.cpp) ---
+    BonusPhase    _bonusPhase = BONUS_NONE;
+    float         _nextPortalAt = PORTAL_FIRST_AT;
+    float         _portalAt = 0.0f;         // centre of the portal's stretch of wall
+    int           _portalLane = 0;
+    unsigned long _bonusStartAt = 0;
+    unsigned long _tallyAt = 0;
+    float         _nextFormationAt = 0.0f;
+    int           _gemsTotal = 0, _gemsHit = 0;
+    long          _bonusRoundPoints = 0;
+    bool          _bonusPerfect = false;
+    Obstacle      _gems[BONUS_POOL];
+    // Stats for the harness, per run.
+    int           _portalsEntered = 0, _portalsMissed = 0, _bonusPerfects = 0;
+
     // One line of news under the HUD when a pickup is collected.
     unsigned long _pickupBannerUntil = 0;
     const char*   _pickupBanner = "";
@@ -194,6 +213,8 @@ private:
     Renderer::Material _droneDarkMat{ 0xFFFF };
     Renderer::Material _droneEngineMat{ 0xFFFF };
     Renderer::Material _boltMat{ 0xFFFF };
+    // Bonus-round gems, two tones each: green, cyan-white, gold.
+    Renderer::Material _gemMat[3][2];
     // One mesh per obstacle slot; widths are fixed per slot (see
     // ensureSceneReady), which is what lets blocks be pooled.
 
@@ -236,6 +257,8 @@ private:
     void drawTunnel(GFXcanvas16 &canvas);
     Renderer::Object* buildBlock(int lanes);
     Renderer::Object* buildCrystal();
+    Renderer::Object* buildGem(int type);
+    Renderer::Object* buildCrystalMesh(Renderer::Material* a, Renderer::Material* b, float scale);
     Renderer::Object* buildPickup();
     Renderer::Object* buildCross();
     Renderer::Object* buildDrone();
@@ -285,6 +308,21 @@ private:
     void  endChase(bool destroyed);
     void  setChaseBanner(const char* text, uint16_t colour);
     void  hideChase();
+
+    // --- TubeFluxBonus.cpp -----------------------------------------------------
+    bool  inBonus() const { return _bonusPhase == BONUS_ROUND || _bonusPhase == BONUS_TALLY; }
+    void  updatePortal(AudioEngine &audio);
+    void  startBonusRound(AudioEngine &audio);
+    void  updateBonusRound(AudioEngine &audio);
+    void  spawnFormation(float at);
+    bool  placeGem(int type, int lane, float at);
+    void  updateGems();
+    void  hitGem(Obstacle &g, AudioEngine &audio);
+    void  startTally(AudioEngine &audio);
+    void  endBonus();
+    void  hideBonus();
+    void  drawBonusHud(GFXcanvas16 &canvas);
+    void  drawTally(GFXcanvas16 &canvas);
 
     // --- TubeFluxDemo.cpp ------------------------------------------------------
     bool inDemo() const { return _phase == PHASE_ATTRACT && _attractSlide == SLIDE_DEMO; }

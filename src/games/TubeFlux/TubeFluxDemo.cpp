@@ -60,6 +60,23 @@ InputState TubeFluxGame::pilot(float lookahead, bool shootDrone, unsigned long r
             int dl = laneAt(_droneAngle);
             if (!laneBlocked(dl, 900.0f)) target = dl;
         }
+        // A portal ahead beats everything: it's in the safe lane anyway.
+        if (_bonusPhase == BONUS_PORTAL && _portalAt - _dist < 3500.0f && !laneBlocked(_portalLane, 900.0f)) {
+            target = _portalLane;
+        }
+        // Bonus round: head for the gem that's cheapest to get to: near
+        // ahead, and not far to roll (each lane of rolling "costs" 250
+        // units of depth). Gems about to pass are left.
+        if (_bonusPhase == BONUS_ROUND) {
+            float best = 1e9f;
+            for (const auto &g : _gems) {
+                float z = g.at - _dist;
+                if (!g.active || z < SHIP_Z + 300.0f || z > 3500.0f) continue;
+                int steps = abs(((g.lane - here) % TUBE_SIDES + TUBE_SIDES + TUBE_SIDES / 2) % TUBE_SIDES - TUBE_SIDES / 2);
+                float cost = z + 250.0f * (float)steps;
+                if (cost < best) { best = cost; target = g.lane; }
+            }
+        }
         _pilotTarget = target;
     }
 
@@ -73,6 +90,10 @@ InputState TubeFluxGame::pilot(float lookahead, bool shootDrone, unsigned long r
             float z = c.at - _dist;
             if (c.active && c.lane == here && z > SHIP_Z && z < 3500.0f) { fire = true; break; }
         }
+        for (const auto &g : _gems) {
+            float z = g.at - _dist;
+            if (g.active && g.lane == here && z > SHIP_Z && z < 3500.0f) { fire = true; break; }
+        }
     }
     const bool rapid = _gunLevel >= GUN_MAX_LEVEL;
     in.btnA = fire && (rapid || !_pilotPrevA);
@@ -85,7 +106,9 @@ InputState TubeFluxGame::pilot(float lookahead, bool shootDrone, unsigned long r
 // From the chase tier, sometimes a drone is due almost at once.
 void TubeFluxGame::startDemo() {
     resetRun();
-    const int tier = (int)random(DEMO_MIN_TIER, DEMO_MAX_TIER + 1);
+    // Now and then a tier-9 demo with a bonus portal just ahead.
+    const bool bonusDemo = random(0, 100) < DEMO_BONUS_PCT;
+    const int tier = bonusDemo ? MAX_TIER : (int)random(DEMO_MIN_TIER, DEMO_MAX_TIER + 1);
     _dist = (float)(tier - 1) * TIER_DISTANCE + 2000.0f;
     _tier = tierFor(_dist);
     _speed = tierSpeed();
@@ -96,7 +119,10 @@ void TubeFluxGame::startDemo() {
     _safeLaneMovedAt = _dist;
     _nextBendAt = _dist;
     _nextUpgradeAt = _nextShieldAt = _dist;
-    if (tier >= CHASE_FIRST_TIER) {
+    if (bonusDemo) {
+        _nextPortalAt = _dist + 2500.0f;
+        _nextChaseAt = _dist + CHASE_EVERY;
+    } else if (tier >= CHASE_FIRST_TIER) {
         _nextChaseAt = random(0, 100) < DEMO_CHASE_PCT ? _dist + 4000.0f : _dist + CHASE_EVERY;
     }
     _pilotPrevA = false;
@@ -113,7 +139,8 @@ void TubeFluxGame::updateDemo(GFXcanvas16 &canvas, AudioEngine &audio) {
     stepRun(in, audio);
     _silent = false;
     renderRun(canvas);
-    if (_shield <= 0 || reached(_demoUntil)) endDemo();
+    // Time's up, but never in the middle of a bonus round or its tally.
+    if (_shield <= 0 || (reached(_demoUntil) && !inBonus())) endDemo();
 }
 
 // Back to the title, leaving nothing of the demo run behind.

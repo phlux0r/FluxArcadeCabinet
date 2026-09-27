@@ -72,7 +72,7 @@ else
     for s in "${scenarios[@]}"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086
-      "./${g}_harness" $s | tail -5
+      "./${g}_harness" $s | tail -6
     done
   done
 fi

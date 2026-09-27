@@ -28,8 +28,12 @@ green cross restores a shield when you've lost one. From the tier-6 gate,
 and every five gates' distance after, a drone chases you: behind you first,
 where lanes flash red before its bolts come down them, then overtaking to
 fly ahead, weaving and dropping crystals, until you shoot it down or it
-escapes. Left alone, its attract screen cycles the title, a how-to-play
-slide and a silent 30-45 second demo, the autopilot playing a random tier.
+escapes. At tier 9, a stretch of one lane now and then flashes gold: fly
+through that portal for a 30-second bonus round of gem formations (green
+100, cyan-white 250, gold 500) to shoot, with +10,000 for getting them all.
+Left alone, its attract screen cycles the title, a how-to-play slide and a
+silent 30-45 second demo, the autopilot playing a random tier (sometimes
+into a bonus round).
 
 ## Build
 
@@ -154,6 +158,7 @@ FluxArcadeCabinet/
             ├── TubeFluxScene.cpp   # Tunnel (drawn directly), block meshes, ship sprite
             ├── TubeFluxPlay.cpp    # Steering, speed, tiers, bends, spawning, pickups, shots
             ├── TubeFluxChase.cpp   # The drone chase: warnings, bolts, overtake, the fight
+            ├── TubeFluxBonus.cpp   # Tier-9 portal, bonus round gem formations, tally
             ├── TubeFluxDemo.cpp    # Attract demo, and the autopilot (also the harness's bot)
             ├── TubeMath.h          # Angle and timing helpers
             ├── TubeFluxHud.cpp     # HUD, overlays, menu screens
