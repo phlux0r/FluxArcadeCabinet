@@ -49,6 +49,7 @@ public:
 private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
     enum AttractSlide { SLIDE_TITLE, SLIDE_INFO };
+    enum PickupKind : uint8_t { PICKUP_GUN, PICKUP_UPGRADE, PICKUP_SHIELD };
 
     struct Obstacle {
         Renderer::Object* obj = nullptr;   // one mesh per width, see _blockMeshes
@@ -105,16 +106,26 @@ private:
     Obstacle _obstacles[OBSTACLE_POOL];
     Obstacle _crystals[CRYSTAL_POOL];
     Shot     _shots[SHOT_POOL];
-    bool  _armed = false;
+    int   _gunLevel = 0;           // 0 unarmed, 1 gun, 2 twin, 3 rapid
+    bool  armed() const { return _gunLevel > 0; }
     unsigned long _reloadAt = 0;
-    unsigned long _armedBannerUntil = 0;
     int   _crystalsDestroyed = 0;
-    // The weapon pickup: one at a time, until collected.
-    Renderer::Object* _pickupObj = nullptr;
+    int   _shieldsCollected = 0;
+    // Pickups: one on the tunnel at a time, of any kind (updatePickup()
+    // decides which is due). The gun and its upgrades share the chevron.
+    Renderer::Object* _chevronObj = nullptr;
+    Renderer::Object* _crossObj = nullptr;
+    PickupKind _pickupKind = PICKUP_GUN;
     bool  _pickupActive = false;
     float _pickupAt = 0.0f;
     int   _pickupLane = 0;
-    float _nextPickupAt = WEAPON_FIRST_AT;
+    float _nextGunAt = WEAPON_FIRST_AT;
+    float _nextUpgradeAt = 0.0f;
+    float _nextShieldAt = 0.0f;
+    // One line of news under the HUD when a pickup is collected.
+    unsigned long _pickupBannerUntil = 0;
+    const char*   _pickupBanner = "";
+    uint16_t      _pickupBannerColour = 0xFFFF;
 
     // --- Scene -----------------------------------------------------------------
     Renderer::Scene*  _scene = nullptr;
@@ -136,6 +147,7 @@ private:
     Renderer::Material _crystalMatB{ 0xFFFF };
     Renderer::Material _shotMat{ 0xFFFF };
     Renderer::Material _pickupMat{ 0xFFFF };
+    Renderer::Material _crossMat{ 0xFFFF };
     // One mesh per obstacle slot; widths are fixed per slot (see
     // ensureSceneReady), which is what lets blocks be pooled.
 
@@ -170,6 +182,7 @@ private:
     Renderer::Object* buildBlock(int lanes);
     Renderer::Object* buildCrystal();
     Renderer::Object* buildPickup();
+    Renderer::Object* buildCross();
     void placeCamera();
     void updateShipSprite();
 
@@ -191,6 +204,11 @@ private:
     bool  spawnCrystal(float at, int open, int openLanes);
     void  lanePoint(float angle, float radius, float z, float &x, float &y) const;
     void  updatePickup(AudioEngine &audio);
+    bool  spawnDuePickup(float at);
+    void  collectPickup(AudioEngine &audio);
+    void  missPickup();
+    Renderer::Object* pickupObj() const { return _pickupKind == PICKUP_SHIELD ? _crossObj : _chevronObj; }
+    void  fireShot(float angle);
     void  tryFire(const InputState &input, AudioEngine &audio);
     void  updateShots(AudioEngine &audio);
     void  destroyCrystal(Obstacle &o, AudioEngine &audio);

@@ -130,7 +130,25 @@ inline constexpr float   WEAPON_FIRST_AT   = 2.55f * TIER_DISTANCE;   // late ti
 inline constexpr float   WEAPON_RETRY      = 15000.0f;                // after a miss
 inline constexpr float   PICKUP_DEPTH      = 120.0f;
 inline constexpr float   PICKUP_HALF_DEG   = 26.0f;    // generous: it's a reward, not a test
-inline constexpr unsigned long ARMED_BANNER_MS = 2500;
+inline constexpr unsigned long PICKUP_BANNER_MS = 2500;
+
+// Gun upgrades, one pickup each (the gun's chevron, in magenta): level 2 is
+// twin guns, two bolts side by side covering the whole lane; level 3 is
+// rapid fire, which also fires while A is held. Each appears once its tier
+// is reached, in the safe lane, and comes round again if missed.
+inline constexpr int           GUN_MAX_LEVEL   = 3;      // 1 gun, 2 twin, 3 rapid
+inline constexpr int           TWIN_TIER       = 7;
+inline constexpr int           RAPID_TIER      = 9;
+inline constexpr float         TWIN_SPREAD_DEG = 12.0f;  // each bolt this far off the lane centre
+inline constexpr unsigned long RAPID_RELOAD_MS = 120;
+inline constexpr float         UPGRADE_RETRY   = 15000.0f;
+
+// Shield pickup: a green cross worth one shield, offered from tier 2 and only
+// while you're missing one, at most every SHIELD_PICKUP_EVERY: ~40s at tier
+// 5, ~30s at tier 9. Much more often and a weak player never dies (the
+// harness's short-sighted bot reached tier 9 at 40000).
+inline constexpr int   SHIELD_PICKUP_TIER  = 2;
+inline constexpr float SHIELD_PICKUP_EVERY = 110000.0f;
 
 // Crystals: orange, spiky, one lane wide. They hurt like blocks but a shot
 // destroys them. From CRYSTAL_TIER some spawns are crystals instead of
@@ -148,7 +166,7 @@ inline constexpr int32_t CRYSTAL_WIDTH       = 170;
 inline constexpr int     CRYSTAL_POINTS      = 150;
 
 // Shots fly straight down the lane you fired from.
-inline constexpr int           SHOT_POOL     = 3;
+inline constexpr int           SHOT_POOL     = 6;   // twin guns fire two at a time
 inline constexpr float         SHOT_SPEED    = 420.0f;   // units per frame, faster than any ship speed
 inline constexpr float         SHOT_RANGE    = 4800.0f;  // ahead of the camera
 inline constexpr float         SHOT_HALF_DEG = 9.0f;

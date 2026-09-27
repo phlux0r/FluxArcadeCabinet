@@ -22,7 +22,9 @@ a gate raises the tier, which speeds things up, packs the blocks closer and
 brings in wider ones; from tier 4 the tunnel starts to curve, hiding what's
 coming, and the curves get sharper from tier 6. You start unarmed: a yellow
 chevron late in tier 3 is the gun, and from tier 4 orange crystals appear
-that it can shoot, some of them sitting in the only open lane.
+that it can shoot, some of them sitting in the only open lane. Magenta
+chevrons upgrade it to twin guns (tier 7) and rapid fire (tier 9), and a
+green cross restores a shield when you've lost one.
 
 ## Build
 
@@ -182,6 +184,7 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | `lander_start.wav`, `countdown.wav`, `land_success.wav` | Lander Flux |
 | `jump.wav`, `death.wav` | Platform Flux |
 | `tank_start.wav`, `tank_loop.wav`, `shot.wav`, `repair.wav` | Tank Flux |
+| `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
 
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
 16-bit signed PCM. Keep them small: they stream from the SD card over the SPI

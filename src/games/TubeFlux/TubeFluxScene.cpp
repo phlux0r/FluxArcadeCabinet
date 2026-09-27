@@ -244,6 +244,29 @@ Renderer::Object* TubeFluxGame::buildPickup() {
     return o;
 }
 
+// The shield pickup: a green plus, two layers deep like the chevron, facing
+// you at flying height in lane 0. Deliberately the repair cross's shape from
+// Tank Flux: same meaning, same look across the cabinet.
+Renderer::Object* TubeFluxGame::buildCross() {
+    auto* o = new Renderer::Object();
+    const float floorY = -TUBE_RADIUS * cosf(radians(LANE_DEG / 2));
+    const int32_t cy = (int32_t)(floorY + FLY_HEIGHT + 20);
+    const int32_t arm = 70, half = 20;
+    for (int32_t z : { -50, 50 }) {
+        // Vertical bar, then horizontal bar.
+        uint16_t a = addPoint(o, { -half, cy + arm, z }), b = addPoint(o, { half, cy + arm, z });
+        uint16_t c = addPoint(o, { half, cy - arm, z }),  d = addPoint(o, { -half, cy - arm, z });
+        o->addFace(a, b, c, d, &_crossMat);
+        a = addPoint(o, { -arm, cy + half, z }); b = addPoint(o, { arm, cy + half, z });
+        c = addPoint(o, { arm, cy - half, z });  d = addPoint(o, { -arm, cy - half, z });
+        o->addFace(a, b, c, d, &_crossMat);
+    }
+    o->calculateBoundingBox();
+    o->cullingMode = Renderer::CullingMode::NO_CULLING;
+    o->enabled = false;
+    return o;
+}
+
 // The camera sits CAMERA_OFFSET out from the axis towards the ship and
 // rolls with it, so the ship's lane is always straight down the screen.
 void TubeFluxGame::placeCamera() {
@@ -282,7 +305,7 @@ void TubeFluxGame::releaseScene() {
     for (auto &o : _obstacles) { o.obj = nullptr; o.active = false; }
     for (auto &o : _crystals) { o.obj = nullptr; o.active = false; }
     for (auto &s : _shots) { s.obj = nullptr; s.active = false; }
-    _pickupObj = nullptr;
+    _chevronObj = _crossObj = nullptr;
     _pickupActive = false;
     _phase = PHASE_ATTRACT;   // nothing may touch the (now missing) objects before a new game
 }
@@ -301,7 +324,7 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _scene->setCamera(&_camera);
 
     for (Renderer::Material* m : { &_blockFrontMat, &_blockTopMat, &_blockSideMat,
-                                   &_crystalMatA, &_crystalMatB, &_shotMat, &_pickupMat,
+                                   &_crystalMatA, &_crystalMatB, &_shotMat, &_pickupMat, &_crossMat,
                                    &_shipLevelMat, &_shipBankMat }) {
         m->shadingMode = Renderer::ShadingMode::UNLIT;
     }
@@ -338,8 +361,10 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
         s.active = false;
         _scene->addObject(s.obj);
     }
-    _pickupObj = buildPickup();
-    _scene->addObject(_pickupObj);
+    _chevronObj = buildPickup();
+    _scene->addObject(_chevronObj);
+    _crossObj = buildCross();
+    _scene->addObject(_crossObj);
 
     _shipLevelTex = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_LEVEL), true, 0x0000);
     _shipBankTex  = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_BANK),  true, 0x0000);

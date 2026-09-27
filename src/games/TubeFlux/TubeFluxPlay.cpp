@@ -172,7 +172,7 @@ bool TubeFluxGame::spawnCrystal(float at, int open, int openLanes) {
     if (!slot) return false;
 
     int lane;
-    if (_armed && random(0, 100) < CRYSTAL_ON_SAFE_PCT) {
+    if (armed() && random(0, 100) < CRYSTAL_ON_SAFE_PCT) {
         lane = _safeLane;
     } else {
         lane = (open + openLanes + (int)random(0, TUBE_SIDES - 1 - openLanes + 1)) % TUBE_SIDES;
@@ -239,62 +239,131 @@ void TubeFluxGame::lanePoint(float angle, float radius, float z, float &x, float
     y = by - radius * cosf(a);
 }
 
-// The weapon pickup: appears in the safe lane (so there's always a way to
-// it) from WEAPON_FIRST_AT, flashes and bobs, and comes round again if
-// missed. Collecting it arms the ship for the rest of the run.
+// Pickups: at most one on the tunnel at a time. When the slot is free the
+// most important one that's due is placed at the spawn front, in the safe
+// lane, so there's always a way to it: the gun if you haven't got it, then
+// the next gun upgrade once its tier is reached, then a shield if you're
+// missing one. A missed pickup comes round again.
 void TubeFluxGame::updatePickup(AudioEngine &audio) {
-    if (_armed) return;
-    if (!_pickupActive && _dist + SPAWN_AHEAD >= _nextPickupAt) {
-        _pickupActive = true;
-        _pickupAt = _dist + SPAWN_AHEAD;
-        _pickupLane = _safeLane;
-        _pickupObj->enabled = true;
-    }
-    if (!_pickupActive) return;
+    if (!_pickupActive && !spawnDuePickup(_dist + SPAWN_AHEAD)) return;
 
     const float z = _pickupAt - _dist;
     const float laneAngle = (float)_pickupLane * LANE_DEG;
     const float half = (PICKUP_DEPTH + SHIP_DEPTH) * 0.5f;
     if (fabsf(z - SHIP_Z) < half && fabsf(deltaDeg(_angle, laneAngle)) < PICKUP_HALF_DEG) {
-        _pickupActive = false;
-        _pickupObj->enabled = false;
-        _armed = true;
-        _armedBannerUntil = millis() + ARMED_BANNER_MS;
-        static const int n[] = { 523, 659, 784, 1047, 1319 };
-        static const int d[] = {  60,  60,  60,   60,  180 };
-        audio.playMelody(n, d, 5);
+        collectPickup(audio);
         return;
     }
-    if (z < SHIP_Z - half) {   // missed: it'll be back
-        _pickupActive = false;
-        _pickupObj->enabled = false;
-        _nextPickupAt = _dist + SPAWN_AHEAD + WEAPON_RETRY;
+    if (z < SHIP_Z - half) {
+        missPickup();
         return;
     }
 
-    // Flash yellow/white and bob towards the axis and back.
-    _pickupMat.color = ((millis() / 120) & 1) ? (uint16_t)0xFFFF : (uint16_t)((31 << 11) | (60 << 5) | 4);
+    // Flash (white alternating with the kind's colour) and bob towards the
+    // axis and back.
+    const bool white = (millis() / 120) & 1;
+    if (_pickupKind == PICKUP_SHIELD) {
+        _crossMat.color = white ? (uint16_t)0xFFFF : (uint16_t)((4 << 11) | (62 << 5) | 6);    // green
+    } else if (_pickupKind == PICKUP_UPGRADE) {
+        // Magenta, not cyan: cyan is the shots' colour, and a pickup that
+        // looks like your own bolts gets lost among them.
+        _pickupMat.color = white ? (uint16_t)0xFFFF : (uint16_t)((31 << 11) | (24 << 5) | 31); // magenta
+    } else {
+        _pickupMat.color = white ? (uint16_t)0xFFFF : (uint16_t)((31 << 11) | (60 << 5) | 4); // yellow
+    }
     float bob = 14.0f * sinf((float)millis() * 0.008f);
     float bx, by;
     bendOffset(z, bx, by);
     float a = radians(laneAngle);
-    _pickupObj->setPosition((int32_t)lroundf(bx - bob * sinf(a)), (int32_t)lroundf(by + bob * cosf(a)), (int32_t)z);
-    _pickupObj->setRotation(0, 0, OBSTACLE_ROLL_SIGN * _pickupLane * (int32_t)LANE_DEG);
+    Renderer::Object* obj = pickupObj();
+    obj->setPosition((int32_t)lroundf(bx - bob * sinf(a)), (int32_t)lroundf(by + bob * cosf(a)), (int32_t)z);
+    obj->setRotation(0, 0, OBSTACLE_ROLL_SIGN * _pickupLane * (int32_t)LANE_DEG);
 }
 
-void TubeFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
-    if (!_armed || !input.btnAPressed) return;
-    if ((long)(millis() - _reloadAt) < 0) return;
+bool TubeFluxGame::spawnDuePickup(float at) {
+    if (!armed()) {
+        if (at < _nextGunAt) return false;
+        _pickupKind = PICKUP_GUN;
+    } else if (_gunLevel < GUN_MAX_LEVEL && at >= _nextUpgradeAt &&
+               _tier >= (_gunLevel == 1 ? TWIN_TIER : RAPID_TIER)) {
+        _pickupKind = PICKUP_UPGRADE;
+    } else if (_shield < SHIELD_MAX && _tier >= SHIELD_PICKUP_TIER && at >= _nextShieldAt) {
+        _pickupKind = PICKUP_SHIELD;
+    } else {
+        return false;
+    }
+    _pickupActive = true;
+    _pickupAt = at;
+    _pickupLane = _safeLane;
+    pickupObj()->enabled = true;
+    return true;
+}
+
+void TubeFluxGame::collectPickup(AudioEngine &audio) {
+    _pickupActive = false;
+    pickupObj()->enabled = false;
+    switch (_pickupKind) {
+        case PICKUP_GUN:
+            _gunLevel = 1;
+            _pickupBanner = "PRESS A TO FIRE";
+            _pickupBannerColour = ArcadeConfig::COLOR_YELLOW;
+            break;
+        case PICKUP_UPGRADE:
+            ++_gunLevel;
+            _pickupBanner = _gunLevel >= GUN_MAX_LEVEL ? "RAPID FIRE: HOLD A" : "TWIN GUNS";
+            _pickupBannerColour = ArcadeConfig::COLOR_MAGENTA;
+            break;
+        case PICKUP_SHIELD:
+            if (_shield < SHIELD_MAX) ++_shield;
+            ++_shieldsCollected;
+            _nextShieldAt = _pickupAt + SHIELD_PICKUP_EVERY;
+            _pickupBanner = "SHIELD +1";
+            _pickupBannerColour = ArcadeConfig::COLOR_GREEN;
+            break;
+    }
+    _pickupBannerUntil = millis() + PICKUP_BANNER_MS;
+    audio.playWAV("/audio/tube_powerup.wav");
+}
+
+void TubeFluxGame::missPickup() {
+    _pickupActive = false;
+    pickupObj()->enabled = false;
+    const float next = _dist + SPAWN_AHEAD;
+    switch (_pickupKind) {
+        case PICKUP_GUN:     _nextGunAt     = next + WEAPON_RETRY;  break;
+        case PICKUP_UPGRADE: _nextUpgradeAt = next + UPGRADE_RETRY; break;
+        // Half the usual wait: you needed it and it got away.
+        case PICKUP_SHIELD:  _nextShieldAt  = next + SHIELD_PICKUP_EVERY * 0.5f; break;
+    }
+}
+
+void TubeFluxGame::fireShot(float angle) {
     for (auto &s : _shots) {
         if (s.active) continue;
         s.active = true;
         s.at = _dist + SHIP_Z;
-        s.angle = _angle;
+        s.angle = angle;
         s.obj->enabled = true;
-        _reloadAt = millis() + SHOT_RELOAD_MS;
-        audio.playWAV("/audio/shot.wav");
         return;
     }
+}
+
+// Rapid fire (level 3) also fires while A is held; before that it's one
+// shot per press. Twin guns (level 2+) put a bolt either side of the lane
+// centre, so between them they cover the whole lane.
+void TubeFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
+    if (!armed()) return;
+    const bool rapid = _gunLevel >= GUN_MAX_LEVEL;
+    if (!(input.btnAPressed || (rapid && input.btnA))) return;
+    if ((long)(millis() - _reloadAt) < 0) return;
+    if (_gunLevel >= 2) {
+        fireShot(_angle - TWIN_SPREAD_DEG);
+        fireShot(_angle + TWIN_SPREAD_DEG);
+    } else {
+        fireShot(_angle);
+    }
+    _reloadAt = millis() + (rapid ? RAPID_RELOAD_MS : SHOT_RELOAD_MS);
+    audio.playWAV("/audio/shot.wav");
 }
 
 // Shots fly down the lane they were fired from and stop at the first thing
@@ -369,7 +438,7 @@ void TubeFluxGame::hitShip(Obstacle &o, AudioEngine &audio) {
     const float r = TUBE_RADIUS * 0.8f;
     _particles.emitSparks(Renderer::Vec3f{ r * sinf(a), -r * cosf(a), SHIP_Z },
                           Renderer::Vec3f{ -sinf(a), cosf(a), 0 }, 320.0f, 18);
-    audio.playTone(140, 160);
+    audio.playWAV("/audio/tube_bump.wav");
 }
 
 }  // namespace tubeflux

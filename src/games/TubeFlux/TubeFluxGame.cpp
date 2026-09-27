@@ -72,11 +72,14 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
         if (o.obj) o.obj->enabled = false;
     }
     hideTransients();
-    _armed = false;
+    _gunLevel = 0;
     _reloadAt = 0;
-    _armedBannerUntil = 0;
+    _pickupBannerUntil = 0;
     _crystalsDestroyed = 0;
-    _nextPickupAt = WEAPON_FIRST_AT;
+    _shieldsCollected = 0;
+    _nextGunAt = WEAPON_FIRST_AT;
+    _nextUpgradeAt = 0.0f;
+    _nextShieldAt = 0.0f;
     for (auto &p : _particles.pool) p.active = false;
     applyTierPalette();
     _phase = PHASE_PLAYING;
@@ -92,7 +95,8 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     // Shots and the pickup would hang in mid-air while the world drifts on.
     for (auto &s : _shots) { s.active = false; s.obj->enabled = false; }
     _pickupActive = false;
-    _pickupObj->enabled = false;
+    _chevronObj->enabled = false;
+    _crossObj->enabled = false;
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);
@@ -132,7 +136,8 @@ void TubeFluxGame::hideTransients() {
     for (auto &c : _crystals) { c.active = false; if (c.obj) c.obj->enabled = false; }
     for (auto &s : _shots) { s.active = false; if (s.obj) s.obj->enabled = false; }
     _pickupActive = false;
-    if (_pickupObj) _pickupObj->enabled = false;
+    if (_chevronObj) _chevronObj->enabled = false;
+    if (_crossObj) _crossObj->enabled = false;
 }
 
 void TubeFluxGame::enterAttract() {
