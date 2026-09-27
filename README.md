@@ -20,7 +20,9 @@ that re-rolls the arena when it dies. In Tube Flux you fly down an endless
 octagonal tunnel, rolling round its wall to dodge blocks; every ~30 seconds
 a gate raises the tier, which speeds things up, packs the blocks closer and
 brings in wider ones; from tier 4 the tunnel starts to curve, hiding what's
-coming, and the curves get sharper from tier 6.
+coming, and the curves get sharper from tier 6. You start unarmed: a yellow
+chevron late in tier 3 is the gun, and from tier 4 orange crystals appear
+that it can shoot, some of them sitting in the only open lane.
 
 ## Build
 
@@ -80,7 +82,8 @@ Tank Flux differs: **hold B** strafes while driving, so quitting mid-game is
 enough for it not to be a normal shot).
 
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
-the speed (up boosts, down brakes). A starts a run; it has no in-game use yet.
+the speed (up boosts, down brakes). A starts a run, and fires once you've
+picked up the gun. Hold B to quit.
 
 The launcher's "[JOY] MOVE / [BTN A] GO" hint sits below the background
 art's menu box (rows 126 and 136), leaving the box for the game list: six

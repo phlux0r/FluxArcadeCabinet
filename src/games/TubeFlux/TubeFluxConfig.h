@@ -121,6 +121,41 @@ inline constexpr float   SAFE_LANE_TRANSITION = 1800.0f;
 // Passing a block within this many degrees of its edge, unhurt, is a near miss.
 inline constexpr float   NEAR_MISS_DEG  = 16.0f;
 
+// --- Weapon and crystals --------------------------------------------------------
+// You start unarmed. The gun is a pickup (a pulsing yellow chevron) that
+// first appears late in tier 3, just before crystals start, and lies in the
+// always-open safe lane, so it's never walled off. Miss it and it comes
+// round again. Once collected it's yours for the rest of the run.
+inline constexpr float   WEAPON_FIRST_AT   = 2.55f * TIER_DISTANCE;   // late tier 3
+inline constexpr float   WEAPON_RETRY      = 15000.0f;                // after a miss
+inline constexpr float   PICKUP_DEPTH      = 120.0f;
+inline constexpr float   PICKUP_HALF_DEG   = 26.0f;    // generous: it's a reward, not a test
+inline constexpr unsigned long ARMED_BANNER_MS = 2500;
+
+// Crystals: orange, spiky, one lane wide. They hurt like blocks but a shot
+// destroys them. From CRYSTAL_TIER some spawns are crystals instead of
+// blocks. Unarmed, they obey the safe lane like everything else; armed,
+// CRYSTAL_ON_SAFE_PCT of them are put in the safe lane itself, so some
+// routes have to be shot open.
+inline constexpr int     CRYSTAL_TIER        = 4;
+inline constexpr int     CRYSTAL_PCT         = 30;     // of spawns at CRYSTAL_TIER
+inline constexpr int     CRYSTAL_PCT_PER_TIER = 4;
+inline constexpr int     CRYSTAL_PCT_MAX     = 50;
+inline constexpr int     CRYSTAL_ON_SAFE_PCT = 50;
+inline constexpr int     CRYSTAL_POOL        = 6;
+inline constexpr int32_t CRYSTAL_HEIGHT      = 210;    // how far it stands off the wall
+inline constexpr int32_t CRYSTAL_WIDTH       = 170;
+inline constexpr int     CRYSTAL_POINTS      = 150;
+
+// Shots fly straight down the lane you fired from.
+inline constexpr int           SHOT_POOL     = 3;
+inline constexpr float         SHOT_SPEED    = 420.0f;   // units per frame, faster than any ship speed
+inline constexpr float         SHOT_RANGE    = 4800.0f;  // ahead of the camera
+inline constexpr float         SHOT_HALF_DEG = 9.0f;
+inline constexpr unsigned long SHOT_RELOAD_MS = 220;
+// Where shots and the pickup sit: off the floor at the ship's height.
+inline constexpr float         FLY_HEIGHT    = 70.0f;
+
 // --- Shield and scoring ---------------------------------------------------------
 inline constexpr int           SHIELD_MAX       = 3;
 inline constexpr unsigned long HIT_INVULN_MS    = 1400;

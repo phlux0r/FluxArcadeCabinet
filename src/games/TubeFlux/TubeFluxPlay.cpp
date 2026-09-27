@@ -118,16 +118,6 @@ void TubeFluxGame::spawnObstacles() {
 }
 
 void TubeFluxGame::spawnBlock(float at) {
-    // Tier 1 teaches with single-lane blocks; wider ones from tier 2.
-    int maxLanes = _tier >= 2 ? MAX_BLOCK_LANES : 1;
-    int lanes = 1 + (int)random(0, maxLanes);
-
-    Obstacle* slot = nullptr;
-    for (auto &o : _obstacles) {
-        if (!o.active && o.lanes == lanes) { slot = &o; break; }
-    }
-    if (!slot) return;   // pool exhausted: skip this one rather than stall
-
     if (at - _safeLaneMovedAt > SAFE_LANE_SHIFT) {
         _prevSafeLane = _safeLane;
         _safeLane = (_safeLane + TUBE_SIDES + (int)random(-1, 2)) % TUBE_SIDES;
@@ -142,6 +132,23 @@ void TubeFluxGame::spawnBlock(float at) {
         open = step == 1 ? _prevSafeLane : _safeLane;
         openLanes = 2;
     }
+
+    if (_tier >= CRYSTAL_TIER) {
+        int pct = CRYSTAL_PCT + CRYSTAL_PCT_PER_TIER * (_tier - CRYSTAL_TIER);
+        if (pct > CRYSTAL_PCT_MAX) pct = CRYSTAL_PCT_MAX;
+        if (random(0, 100) < pct && spawnCrystal(at, open, openLanes)) return;
+    }
+
+    // Tier 1 teaches with single-lane blocks; wider ones from tier 2.
+    int maxLanes = _tier >= 2 ? MAX_BLOCK_LANES : 1;
+    int lanes = 1 + (int)random(0, maxLanes);
+
+    Obstacle* slot = nullptr;
+    for (auto &o : _obstacles) {
+        if (!o.active && o.lanes == lanes) { slot = &o; break; }
+    }
+    if (!slot) return;   // pool exhausted: skip this one rather than stall
+
     // A block covers lanes [start, start + lanes). Pick one of the starts
     // that clears the open span, directly rather than by retrying.
     int start = (open + openLanes + (int)random(0, TUBE_SIDES - lanes - openLanes + 1)) % TUBE_SIDES;
@@ -154,6 +161,31 @@ void TubeFluxGame::spawnBlock(float at) {
     placeObstacle(*slot);
 }
 
+// Unarmed, a crystal is just another obstacle and keeps off the open span.
+// Armed, it's sometimes put in the safe lane itself: that route then has
+// to be shot open, which is what the gun is for.
+bool TubeFluxGame::spawnCrystal(float at, int open, int openLanes) {
+    Obstacle* slot = nullptr;
+    for (auto &c : _crystals) {
+        if (!c.active) { slot = &c; break; }
+    }
+    if (!slot) return false;
+
+    int lane;
+    if (_armed && random(0, 100) < CRYSTAL_ON_SAFE_PCT) {
+        lane = _safeLane;
+    } else {
+        lane = (open + openLanes + (int)random(0, TUBE_SIDES - 1 - openLanes + 1)) % TUBE_SIDES;
+    }
+    slot->active = true;
+    slot->resolved = false;
+    slot->lane = lane;
+    slot->at = at;
+    slot->obj->enabled = true;
+    placeObstacle(*slot);
+    return true;
+}
+
 void TubeFluxGame::placeObstacle(Obstacle &o) {
     // Blocks follow the bend, so they stay on the walls they're attached to.
     float z = o.at - _dist, bx, by;
@@ -163,35 +195,166 @@ void TubeFluxGame::placeObstacle(Obstacle &o) {
 }
 
 void TubeFluxGame::updateObstacles(AudioEngine &audio) {
-    for (auto &o : _obstacles) {
-        if (!o.active) continue;
-        float z = o.at - _dist;   // depth ahead of the camera
+    for (auto &o : _obstacles) if (o.active) updateObstacle(o, audio);
+    for (auto &c : _crystals)  if (c.active) updateObstacle(c, audio);
+}
 
-        if (z < -(float)BLOCK_DEPTH) {   // gone past the camera
-            o.active = false;
-            o.obj->enabled = false;
-            continue;
-        }
-        placeObstacle(o);
-        if (o.resolved) continue;
+void TubeFluxGame::updateObstacle(Obstacle &o, AudioEngine &audio) {
+    const float depth = o.crystal ? (float)CRYSTAL_WIDTH : (float)BLOCK_DEPTH;
+    float z = o.at - _dist;   // depth ahead of the camera
 
-        // Angular gap between the ship and the block's nearest edge.
-        float centre = ((float)o.lane + (float)(o.lanes - 1) * 0.5f) * LANE_DEG;
-        float edgeGap = fabsf(deltaDeg(_angle, centre)) - (float)o.lanes * LANE_DEG * 0.5f;
+    if (z < -depth) {   // gone past the camera
+        o.active = false;
+        o.obj->enabled = false;
+        return;
+    }
+    placeObstacle(o);
+    if (o.resolved) return;
 
-        bool overlapping = fabsf(z - SHIP_Z) < (BLOCK_DEPTH + SHIP_DEPTH) * 0.5f;
-        if (overlapping && edgeGap < SHIP_HALF_DEG) {
-            hitShip(o, audio);
-        } else if (z < SHIP_Z - (BLOCK_DEPTH + SHIP_DEPTH) * 0.5f) {
-            // Passed it cleanly.
-            o.resolved = true;
-            if (edgeGap < SHIP_HALF_DEG + NEAR_MISS_DEG) {
-                _bonus += NEAR_MISS_POINTS;
-                _nearMissUntil = millis() + NEAR_MISS_SHOW_MS;
-                audio.playTone(1400, 30);
-            }
+    // Angular gap between the ship and the obstacle's nearest edge.
+    float centre = ((float)o.lane + (float)(o.lanes - 1) * 0.5f) * LANE_DEG;
+    float edgeGap = fabsf(deltaDeg(_angle, centre)) - (float)o.lanes * LANE_DEG * 0.5f;
+
+    bool overlapping = fabsf(z - SHIP_Z) < (depth + SHIP_DEPTH) * 0.5f;
+    if (overlapping && edgeGap < SHIP_HALF_DEG) {
+        hitShip(o, audio);
+    } else if (z < SHIP_Z - (depth + SHIP_DEPTH) * 0.5f) {
+        // Passed it cleanly.
+        o.resolved = true;
+        if (edgeGap < SHIP_HALF_DEG + NEAR_MISS_DEG) {
+            _bonus += NEAR_MISS_POINTS;
+            _nearMissUntil = millis() + NEAR_MISS_SHOW_MS;
+            audio.playTone(1400, 30);
         }
     }
+}
+
+// World position of a point at `radius` from the tunnel's axis, at `angle`
+// round it, `z` ahead of the camera: on the bent centre line.
+void TubeFluxGame::lanePoint(float angle, float radius, float z, float &x, float &y) const {
+    float bx, by;
+    bendOffset(z, bx, by);
+    float a = radians(angle);
+    x = bx + radius * sinf(a);
+    y = by - radius * cosf(a);
+}
+
+// The weapon pickup: appears in the safe lane (so there's always a way to
+// it) from WEAPON_FIRST_AT, flashes and bobs, and comes round again if
+// missed. Collecting it arms the ship for the rest of the run.
+void TubeFluxGame::updatePickup(AudioEngine &audio) {
+    if (_armed) return;
+    if (!_pickupActive && _dist + SPAWN_AHEAD >= _nextPickupAt) {
+        _pickupActive = true;
+        _pickupAt = _dist + SPAWN_AHEAD;
+        _pickupLane = _safeLane;
+        _pickupObj->enabled = true;
+    }
+    if (!_pickupActive) return;
+
+    const float z = _pickupAt - _dist;
+    const float laneAngle = (float)_pickupLane * LANE_DEG;
+    const float half = (PICKUP_DEPTH + SHIP_DEPTH) * 0.5f;
+    if (fabsf(z - SHIP_Z) < half && fabsf(deltaDeg(_angle, laneAngle)) < PICKUP_HALF_DEG) {
+        _pickupActive = false;
+        _pickupObj->enabled = false;
+        _armed = true;
+        _armedBannerUntil = millis() + ARMED_BANNER_MS;
+        static const int n[] = { 523, 659, 784, 1047, 1319 };
+        static const int d[] = {  60,  60,  60,   60,  180 };
+        audio.playMelody(n, d, 5);
+        return;
+    }
+    if (z < SHIP_Z - half) {   // missed: it'll be back
+        _pickupActive = false;
+        _pickupObj->enabled = false;
+        _nextPickupAt = _dist + SPAWN_AHEAD + WEAPON_RETRY;
+        return;
+    }
+
+    // Flash yellow/white and bob towards the axis and back.
+    _pickupMat.color = ((millis() / 120) & 1) ? (uint16_t)0xFFFF : (uint16_t)((31 << 11) | (60 << 5) | 4);
+    float bob = 14.0f * sinf((float)millis() * 0.008f);
+    float bx, by;
+    bendOffset(z, bx, by);
+    float a = radians(laneAngle);
+    _pickupObj->setPosition((int32_t)lroundf(bx - bob * sinf(a)), (int32_t)lroundf(by + bob * cosf(a)), (int32_t)z);
+    _pickupObj->setRotation(0, 0, OBSTACLE_ROLL_SIGN * _pickupLane * (int32_t)LANE_DEG);
+}
+
+void TubeFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
+    if (!_armed || !input.btnAPressed) return;
+    if ((long)(millis() - _reloadAt) < 0) return;
+    for (auto &s : _shots) {
+        if (s.active) continue;
+        s.active = true;
+        s.at = _dist + SHIP_Z;
+        s.angle = _angle;
+        s.obj->enabled = true;
+        _reloadAt = millis() + SHOT_RELOAD_MS;
+        audio.playWAV("/audio/shot.wav");
+        return;
+    }
+}
+
+// Shots fly down the lane they were fired from and stop at the first thing
+// they meet: a crystal shatters, a block just eats the shot. The test is
+// swept over the whole step, so a fast shot can't skip through a thin one.
+void TubeFluxGame::updateShots(AudioEngine &audio) {
+    const float radius = TUBE_RADIUS * cosf(radians(LANE_DEG / 2)) - FLY_HEIGHT;
+    for (auto &s : _shots) {
+        if (!s.active) continue;
+        const float from = s.at;
+        s.at += SHOT_SPEED * _frameScale;
+        if (s.at - _dist > SHOT_RANGE) {
+            s.active = false;
+            s.obj->enabled = false;
+            continue;
+        }
+
+        Obstacle* hit = nullptr;
+        auto consider = [&](Obstacle &o) {
+            if (!o.active) return;
+            const float half = (o.crystal ? (float)CRYSTAL_WIDTH : (float)BLOCK_DEPTH) * 0.5f;
+            if (o.at + half < from || o.at - half > s.at) return;
+            float centre = ((float)o.lane + (float)(o.lanes - 1) * 0.5f) * LANE_DEG;
+            float edgeGap = fabsf(deltaDeg(s.angle, centre)) - (float)o.lanes * LANE_DEG * 0.5f;
+            if (edgeGap >= SHOT_HALF_DEG) return;
+            if (!hit || o.at < hit->at) hit = &o;
+        };
+        for (auto &o : _obstacles) consider(o);
+        for (auto &c : _crystals) consider(c);
+
+        if (hit) {
+            s.active = false;
+            s.obj->enabled = false;
+            if (hit->crystal) {
+                destroyCrystal(*hit, audio);
+            } else {
+                float x, y;
+                lanePoint(s.angle, radius, hit->at - _dist, x, y);
+                _particles.emitSparks(Renderer::Vec3f{ x, y, hit->at - _dist - BLOCK_DEPTH * 0.5f },
+                                      Renderer::Vec3f{ 0, 0, -1 }, 200.0f, 8);
+            }
+            continue;
+        }
+        float x, y;
+        lanePoint(s.angle, radius, s.at - _dist, x, y);
+        s.obj->setPosition((int32_t)lroundf(x), (int32_t)lroundf(y), (int32_t)(s.at - _dist));
+    }
+}
+
+void TubeFluxGame::destroyCrystal(Obstacle &o, AudioEngine &audio) {
+    o.active = false;
+    o.obj->enabled = false;
+    ++_crystalsDestroyed;
+    _bonus += CRYSTAL_POINTS;
+    const float floorR = TUBE_RADIUS * cosf(radians(LANE_DEG / 2));
+    float x, y, z = o.at - _dist;
+    lanePoint((float)o.lane * LANE_DEG, floorR - CRYSTAL_HEIGHT * 0.5f, z, x, y);
+    _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 0, -1 }, 520.0f, 26);
+    _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 1, 0 }, 300.0f, 14);
+    audio.playWAV("/audio/explosion.wav");
 }
 
 void TubeFluxGame::hitShip(Obstacle &o, AudioEngine &audio) {

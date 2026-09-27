@@ -21,14 +21,25 @@ float deltaDeg(float a, float b) {
 }
 
 // Lanes a block ahead (within `lookahead` of the ship) will cover.
+bool covers(const TubeFluxGame::Obstacle &o, int lane) {
+    for (int k = 0; k < o.lanes; ++k) if ((o.lane + k) % TUBE_SIDES == lane) return true;
+    return false;
+}
+
 bool laneBlocked(const TubeFluxGame &g, int lane, float lookahead) {
     for (const auto &o : g._obstacles) {
         if (!o.active || o.resolved) continue;
         float z = o.at - g._dist;
         if (z < SHIP_Z - BLOCK_DEPTH || z > SHIP_Z + lookahead) continue;
-        for (int k = 0; k < o.lanes; ++k) {
-            if ((o.lane + k) % TUBE_SIDES == lane) return true;
-        }
+        if (covers(o, lane)) return true;
+    }
+    for (const auto &c : g._crystals) {
+        if (!c.active || c.resolved) continue;
+        float z = c.at - g._dist;
+        // Armed, a crystal far enough off is a target, not a wall.
+        float reach = g._armed ? 900.0f : lookahead;
+        if (z < SHIP_Z - CRYSTAL_WIDTH || z > SHIP_Z + reach) continue;
+        if (covers(c, lane)) return true;
     }
     return false;
 }
@@ -49,9 +60,18 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
         { "pose_a090_block_lane2",  90.0f, 2, 1, 1400 },   // ship rolled to it: block on the floor
         { "pose_a000_block3_lane7",  0.0f, 7, 3, 1400 },   // lanes 7,0,1: across the floor
         { "pose_a000_block_ship",    0.0f, 0, 1, SHIP_Z }, // at the ship: should sit under it
+        { "pose_a000_crystal_lane0", 0.0f, 0, 0, 1400 },   // lanes 0 = crystal
+        { "pose_a000_crystal_lane1", 0.0f, 1, 0, 1000 },
     };
     for (const Pose &p : poses) {
         for (auto &o : g._obstacles) { o.active = false; o.obj->enabled = false; }
+        for (auto &c : g._crystals) { c.active = false; c.obj->enabled = false; }
+        if (p.lanes == 0) {
+            auto &c = g._crystals[0];
+            c.active = true; c.resolved = true; c.lane = p.lane; c.at = g._dist + p.z;
+            c.obj->enabled = true;
+            g.placeObstacle(c);
+        }
         for (auto &o : g._obstacles) {
             if (o.lanes != p.lanes) continue;
             o.active = true; o.resolved = true;
@@ -70,6 +90,28 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
         d.n = 1; d.at[0] = 0;
         d.maybeDump(0, canvas);
     }
+
+    // The pickup ahead in lane 0, and two shots in flight down lane 0.
+    for (auto &o : g._obstacles) { o.active = false; o.obj->enabled = false; }
+    for (auto &c : g._crystals) { c.active = false; c.obj->enabled = false; }
+    g._angle = 0; g._rollVel = 0;
+    g._pickupActive = true; g._pickupLane = 0; g._pickupAt = g._dist + 1500;
+    g._pickupObj->enabled = true;
+    g._nextSpawnAt = 1e9f;
+    InputState none{};
+    g.updatePickup(audio);
+    g._armed = true;
+    for (int i = 0; i < 2; ++i) {
+        auto &s = g._shots[i];
+        s.active = true; s.angle = 0; s.at = g._dist + 900 + i * 700; s.obj->enabled = true;
+    }
+    g.updateShots(audio);
+    g.updateShipSprite();
+    g.renderWorld(canvas);
+    g.drawHUD(canvas);
+    FrameDumper d("pose_a000_pickup_shots");
+    d.n = 1; d.at[0] = 0;
+    d.maybeDump(0, canvas);
 }
 
 }  // namespace
@@ -108,6 +150,7 @@ int main(int argc, char** argv) {
     bool prevA = false, prevB = false;
     int quits = 0, gameOvers = 0, lastPhase = -1, maxTier = 0, hits = 0, lastShield = SHIELD_MAX;
     int hitsByTier[MAX_TIER + 1] = {};
+    long armedAtFrame = -1;
     uint32_t traceHash = 2166136261u;
 
     for (long f = 0; f < frames; ++f) {
@@ -132,7 +175,16 @@ int main(int argc, char** argv) {
                     if (!laneBlocked(g, l, w)) { target = l; break; }
                 }
             }
+            if (g._pickupActive && g._pickupAt - g._dist < 3000.0f && !laneBlocked(g, g._pickupLane, 900.0f))
+                target = g._pickupLane;
             float err = deltaDeg((float)target * LANE_DEG, g._angle);
+            // Fire at any crystal ahead in this lane.
+            if (g._armed && (f % 4) == 0) {
+                for (const auto &c : g._crystals) {
+                    float z = c.at - g._dist;
+                    if (c.active && z > SHIP_Z && z < 3500.0f && covers(c, here)) { a = true; break; }
+                }
+            }
             in.joyY = STEER_SIGN * constrain(err / 10.0f, -1.0f, 1.0f);
             // Boost and brake now and then, so the throttle is covered.
             long cycle = f % 900;
@@ -199,10 +251,12 @@ int main(int argc, char** argv) {
         if (g._phase == TubeFluxGame::PHASE_GAMEOVER && lastPhase != TubeFluxGame::PHASE_GAMEOVER) ++gameOvers;
         lastPhase = g._phase;
         if (g._tier > maxTier) maxTier = g._tier;
+        if (g._armed && armedAtFrame < 0) armedAtFrame = f;
 
-        int32_t st[10] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
+        int32_t st[12] = { (int32_t)g._phase, (int32_t)g._score, g._shield, g._tier,
                            (int32_t)g._dist, (int32_t)(g._angle * 10), (int32_t)(g._speed * 10),
-                           (int32_t)g._safeLane, (int32_t)g._bendX, (int32_t)g._bendY };
+                           (int32_t)g._safeLane, (int32_t)g._bendX, (int32_t)g._bendY,
+                           (int32_t)g._armed, g._crystalsDestroyed };
         traceHash = fnv(st, sizeof(st), traceHash);
         if (f % 60 == 0) {
             traceHash = fnv(canvas.getBuffer(),
@@ -220,6 +274,8 @@ int main(int argc, char** argv) {
            frames, maxTier, hits, gameOvers, quits, g._highScore,
            audio.tones, audio.melodies, traceHash);
 
+    printf("weapon: first armed at f=%ld, crystals destroyed=%d, wavs=%d\n",
+           armedAtFrame, g._crystalsDestroyed, audio.wavs);
     printf("hits by tier:");
     for (int t = 1; t <= MAX_TIER; ++t) printf(" %d:%d", t, hitsByTier[t]);
     printf("\n");

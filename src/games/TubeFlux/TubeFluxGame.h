@@ -57,6 +57,14 @@ private:
         int   lane = 0;                    // first panel, 0..TUBE_SIDES-1
         float at = 0.0f;                   // distance along the run where it sits
         bool  resolved = false;            // already hit or scored as it passed
+        bool  crystal = false;             // destructible (lives in _crystals)
+    };
+
+    struct Shot {
+        Renderer::Object* obj = nullptr;
+        bool  active = false;
+        float at = 0.0f;                   // distance along the run
+        float angle = 0.0f;                // lane it was fired down
     };
 
     // --- Session ---------------------------------------------------------------
@@ -95,6 +103,18 @@ private:
     unsigned long _nearMissUntil = 0;
     unsigned long _tierBannerUntil = 0;
     Obstacle _obstacles[OBSTACLE_POOL];
+    Obstacle _crystals[CRYSTAL_POOL];
+    Shot     _shots[SHOT_POOL];
+    bool  _armed = false;
+    unsigned long _reloadAt = 0;
+    unsigned long _armedBannerUntil = 0;
+    int   _crystalsDestroyed = 0;
+    // The weapon pickup: one at a time, until collected.
+    Renderer::Object* _pickupObj = nullptr;
+    bool  _pickupActive = false;
+    float _pickupAt = 0.0f;
+    int   _pickupLane = 0;
+    float _nextPickupAt = WEAPON_FIRST_AT;
 
     // --- Scene -----------------------------------------------------------------
     Renderer::Scene*  _scene = nullptr;
@@ -110,6 +130,12 @@ private:
     Renderer::Material _blockFrontMat{ 0xFFFF };
     Renderer::Material _blockTopMat{ 0xFFFF };
     Renderer::Material _blockSideMat{ 0xFFFF };
+    // Crystals are hot orange, two tones so the facets read; shots cyan;
+    // the pickup flashes yellow/white.
+    Renderer::Material _crystalMatA{ 0xFFFF };
+    Renderer::Material _crystalMatB{ 0xFFFF };
+    Renderer::Material _shotMat{ 0xFFFF };
+    Renderer::Material _pickupMat{ 0xFFFF };
     // One mesh per obstacle slot; widths are fixed per slot (see
     // ensureSceneReady), which is what lets blocks be pooled.
 
@@ -129,6 +155,7 @@ private:
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     void enterGameOver(AudioEngine &audio);
+    void hideTransients();
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
@@ -141,6 +168,8 @@ private:
     void applyTierPalette();
     void drawTunnel(GFXcanvas16 &canvas);
     Renderer::Object* buildBlock(int lanes);
+    Renderer::Object* buildCrystal();
+    Renderer::Object* buildPickup();
     void placeCamera();
     void updateShipSprite();
 
@@ -158,6 +187,13 @@ private:
     void  placeObstacle(Obstacle &o);
     void  updateObstacles(AudioEngine &audio);
     void  hitShip(Obstacle &o, AudioEngine &audio);
+    void  updateObstacle(Obstacle &o, AudioEngine &audio);
+    bool  spawnCrystal(float at, int open, int openLanes);
+    void  lanePoint(float angle, float radius, float z, float &x, float &y) const;
+    void  updatePickup(AudioEngine &audio);
+    void  tryFire(const InputState &input, AudioEngine &audio);
+    void  updateShots(AudioEngine &audio);
+    void  destroyCrystal(Obstacle &o, AudioEngine &audio);
 
     // --- TubeFluxHud.cpp -------------------------------------------------------
     void drawHUD(GFXcanvas16 &canvas);

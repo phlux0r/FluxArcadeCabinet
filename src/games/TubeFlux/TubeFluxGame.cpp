@@ -71,6 +71,12 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
         o.active = false;
         if (o.obj) o.obj->enabled = false;
     }
+    hideTransients();
+    _armed = false;
+    _reloadAt = 0;
+    _armedBannerUntil = 0;
+    _crystalsDestroyed = 0;
+    _nextPickupAt = WEAPON_FIRST_AT;
     for (auto &p : _particles.pool) p.active = false;
     applyTierPalette();
     _phase = PHASE_PLAYING;
@@ -83,6 +89,10 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     _phase = PHASE_GAMEOVER;
     _phaseEnteredMs = millis();
     _shipSprite.enabled = false;
+    // Shots and the pickup would hang in mid-air while the world drifts on.
+    for (auto &s : _shots) { s.active = false; s.obj->enabled = false; }
+    _pickupActive = false;
+    _pickupObj->enabled = false;
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);
@@ -114,6 +124,15 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default:             return updatePlaying(canvas, input, audio);
     }
+}
+
+// Crystals, shots and the pickup: everything besides blocks that a new run
+// or the attract screen mustn't inherit.
+void TubeFluxGame::hideTransients() {
+    for (auto &c : _crystals) { c.active = false; if (c.obj) c.obj->enabled = false; }
+    for (auto &s : _shots) { s.active = false; if (s.obj) s.obj->enabled = false; }
+    _pickupActive = false;
+    if (_pickupObj) _pickupObj->enabled = false;
 }
 
 void TubeFluxGame::enterAttract() {
@@ -148,6 +167,7 @@ bool TubeFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
 bool TubeFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     _dist += BASE_SPEED * 0.5f * _frameScale;
     for (auto &o : _obstacles) if (o.active) placeObstacle(o);
+    for (auto &c : _crystals) if (c.active) placeObstacle(c);
     renderWorld(canvas);
     renderGameOver(canvas);
 
@@ -156,6 +176,7 @@ bool TubeFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
         startNewGame(audio);
     } else if (elapsed > GAMEOVER_TIMEOUT_MS) {
         for (auto &o : _obstacles) { o.active = false; o.obj->enabled = false; }
+        hideTransients();
         enterAttract();
     }
     return true;
@@ -167,6 +188,9 @@ bool TubeFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     updateTier(audio);
     updateBend();
     spawnObstacles();
+    updatePickup(audio);
+    tryFire(input, audio);
+    updateShots(audio);        // before collisions: a point-blank shot still saves you
     updateObstacles(audio);
     _score = (long)(_dist * SCORE_PER_UNIT) + _bonus;
 

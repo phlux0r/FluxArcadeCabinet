@@ -192,6 +192,58 @@ Renderer::Object* TubeFluxGame::buildBlock(int lanes) {
     return o;
 }
 
+// A crystal: a stretched octahedron standing on lane 0's panel (rotated into
+// place like blocks). Spiky and hot-coloured, where blocks are boxy and
+// grey: the shape says "shoot me" before the colour does.
+Renderer::Object* TubeFluxGame::buildCrystal() {
+    auto* o = new Renderer::Object();
+    const float floorY = -TUBE_RADIUS * cosf(radians(LANE_DEG / 2));
+    const float w = CRYSTAL_WIDTH * 0.5f;
+    const float ye = floorY + CRYSTAL_HEIGHT * 0.4f;     // widest point
+    const Vector3 v[6] = {
+        { 0, (int32_t)(floorY + CRYSTAL_HEIGHT), 0 },     // tip, towards the axis
+        { 0, (int32_t)(floorY + 4), 0 },                   // base, on the wall
+        { (int32_t)w, (int32_t)ye, 0 }, { (int32_t)-w, (int32_t)ye, 0 },
+        { 0, (int32_t)ye, (int32_t)w }, { 0, (int32_t)ye, (int32_t)-w },
+    };
+    uint16_t idx[6];
+    for (int i = 0; i < 6; ++i) idx[i] = addPoint(o, v[i]);
+    static const uint8_t tris[8][3] = { {0,2,5},{0,5,3},{0,3,4},{0,4,2},{1,5,2},{1,3,5},{1,4,3},{1,2,4} };
+    for (int t = 0; t < 8; ++t) {
+        o->addTriangle(idx[tris[t][0]], idx[tris[t][1]], idx[tris[t][2]],
+                       (t & 1) ? &_crystalMatB : &_crystalMatA);
+    }
+    o->calculateBoundingBox();
+    o->cullingMode = Renderer::CullingMode::NO_CULLING;
+    o->preciseDepthSort = true;
+    o->enabled = false;
+    return o;
+}
+
+// The weapon pickup: two yellow chevrons one behind the other, pointing
+// towards the axis, which is "up the screen" when it's in your lane: an
+// arrow saying forward/fire. Built in lane 0 at flying height.
+Renderer::Object* TubeFluxGame::buildPickup() {
+    auto* o = new Renderer::Object();
+    const float floorY = -TUBE_RADIUS * cosf(radians(LANE_DEG / 2));
+    const int32_t cy = (int32_t)(floorY + FLY_HEIGHT);
+    for (int32_t z : { -60, 60 }) {
+        // Each chevron is two arms: apex (0, cy+70), ends (+/-90, cy-10), 36 thick.
+        uint16_t a  = addPoint(o, { 0, cy + 70, z });
+        uint16_t ai = addPoint(o, { 0, cy + 34, z });
+        uint16_t l  = addPoint(o, { -90, cy - 10, z });
+        uint16_t li = addPoint(o, { -90, cy - 46, z });
+        uint16_t r  = addPoint(o, { 90, cy - 10, z });
+        uint16_t ri = addPoint(o, { 90, cy - 46, z });
+        o->addFace(a, l, li, ai, &_pickupMat);
+        o->addFace(a, ai, ri, r, &_pickupMat);
+    }
+    o->calculateBoundingBox();
+    o->cullingMode = Renderer::CullingMode::NO_CULLING;
+    o->enabled = false;
+    return o;
+}
+
 // The camera sits CAMERA_OFFSET out from the axis towards the ship and
 // rolls with it, so the ship's lane is always straight down the screen.
 void TubeFluxGame::placeCamera() {
@@ -228,6 +280,10 @@ void TubeFluxGame::releaseScene() {
     delete _shipBankTex;
     _shipLevelTex = _shipBankTex = nullptr;
     for (auto &o : _obstacles) { o.obj = nullptr; o.active = false; }
+    for (auto &o : _crystals) { o.obj = nullptr; o.active = false; }
+    for (auto &s : _shots) { s.obj = nullptr; s.active = false; }
+    _pickupObj = nullptr;
+    _pickupActive = false;
     _phase = PHASE_ATTRACT;   // nothing may touch the (now missing) objects before a new game
 }
 
@@ -244,13 +300,18 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _camera.farPlane  = CAMERA_FAR;
     _scene->setCamera(&_camera);
 
-    for (Renderer::Material* m : { &_blockFrontMat, &_blockTopMat,
-                                   &_blockSideMat, &_shipLevelMat, &_shipBankMat }) {
+    for (Renderer::Material* m : { &_blockFrontMat, &_blockTopMat, &_blockSideMat,
+                                   &_crystalMatA, &_crystalMatB, &_shotMat, &_pickupMat,
+                                   &_shipLevelMat, &_shipBankMat }) {
         m->shadingMode = Renderer::ShadingMode::UNLIT;
     }
     _blockFrontMat.color = rgb565(10, 22, 14);   // gunmetal: darker than the ship, so they never blend
     _blockTopMat.color   = rgb565(26, 54, 28);   // bright top edge: the silhouette you read at speed
     _blockSideMat.color  = rgb565(5, 12, 8);
+    _crystalMatA.color   = rgb565(31, 36, 4);    // hot orange
+    _crystalMatB.color   = rgb565(26, 18, 2);    // deeper, so the facets show
+    _shotMat.color       = rgb565(12, 60, 31);   // cyan bolt
+    _pickupMat.color     = rgb565(31, 60, 4);    // yellow; flashes white (updatePickup)
     applyTierPalette();
 
     // Slot widths cycle 1,2,3: with the pool sized well past what's ever on
@@ -262,6 +323,23 @@ void TubeFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
         o.active = false;
         _scene->addObject(o.obj);
     }
+
+    for (auto &c : _crystals) {
+        c.lanes = 1;
+        c.crystal = true;
+        c.obj = buildCrystal();
+        c.active = false;
+        _scene->addObject(c.obj);
+    }
+    for (auto &s : _shots) {
+        // Big for a bolt: at 1000 units a pixel is ~10 units, and it has to read.
+        s.obj = Primitives::createCube(40, 40, 260, &_shotMat);
+        s.obj->enabled = false;
+        s.active = false;
+        _scene->addObject(s.obj);
+    }
+    _pickupObj = buildPickup();
+    _scene->addObject(_pickupObj);
 
     _shipLevelTex = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_LEVEL), true, 0x0000);
     _shipBankTex  = new Renderer::Texture(SHIP_W, SHIP_H, const_cast<uint16_t*>(SHIP_BANK),  true, 0x0000);

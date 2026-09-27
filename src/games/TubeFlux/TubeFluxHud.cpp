@@ -36,6 +36,13 @@ void TubeFluxGame::drawHUD(GFXcanvas16 &canvas) {
     canvas.print("T");
     canvas.print(_tier);
 
+    // Gun: a small yellow chevron left of the shield pips, once collected.
+    if (_armed) {
+        int16_t gx = W - 3 - SHIELD_MAX * 9 - 11;
+        canvas.fillTriangle(gx, 8, gx + 4, 2, gx + 8, 8, ArcadeConfig::COLOR_YELLOW);
+        canvas.fillTriangle(gx + 2, 8, gx + 4, 5, gx + 6, 8, ArcadeConfig::COLOR_BLACK);
+    }
+
     // Shield pips, right-aligned: filled for each hit you can still take.
     for (int i = 0; i < SHIELD_MAX; ++i) {
         int16_t x = W - 3 - (SHIELD_MAX - i) * 9;
@@ -49,9 +56,12 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
         canvas.drawRect(0, 10, W, canvas.height() - 10, ArcadeConfig::COLOR_RED);
         canvas.drawRect(1, 11, W - 2, canvas.height() - 12, ArcadeConfig::COLOR_RED);
     }
-    // Both sit just under the HUD strip, clear of the tunnel's middle where
-    // the next blocks come from. The tier number is already in the HUD.
-    if (before(_tierBannerUntil)) {
+    // All sit on one line just under the HUD strip, clear of the tunnel's
+    // middle where the next blocks come from; most important first. The
+    // tier number is already in the HUD.
+    if (before(_armedBannerUntil)) {
+        if ((millis() / 200) & 1) drawCentred(canvas, "PRESS A TO FIRE", 13, ArcadeConfig::COLOR_YELLOW);
+    } else if (before(_tierBannerUntil)) {
         // Where bends start or sharpen, say so: it's a new thing to deal with.
         const char* msg = _tier == BEND_START_TIER ? "CURVES AHEAD"
                         : _tier == BEND_SHARP_TIER ? "SHARPER CURVES" : "SPEED UP";
@@ -91,13 +101,15 @@ void TubeFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
 
 void TubeFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.fillRect(14, 22, W - 28, 84, PANEL);
-    drawCentred(canvas, "HOW TO PLAY", 32, ArcadeConfig::COLOR_CYAN);
-    drawCentred(canvas, "ROLL: JOYSTICK L/R", 52, ArcadeConfig::COLOR_WHITE);
-    drawCentred(canvas, "BOOST: UP  BRAKE: DOWN", 62, ArcadeConfig::COLOR_GREY);
-    if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 78, ArcadeConfig::COLOR_YELLOW);
+    drawCentred(canvas, "HOW TO PLAY", 27, ArcadeConfig::COLOR_CYAN);
+    drawCentred(canvas, "ROLL: JOYSTICK L/R", 40, ArcadeConfig::COLOR_WHITE);
+    drawCentred(canvas, "BOOST: UP  BRAKE: DN", 50, ArcadeConfig::COLOR_GREY);
+    drawCentred(canvas, "GRAB THE YELLOW GUN", 62, ArcadeConfig::COLOR_YELLOW);
+    drawCentred(canvas, "A: SHOOT CRYSTALS", 72, ArcadeConfig::COLOR_ORANGE);
+    if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 85, ArcadeConfig::COLOR_WHITE);
     char buf[20];
     snprintf(buf, sizeof(buf), "HI %ld", _highScore);
-    drawCentred(canvas, buf, 92, ArcadeConfig::COLOR_GREEN);
+    drawCentred(canvas, buf, 96, ArcadeConfig::COLOR_GREEN);
     drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
     drawQuitHint(canvas);
 }
