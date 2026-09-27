@@ -30,21 +30,23 @@ PALETTE = {
 }
 
 LEFT_HALF = [
-    "...............K",
-    "..............KW",
-    "..............KL",
-    ".............KcC",
-    ".............KcC",
-    "............KDLW",
-    "..........KKDMLL",
-    "K.......KKDDMMLL",
-    "RKK...KKDMMMLLLW",
-    "KRLKKKDMMMLLLLLL",
-    ".KMLLLLMMMMMDMLL",
-    "..KDDDDDDDDDKDML",
-    "...KKKKKKKKKKOKD",
-    "............KYOK",
-    ".............KOK",
+    "................",
+    "........K.......",
+    "........KK......",
+    "........KMK..KKK",
+    "........KDMKKcCW",
+    "........KDMKcCCC",
+    "........KKDLLccc",
+    "......KKDMMLLLLW",
+    ".....KDMMMLLLLLL",
+    "...KKDMMMLLLLLLL",
+    ".KKDMMLLLLLMMLLL",
+    "KRLLLLLLLMMDDMML",
+    ".KRDDDDDDDDKDMML",
+    "..KKKKKKKKKOOKDD",
+    "..........KOYYOK",
+    "..........KOYYOK",
+    "...........KOOK.",
 ]
 
 W, H = 32, 20
@@ -54,7 +56,8 @@ BANK_SHEAR = 0.14   # pixels of vertical shift per pixel from the centre
 def level_frame():
     rows = [r + r[::-1] for r in LEFT_HALF]
     # Padding above and below leaves room for the bank frame's shear.
-    return ["." * W] * 2 + rows + ["." * W] * (H - 2 - len(rows))
+    top = (H - len(rows)) // 2
+    return ["." * W] * top + rows + ["." * W] * (H - top - len(rows))
 
 
 def bank_frame(level):

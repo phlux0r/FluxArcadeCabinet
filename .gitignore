@@ -15,3 +15,4 @@ Thumbs.db
 
 # Host test harness build output
 test/.build/
+__pycache__/

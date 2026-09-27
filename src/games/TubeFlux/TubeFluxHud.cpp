@@ -49,16 +49,14 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
         canvas.drawRect(0, 10, W, canvas.height() - 10, ArcadeConfig::COLOR_RED);
         canvas.drawRect(1, 11, W - 2, canvas.height() - 12, ArcadeConfig::COLOR_RED);
     }
+    // Both sit just under the HUD strip, clear of the tunnel's middle where
+    // the next blocks come from. The tier number is already in the HUD.
     if (before(_tierBannerUntil)) {
-        char buf[12];
-        snprintf(buf, sizeof(buf), "TIER %d", _tier);
-        drawCentred(canvas, buf, 36, ArcadeConfig::COLOR_CYAN, 2);
-        drawCentred(canvas, "FASTER", 54, ArcadeConfig::COLOR_WHITE);
-    }
-    if (before(_nearMissUntil)) {
+        if ((millis() / 200) & 1) drawCentred(canvas, "SPEED UP", 13, ArcadeConfig::COLOR_CYAN);
+    } else if (before(_nearMissUntil)) {
         char buf[16];
         snprintf(buf, sizeof(buf), "CLOSE +%d", NEAR_MISS_POINTS);
-        drawCentred(canvas, buf, 24, ArcadeConfig::COLOR_MAGENTA);
+        drawCentred(canvas, buf, 13, ArcadeConfig::COLOR_MAGENTA);
     }
 }
 

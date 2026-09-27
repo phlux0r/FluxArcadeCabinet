@@ -81,9 +81,9 @@ enough for it not to be a normal shot).
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run; it has no in-game use yet.
 
-With six games the launcher's "[JOY] MOVE / [BTN A] GO" hint sits just below
-the background art's menu box, over the grid floor. Still readable, but a
-seventh game needs the list or the hint moved.
+The launcher's "[JOY] MOVE / [BTN A] GO" hint sits below the background
+art's menu box (rows 126 and 136), leaving the box for the game list: six
+rows fit, and a seventh would need a tighter row pitch.
 
 ## Project Structure
 
