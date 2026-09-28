@@ -5,7 +5,9 @@
 // Anything specific to the real engine is therefore invisible here — it was
 // blind to the bug where its shared task state was declared `static` in a
 // header, which silenced the whole cabinet once more than one .cpp included
-// it. Audio behaviour still has to be checked on hardware.
+// it. Audio behaviour still has to be checked on hardware; the real mixer's
+// logic (audio/AudioMixer.h, audio/AudioLoader.h) has its own host test,
+// test/audio_test.cpp.
 #include <Arduino.h>
 
 struct AudioEngine {
@@ -21,4 +23,9 @@ struct AudioEngine {
     bool isMelodyPlaying() const { return false; }
     void playExplosionSound(const uint8_t*, size_t) { ++wavs; }
     void playTankStartSound() {}
+    void playLaunchMelody() { ++melodies; }
+    void preload(const char*) {}
+    void setVolume(float) {}
+    void setMusicEnabled(bool) {}
+    void setFxEnabled(bool) {}
 };

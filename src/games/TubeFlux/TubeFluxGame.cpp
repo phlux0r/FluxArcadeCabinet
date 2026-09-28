@@ -47,6 +47,10 @@ void TubeFluxGame::init(AudioEngine &audio) {
     static const int n[] = { 440, 660, 880, 1320 };
     static const int d[] = {  80,  80,  80,  200 };
     audio.playMelody(n, d, 4);
+    // Decoded into the mixer's cache now, so the first play isn't late.
+    static const char* const sfx[] = { "/audio/shot.wav", "/audio/explosion.wav",
+                                       "/audio/tube_bump.wav", "/audio/tube_powerup.wav" };
+    for (const char* f : sfx) audio.preload(f);
 }
 
 void TubeFluxGame::startNewGame(AudioEngine &audio) {

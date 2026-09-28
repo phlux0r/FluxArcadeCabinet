@@ -18,7 +18,7 @@ class LauncherMenu {
 private:
     int  _selection     = 0;
     bool _joyWasNeutral = true;
-    bool _joyXWasNeutral = true;   // For volume X-axis debounce
+    bool _joyXWasNeutral = true;
 
     const GameEntry* _games     = nullptr;
     int              _gameCount = 0;
@@ -26,89 +26,199 @@ private:
     unsigned long _blinkTimer = 0;
     bool          _blinkState = false;
 
-    // Volume — persisted in NVS
-    float         _volume     = 0.8f;
+    // Settings, persisted in NVS ("cabinet": volume, music, fx) and edited
+    // on the setup page, which B opens.
+    float         _volume  = 0.8f;
+    bool          _musicOn = true;
+    bool          _fxOn    = true;
     Preferences   _prefs;
 
-    // Volume bar layout — plain values to avoid static const init issues
-    // Portrait screen is 128x160. Bar sits in bottom 18px.
-    static const int VOL_BAR_X  = 8;
-    static const int VOL_BAR_Y  = 142;   // 160 - 18
-    static const int VOL_BAR_W  = 112;   // 128 - 16
-    static const int VOL_BAR_H  = 6;
-    static const int VOL_STEPS  = 10;
+    bool _inSetup  = false;
+    int  _setupSel = 0;
+    // B opens/closes setup on release, but only after a press seen here:
+    // a game exited by holding B would otherwise open setup on arrival.
+    bool _bArmed   = false;
+    bool _aArmed   = false;
+
+    enum { SET_VOLUME, SET_MUSIC, SET_FX, SET_BACK, SET_COUNT };
+
+    static const int VOL_STEPS = 10;
     static constexpr float VOL_STEP_SIZE = 1.0f / VOL_STEPS;
 
-    void loadVolume() {
+    void loadSettings() {
         _prefs.begin("cabinet", true);
-        _volume = _prefs.getFloat("volume", 0.8f);
+        _volume  = _prefs.getFloat("volume", 0.8f);
+        _musicOn = _prefs.getBool("music", true);
+        _fxOn    = _prefs.getBool("fx", true);
         _prefs.end();
     }
 
-    void saveVolume() {
+    void saveSettings() {
         _prefs.begin("cabinet", false);
         _prefs.putFloat("volume", _volume);
+        _prefs.putBool("music", _musicOn);
+        _prefs.putBool("fx", _fxOn);
         _prefs.end();
     }
 
-    void renderMenu(GFXcanvas16 &canvas) {
-        // Background image
+    void applySettings(AudioEngine &audio) {
+        audio.setVolume(_volume);
+        audio.setMusicEnabled(_musicOn);
+        audio.setFxEnabled(_fxOn);
+    }
+
+    void drawBackground(GFXcanvas16 &canvas) {
         for (int i = 0; i < (ArcadeConfig::PORTRAIT_WIDTH * ArcadeConfig::PORTRAIT_HEIGHT); i++) {
             uint16_t px = pgm_read_word(&flux_arcade_128x160_data[i]);
             canvas.drawPixel(i % ArcadeConfig::PORTRAIT_WIDTH,
                             i / ArcadeConfig::PORTRAIT_WIDTH, px);
         }
+    }
+
+    // Row highlight shared by both pages.
+    void drawRow(GFXcanvas16 &canvas, int yPos, bool selected) {
+        if (selected) {
+            uint16_t rowColor = _blinkState ? ArcadeConfig::COLOR_GREEN : 0x03E0;
+            canvas.fillRect(26, yPos - 2, 76, 10, rowColor);
+            canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
+        } else {
+            canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        }
+    }
+
+    // Nav hint, below the background art's menu box: its bottom border is
+    // row 123 and the art's INSERT COIN starts at row 146, so three lines
+    // fit only at a 7px pitch (124/131/138, the last ending on row 145).
+    void drawHint(GFXcanvas16 &canvas, const char* a, const char* b, const char* c) {
+        canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
+        const char* lines[3] = { a, b, c };
+        for (int i = 0; i < 3; i++) {
+            if (!lines[i]) continue;
+            canvas.setCursor(36, 124 + i * 7);
+            canvas.print(lines[i]);
+        }
+    }
+
+    void renderMenu(GFXcanvas16 &canvas) {
+        drawBackground(canvas);
 
         // Game list — rows packed tighter (12px pitch, 10px tall highlight,
         // was 15/12) so a 5th entry still lands inside the background
         // art's baked-in menu rectangle instead of spilling past it.
         for (int i = 0; i < _gameCount; i++) {
             int yPos = 38 + (i * 12);
-            if (i == _selection) {
-                uint16_t rowColor = _blinkState ? ArcadeConfig::COLOR_GREEN : 0x03E0;
-                canvas.fillRect(26, yPos - 2, 76, 10, rowColor);
-                canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
-            } else {
-                canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-            }
+            drawRow(canvas, yPos, i == _selection);
             canvas.setCursor(38, yPos);
             canvas.print(_games[i].name);
         }
 
-        // Nav hint, below the background art's menu box: its bottom border
-        // is row 123 and the art's INSERT COIN starts at row 146, so two
-        // 8px lines fit at 126 and 136. The box itself holds the game list
-        // (six rows at a 12px pitch end at row 105).
-        const int navY = 126;
+        drawHint(canvas, "[JOY] MOVE", "[BTN A] GO", "[BTN B] SETUP");
+    }
+
+    void renderSetup(GFXcanvas16 &canvas) {
+        drawBackground(canvas);
+
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(36, navY);
-        canvas.print("[JOY] MOVE");
-        canvas.setCursor(36, navY + 10);
-        canvas.print("[BTN A] GO");
+        canvas.setCursor(49, 38);
+        canvas.print("SETUP");
 
-        // Volume strip (moved up 20px)
-        //canvas.fillRect(0, 120, 148, 20, 0x1082);
-        //canvas.drawFastHLine(0, 120, 128, ArcadeConfig::COLOR_AMBER);
-
-        canvas.setTextSize(1);
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(2, 150);
-        canvas.print("VOL");
-
-        canvas.drawRect(24, 153, 100, 4, ArcadeConfig::COLOR_AMBER);
-
-        int fillW = (int)(98.0f * _volume);
+        // VOLUME, with its bar on the line below.
+        drawRow(canvas, 52, _setupSel == SET_VOLUME);
+        canvas.setCursor(38, 52);
+        canvas.print("VOLUME");
+        canvas.drawRect(30, 63, 68, 5, ArcadeConfig::COLOR_AMBER);
+        int fillW = (int)(66.0f * _volume + 0.5f);
         if (fillW > 0) {
             uint16_t fillColor = (_volume > 0.6f) ? ArcadeConfig::COLOR_GREEN
-                            : (_volume > 0.3f) ? ArcadeConfig::COLOR_AMBER
-                            :                    ArcadeConfig::COLOR_RED;
-            canvas.fillRect(25, 154, fillW, 2, fillColor);
+                               : (_volume > 0.3f) ? ArcadeConfig::COLOR_AMBER
+                               :                    ArcadeConfig::COLOR_RED;
+            canvas.fillRect(31, 64, fillW, 3, fillColor);
+        }
+        for (int s = 1; s < VOL_STEPS; s++) {
+            canvas.drawFastVLine(31 + 66 * s / VOL_STEPS, 64, 3, ArcadeConfig::COLOR_BLACK);
         }
 
-        for (int s = 1; s < 10; s++) {
-            int tx = 25 + (int)(98.0f * s / 10.0f);
-            canvas.drawFastVLine(tx, 154, 2, ArcadeConfig::COLOR_BLACK);
+        drawRow(canvas, 74, _setupSel == SET_MUSIC);
+        canvas.setCursor(38, 74);
+        canvas.print(_musicOn ? "MUSIC  ON" : "MUSIC  OFF");
+
+        drawRow(canvas, 86, _setupSel == SET_FX);
+        canvas.setCursor(38, 86);
+        canvas.print(_fxOn ? "FX     ON" : "FX     OFF");
+
+        drawRow(canvas, 98, _setupSel == SET_BACK);
+        canvas.setCursor(38, 98);
+        canvas.print("BACK");
+
+        drawHint(canvas, "[JOY] SELECT", "[BTN A] CHANGE", "[BTN B] BACK");
+    }
+
+    // One setup page frame. Left/right and A change the selected setting;
+    // every change is saved at once, so nothing is lost at power-off.
+    void updateSetup(const InputState &input, bool press, AudioEngine &audio) {
+        bool joyYActive = (input.joyUp || input.joyDown);
+        if (!joyYActive) {
+            _joyWasNeutral = true;
+        } else if (_joyWasNeutral) {
+            _joyWasNeutral = false;
+            // Same (inverted) mapping as the game list.
+            _setupSel += input.joyDown ? -1 : 1;
+            _setupSel = (_setupSel + SET_COUNT) % SET_COUNT;
+            audio.playTone(660, 40);
         }
+
+        int dir = 0;
+        bool joyXActive = (input.joyLeft || input.joyRight);
+        if (!joyXActive) {
+            _joyXWasNeutral = true;
+        } else if (_joyXWasNeutral) {
+            _joyXWasNeutral = false;
+            dir = input.joyLeft ? -1 : 1;
+        }
+
+        switch (_setupSel) {
+        case SET_VOLUME:
+            if (dir != 0) {
+                float v = constrain(_volume + dir * VOL_STEP_SIZE, 0.0f, 1.0f);
+                if (v != _volume) {
+                    _volume = v;
+                    audio.setVolume(_volume);
+                    saveSettings();
+                    audio.playTone(880, 150);
+                }
+            }
+            break;
+        case SET_MUSIC:
+            if (dir != 0 || press) {
+                _musicOn = !_musicOn;
+                audio.setMusicEnabled(_musicOn);
+                saveSettings();
+                audio.playTone(_musicOn ? 880 : 440, 80);
+            }
+            break;
+        case SET_FX:
+            if (dir != 0 || press) {
+                _fxOn = !_fxOn;
+                audio.setFxEnabled(_fxOn);
+                saveSettings();
+                audio.playTone(880, 80);   // silent when just switched off
+            }
+            break;
+        case SET_BACK:
+            if (press) closeSetup(audio);
+            break;
+        }
+    }
+
+    void openSetup(AudioEngine &audio) {
+        _inSetup = true;
+        _setupSel = SET_VOLUME;
+        audio.playTone(784, 60);
+    }
+
+    void closeSetup(AudioEngine &audio) {
+        _inSetup = false;
+        audio.playTone(523, 60);
     }
 
 public:
@@ -118,7 +228,7 @@ public:
         _games     = games;
         _gameCount = count;
         _selection = 0;
-        loadVolume();
+        loadSettings();
     }
 
     void onEnter(AudioEngine &audio) {
@@ -127,7 +237,10 @@ public:
         _joyXWasNeutral = true;
         _blinkTimer     = millis();
         _blinkState     = false;
-        audio.setVolume(_volume);
+        _inSetup        = false;
+        _aArmed         = false;
+        _bArmed         = false;
+        applySettings(audio);
         audio.playTone(523, 80);
     }
 
@@ -148,6 +261,29 @@ public:
             _blinkTimer = millis();
         }
 
+        // Buttons act on release, and only after a press seen here (see
+        // _bArmed), so a held button can't carry over from a game.
+        if (input.btnAPressed) _aArmed = true;
+        if (input.btnBPressed) _bArmed = true;
+        const bool aTap = input.btnAReleased && _aArmed;
+        const bool bTap = input.btnBReleased && _bArmed;
+        if (input.btnAReleased) _aArmed = false;
+        if (input.btnBReleased) _bArmed = false;
+
+        if (_inSetup) {
+            if (bTap) closeSetup(audio);
+            else      updateSetup(input, aTap, audio);
+            if (_inSetup) renderSetup(canvas);
+            else          renderMenu(canvas);
+            return STATE_LAUNCHER_MENU;
+        }
+
+        if (bTap) {
+            openSetup(audio);
+            renderSetup(canvas);
+            return STATE_LAUNCHER_MENU;
+        }
+
         // --- Y axis: menu navigation ---
         bool joyYActive = (input.joyUp || input.joyDown);
         if (!joyYActive) {
@@ -165,27 +301,8 @@ public:
             }
         }
 
-        // --- X axis: volume adjustment ---
-        bool joyXActive = (input.joyLeft || input.joyRight);
-        if (!joyXActive) {
-            _joyXWasNeutral = true;
-        } else if (_joyXWasNeutral) {
-            _joyXWasNeutral = false;
-            float newVol = _volume;
-            if (input.joyLeft)  newVol -= VOL_STEP_SIZE;
-            if (input.joyRight) newVol += VOL_STEP_SIZE;
-            newVol = constrain(newVol, 0.0f, 1.0f);
-            if (newVol != _volume) {
-                _volume = newVol;
-                audio.setVolume(_volume);
-                saveVolume();
-                audio.mute();  // Stop anything playing so tone can fire
-                audio.playTone(880, 150);
-            }
-        }
-
         // --- Launch ---
-        if (input.btnAReleased && _gameCount > 0) {
+        if (aTap && _gameCount > 0) {
             Serial.printf("[LAUNCHER] Launching: %s\n", _games[_selection].name);
             audio.playLaunchMelody();
             return _games[_selection].state;

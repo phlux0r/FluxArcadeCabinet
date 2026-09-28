@@ -4,6 +4,7 @@
 #   test/build.sh                  # build, then run every game's scenarios
 #   test/build.sh god 30000        # one Tank Flux scenario
 #   test/build.sh tube god 30000   # one Tube Flux scenario
+#   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh --build-only
 #
 # Needs a host g++ with C++17 and Jet's sources. Jet is found automatically
@@ -53,10 +54,14 @@ build_harness() {   # <name> <sources...>
 }
 build_harness tankflux_harness "$HERE/tankflux_harness.cpp" "$ROOT"/src/games/TankFlux/*.cpp
 build_harness tubeflux_harness "$HERE/tubeflux_harness.cpp" "$ROOT"/src/games/TubeFlux/*.cpp
+# The audio mixer and loader are plain C++; this uses no stubs at all.
+echo "building audio_test"
+g++ "${CXXFLAGS[@]}" -Wall -I"$ROOT/src" "$HERE/audio_test.cpp" -o "$OUT/audio_test"
 
 [ "${1:-}" = "--build-only" ] && exit 0
 
 cd "$OUT"
+[ "${1:-}" = audio ] && exec ./audio_test
 game=tankflux
 case "${1:-}" in
   tank) game=tankflux; shift ;;
@@ -65,6 +70,8 @@ esac
 if [ $# -gt 0 ]; then
   "./${game}_harness" "$@"
 else
+  echo "=== audio"
+  ./audio_test | tail -1
   for g in tankflux tubeflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")
     # Tube Flux's attract screen includes a demo run: idle sits through it.

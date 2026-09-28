@@ -45,6 +45,10 @@ void TankFluxGame::init(AudioEngine &audio) {
     _lastFrameMs = millis();   // so the first frame isn't a huge clamped step
     // /audio/tank_start.wav from SD, or a generated melody if it's missing.
     audio.playTankStartSound();
+    // Decoded into the mixer's cache now, so the first play isn't late.
+    static const char* const sfx[] = { "/audio/shot.wav", "/audio/explosion.wav",
+                                       "/audio/repair.wav" };
+    for (const char* f : sfx) audio.preload(f);
 }
 
 void TankFluxGame::startNewGame(AudioEngine &audio) {
