@@ -58,6 +58,9 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
     _phase = PHASE_PLAYING;
     _phaseEnteredMs = millis();
     audio.playTone(900, 80);
+    // Music plays during a run only: not on the attract screen or in its
+    // demo, and it stops at game over (restarting with the next run).
+    audio.loopWAV(TUBE_MUSIC);
 }
 
 // Everything a run starts from, shared by a real game and the attract demo.
@@ -114,6 +117,7 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     _crossObj->enabled = false;
     hideChase();
     hideBonus();
+    audio.stopLoop();
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);

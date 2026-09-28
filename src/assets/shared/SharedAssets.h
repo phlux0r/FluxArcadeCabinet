@@ -5,7 +5,7 @@
 // SHARED ASSETS — used by more than one game
 //
 // PRIMARY: WAV files on SD card at these paths:
-//   /audio/gamestart.wav   — title screen / attract entry sound
+//   /audio/gamestart.wav   — no longer played by any game (playStartupSound)
 //   /audio/gameend.wav     — game over sound
 //   /audio/explosion.wav   — ship/crash explosion
 //

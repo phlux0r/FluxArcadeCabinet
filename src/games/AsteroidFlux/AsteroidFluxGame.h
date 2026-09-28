@@ -218,7 +218,7 @@ public:
         _countdownWAVReady = false;
         _attractMusicStarted = false;
         _gameOverPending   = false;
-        audio.playStartupSound(gamestart_data, sizeof(gamestart_data));
+        // No start sound: the attract loop starts straight away.
     }
 
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
@@ -244,9 +244,8 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            // Issue loop command once only — not every frame — and only
-            // once the startup sound has finished, as the two now mix.
-            if (!_attractMusicStarted && !audio.isWAVPlaying()) {
+            // Issue loop command once only — not every frame
+            if (!_attractMusicStarted) {
                 Serial.printf("[Asteroid] Playing loop");
                 audio.loopWAV("/audio/asteroid_loop.wav");
                 _attractMusicStarted = true;

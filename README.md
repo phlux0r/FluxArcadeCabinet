@@ -245,12 +245,12 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 
 | File | Used by |
 |---|---|
-| `gamestart.wav`, `gameend.wav`, `explosion.wav` | Shared across games |
+| `gameend.wav`, `explosion.wav` | Shared across games |
 | `asteroid_loop.wav` | Asteroid Flux |
 | `lander_start.wav`, `countdown.wav`, `land_success.wav` | Lander Flux |
 | `jump.wav`, `death.wav` | Platform Flux |
 | `tank_start.wav`, `tank_loop.wav`, `shot.wav`, `repair.wav` | Tank Flux |
-| `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
+| `flux-tube-track.wav` (music, looped during a run), `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
 
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
 16-bit signed PCM (mixed at 44.1kHz, stereo folded to mono). Effects up to
