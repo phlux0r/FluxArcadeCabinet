@@ -247,7 +247,7 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | File | Used by |
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
-| `asteroid_loop.wav` | Asteroid Flux |
+| `asteroid_loop.wav` (music, looped during play, not on the attract screen) | Asteroid Flux |
 | `lander_start.wav`, `countdown.wav`, `land_success.wav` | Lander Flux |
 | `jump.wav`, `death.wav` | Platform Flux |
 | `tank_start.wav`, `tank_loop.wav`, `shot.wav`, `repair.wav` | Tank Flux |

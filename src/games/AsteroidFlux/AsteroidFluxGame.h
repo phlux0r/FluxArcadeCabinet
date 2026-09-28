@@ -70,9 +70,9 @@ private:
     uint32_t _countdownDurationMs = 1800;  // fallback if no SD card
     bool     _countdownWAVReady   = false;
 
-    // Attract music — track whether loop command has been issued
-    // (independent of audio task playing state to avoid restart loop)
-    bool _attractMusicStarted = false;
+    // Gameplay music: started when the first countdown ends, kept through
+    // respawns, stopped at game over. Not played on the attract screen.
+    bool _gameMusicStarted = false;
 
     // Last-life hit — route through PHASE_HIT before PHASE_GAMEOVER
     bool _gameOverPending = false;
@@ -186,9 +186,9 @@ private:
         _countdownVal = 3;
         _phaseTimer   = millis();
         _gameOverPending     = false;
-        _attractMusicStarted = false;
+        _gameMusicStarted = false;
 
-        // Stop attract music, play countdown WAV
+        // Countdown WAV; the music starts when the countdown ends
         audio.playWAV("/audio/countdown.wav");
         _countdownWAVReady = false;
     }
@@ -216,7 +216,7 @@ public:
         _shipXOffset       = 0.0f;
         _shipYOffset       = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
         _countdownWAVReady = false;
-        _attractMusicStarted = false;
+        _gameMusicStarted = false;
         _gameOverPending   = false;
         // No start sound: the attract loop starts straight away.
     }
@@ -244,13 +244,6 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            // Issue loop command once only — not every frame
-            if (!_attractMusicStarted) {
-                Serial.printf("[Asteroid] Playing loop");
-                audio.loopWAV("/audio/asteroid_loop.wav");
-                _attractMusicStarted = true;
-            }
-
             if (millis() - _attractSlideTimer > 8000) {
                 _attractSlide      = (_attractSlide == SLIDE_SPLASH) ? SLIDE_INFO : SLIDE_SPLASH;
                 _attractSlideTimer = millis();
@@ -308,6 +301,10 @@ public:
                 canvas.setTextSize(1);
             } else {
                 _phase = PHASE_PLAYING;
+                if (!_gameMusicStarted) {
+                    audio.loopWAV("/audio/asteroid_loop.wav");
+                    _gameMusicStarted = true;
+                }
             }
             flushLandscape(canvas);
             return true;
@@ -416,6 +413,7 @@ public:
                     _phaseTimer        = millis();
                     _gameOverEnteredMs = millis();
                     _gameOverPending   = false;
+                    audio.stopLoop();
                     audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 } else {
                     // Respawn countdown
@@ -487,7 +485,6 @@ public:
                 _attractSlide        = SLIDE_SPLASH;
                 _attractSlideTimer   = millis();
                 _btnBWasHeld         = false;
-                _attractMusicStarted = false;  // Allow music to restart
             }
 
             return true;
