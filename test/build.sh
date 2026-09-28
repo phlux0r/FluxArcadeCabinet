@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Builds the host harness (see README.md) and runs it unless --build-only.
+# Builds the host harnesses (see README.md) and runs them unless --build-only.
 #
-#   test/build.sh                  # build, then run all three scenarios
-#   test/build.sh god 30000        # build, then run one scenario
+#   test/build.sh                  # build, then run every game's scenarios
+#   test/build.sh god 30000        # one Tank Flux scenario
+#   test/build.sh tube god 30000   # one Tube Flux scenario
 #   test/build.sh --build-only
 #
 # Needs a host g++ with C++17 and Jet's sources. Jet is found automatically
@@ -42,22 +43,36 @@ if [ ! -f "$OUT/libjet.a" ]; then
   ar rcs "$OUT/libjet.a" "$OUT"/*.o
 fi
 
-echo "building harness"
 # -Itest/stub comes first so its Arduino.h/GFX/AudioEngine shadow the real ones.
-g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable \
-    -I"$HERE/stub" -I"$ROOT/src" -I"$ROOT/include" -I"$JET_SRC" \
-    "$HERE/tankflux_harness.cpp" "$ROOT"/src/games/TankFlux/*.cpp \
-    "$OUT/libjet.a" -o "$OUT/tankflux_harness"
+build_harness() {   # <name> <sources...>
+  local name="$1"; shift
+  echo "building $name"
+  g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable \
+      -I"$HERE/stub" -I"$ROOT/src" -I"$ROOT/include" -I"$JET_SRC" \
+      "$@" "$OUT/libjet.a" -o "$OUT/$name"
+}
+build_harness tankflux_harness "$HERE/tankflux_harness.cpp" "$ROOT"/src/games/TankFlux/*.cpp
+build_harness tubeflux_harness "$HERE/tubeflux_harness.cpp" "$ROOT"/src/games/TubeFlux/*.cpp
 
 [ "${1:-}" = "--build-only" ] && exit 0
 
 cd "$OUT"
+game=tankflux
+case "${1:-}" in
+  tank) game=tankflux; shift ;;
+  tube) game=tubeflux; shift ;;
+esac
 if [ $# -gt 0 ]; then
-  ./tankflux_harness "$@"
+  "./${game}_harness" "$@"
 else
-  for s in "play 20000" "god 30000" "menus 12000"; do
-    echo "=== $s"
-    # shellcheck disable=SC2086
-    ./tankflux_harness $s | tail -3
+  for g in tankflux tubeflux; do
+    scenarios=("play 20000" "god 30000" "menus 12000")
+    # Tube Flux's attract screen includes a demo run: idle sits through it.
+    [ "$g" = tubeflux ] && scenarios+=("idle 8000" "demoexit")
+    for s in "${scenarios[@]}"; do
+      echo "=== $g $s"
+      # shellcheck disable=SC2086
+      "./${g}_harness" $s | tail -6
+    done
   done
 fi

@@ -75,13 +75,11 @@ private:
             canvas.print(_games[i].name);
         }
 
-        // Nav hint — positioned relative to the last game row (38 + (n-1)*12,
-        // 10px tall) with a 2px gap, so it never overlaps as games are added
-        // instead of colliding once the list grows past what fit at the old
-        // fixed y=100. With the tighter row pitch this lands back at ~y=96
-        // for 5 games — close to the original fixed position that fit the
-        // background art's rectangle before this game was added.
-        int navY = 38 + (_gameCount - 1) * 12 + 8 + 2;
+        // Nav hint, below the background art's menu box: its bottom border
+        // is row 123 and the art's INSERT COIN starts at row 146, so two
+        // 8px lines fit at 126 and 136. The box itself holds the game list
+        // (six rows at a 12px pitch end at row 105).
+        const int navY = 126;
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
         canvas.setCursor(36, navY);
         canvas.print("[JOY] MOVE");
