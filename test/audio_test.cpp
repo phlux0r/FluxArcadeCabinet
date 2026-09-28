@@ -285,6 +285,20 @@ int main() {
         g_flaky = false;
     }
 
+    // --- A long effect (3.5s, over 65536 frames) plays once and stops:
+    // a 16.16 position used to wrap and replay it forever.
+    {
+        std::vector<int> fx(156555, 700);
+        writeWav("/audio/long.wav", 44100, 16, 1, fx);
+        Rig r(1 << 20, 512 * 1024);     // cached, so it plays on a voice
+        r.cmd(LC_PLAY_FX, "/audio/long.wav");
+        auto out = r.run(250000);
+        int n = nonZero(out);
+        CHECK(r.loader.isCached("/audio/long.wav"), "long effect is cached");
+        CHECK(n == 156555 && r.mixer.activeVoices() == 0 && !r.mixer.fxBusy,
+              "long effect plays once: %d of 156555 samples, %d voices", n, r.mixer.activeVoices());
+    }
+
     // --- The music rides out a 400ms loader stall (seen on hardware while
     // the display held the SD card's bus).
     {

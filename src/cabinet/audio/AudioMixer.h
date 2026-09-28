@@ -195,7 +195,10 @@ public:
 private:
     struct Voice {
         Pcm*     pcm = nullptr;
-        uint32_t pos = 0;          // 16.16 fixed point, in source frames
+        uint32_t idx = 0;          // source frame
+        uint32_t frac = 0;         // and the 16-bit fraction past it (a
+                                   // 16.16 position would wrap at 65536 frames,
+                                   // 1.5s, replaying long effects forever)
         uint32_t step = 0;
         uint32_t age = 0;
     };
@@ -286,7 +289,8 @@ private:
             stolen.fetch_add(1, std::memory_order_relaxed);
         }
         slot->pcm = pcm;
-        slot->pos = 0;
+        slot->idx = 0;
+        slot->frac = 0;
         slot->step = (uint32_t)(((uint64_t)pcm->rate << 16) / OUT_RATE);
         slot->age = ++_age;
         pcm->playing.fetch_add(1, std::memory_order_acq_rel);
@@ -300,12 +304,14 @@ private:
 
     // Nearest-sample resampling: fine for effects recorded at 8-44.1kHz.
     int32_t voiceSample(Voice& v) {
-        uint32_t idx = v.pos >> 16;
+        const uint32_t idx = v.idx;
         if (idx >= v.pcm->frames) { stopVoice(v); return 0; }
         int32_t s = v.pcm->is8bit
             ? ((int32_t)((const uint8_t*)v.pcm->data)[idx] - 128) * 256
             : (int32_t)((const int16_t*)v.pcm->data)[idx];
-        v.pos += v.step;
+        v.frac += v.step;
+        v.idx += v.frac >> 16;
+        v.frac &= 0xFFFF;
         return s;
     }
 
