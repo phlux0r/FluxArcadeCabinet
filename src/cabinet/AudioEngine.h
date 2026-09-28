@@ -1,36 +1,52 @@
 #ifndef AUDIO_ENGINE_H
 #define AUDIO_ENGINE_H
 
+// Build with -DAUDIO_LEGACY for the old one-sound-at-a-time engine, in case
+// the mixer misbehaves on the hardware (see platformio.ini).
+#ifdef AUDIO_LEGACY
+#include "AudioEngineLegacy.h"
+#else
+
 #include <Arduino.h>
 #include <driver/i2s.h>
 #include <SD.h>
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <freertos/semphr.h>
+#include <stdarg.h>
 #include "ArcadeConfig.h"
+#include "audio/AudioLoader.h"
 
 // =============================================================================
-// AUDIO ENGINE — MAX98357A via I2S
+// AUDIO ENGINE: MAX98357A via I2S, with a software mixer.
 //
-// WAV STREAMING: Runs on a dedicated FreeRTOS task (Core 0) so audio playback
-// is completely independent of the render loop speed. No more slowing or
-// stuttering regardless of how long a frame takes on Core 1.
+// Music and effects play at the same time. Everything playing is summed
+// into one stream for the single I2S output (audio/AudioMixer.h): one music
+// track, a jingle, four effects and the tone synth at once. Music and
+// effects can each be switched off, under a master volume (the launcher's
+// setup page, saved in NVS).
 //
-// WAV HEADER: Scans for the 'data' chunk rather than assuming fixed 44-byte
-// offset — handles non-standard headers (LIST, INFO chunks etc).
+// Two tasks on core 0, the game loop being on core 1:
+//   mixer   (priority 5): mixes 256-frame blocks and writes them to I2S.
+//           It never touches the SD card, so it never stalls; only ~35ms
+//           of audio is queued ahead of the speaker, so sounds start fast.
+//   loader  (priority 3): all SD access (audio/AudioLoader.h). Effects are
+//           decoded into PSRAM the first time and kept; music and jingles
+//           stream into ring buffers holding ~743ms, which rides out a
+//           slow card.
+// The game loop only posts commands; nothing here blocks it.
 //
-// TONE/MELODY: Still driven by update() on Core 1 (render loop).
-//             Tones don't play while WAV is active.
+// API: the same as the old engine, so every game works unchanged, and now
+//   loopWAV()         music (was: stopped by any other sound)
+//   playWAV()         an effect, mixed over everything
+//   playTone/Melody   the synth, mixed over everything (was: skipped while
+//                     a WAV played)
+//   preload()         load an effect ahead of its first play
+//   setMusicEnabled / setFxEnabled, setVolume (master)
 //
-// SD CARD PATHS:
-//   /audio/gamestart.wav
-//   /audio/gameend.wav
-//   /audio/explosion.wav
-//   /audio/jump.wav        (Platform Flux — falls back to a tone blip)
-//   /audio/death.wav       (Platform Flux — falls back to a tone blip)
-//
-// FALLBACK: PROGMEM 8kHz 8-bit arrays used when SD unavailable.
-//           Also streamed from the audio task.
+// SD CARD PATHS: see the README's SD card section. WAVs: 8 or 16-bit PCM,
+// mono or stereo, any rate (mixed at 44.1kHz).
+// FALLBACK: PROGMEM 8kHz 8-bit arrays when there's no SD card.
 // =============================================================================
 
 #define NOTE_C4   262
@@ -48,347 +64,179 @@
 #define NOTE_C6  1047
 #define NOTE_REST   0
 
-static const i2s_port_t I2S_PORT          = I2S_NUM_0;
-static const int        I2S_DMA_BUF_LEN   = 1024;   // Larger buffer = more headroom
-static const int        I2S_DMA_BUF_COUNT = 8;
-// Max samples writeToneSamples() can produce in one update() call. Actual
-// count is computed from real elapsed time (see _lastToneWriteUs), not a
-// fixed value — this is just the buffer's ceiling, sized well above a
-// worst-case slow frame so a catch-up burst never gets truncated.
-static const int        TONE_SAMPLES_PER_UPDATE = 2048;
+// Serial diagnostics: file opens, stream starts, read failures, and every
+// 2s (while anything's happening) a line of counters. See the README's
+// "Audio diagnostics". Build with -DAUDIO_DEBUG=0 to silence them.
+#ifndef AUDIO_DEBUG
+#define AUDIO_DEBUG 1
+#endif
 
-// Audio task config
-static const int        AUDIO_TASK_STACK  = 8192;  // 8KB — file I/O needs headroom
-static const int        AUDIO_TASK_PRIO   = 5;       // Higher than loop() (1)
-static const int        AUDIO_TASK_CORE   = 0;       // Core 0, loop() on Core 1
-static const size_t     WAV_READ_CHUNK    = 2048;    // bytes per task iteration
+static const i2s_port_t I2S_PORT = I2S_NUM_0;
 
-// =============================================================================
-// Shared state between render loop and audio task — protected by mutex
-// =============================================================================
-struct AudioTaskState {
-    // Command flags (written by Core 1, read by Core 0)
-    volatile bool  startWAV       = false;
-    volatile bool  startPROGMEM   = false;
-    volatile bool  stopRequested  = false;
-    volatile bool  loopEnabled    = false;   // replay when file ends
+namespace audiocfg {
+constexpr int      MIX_BLOCK       = 256;          // frames per mix (~5.8ms)
+constexpr int      DMA_BUF_LEN     = 256;          // frames
+constexpr int      DMA_BUF_COUNT   = 6;            // ~35ms queued ahead of the speaker
+constexpr uint32_t CACHE_BUDGET    = 768 * 1024;   // decoded effects, in PSRAM
+constexpr uint32_t CACHE_MAX_ENTRY = 320 * 1024;   // ~3.7s at 44.1kHz mono; longer plays as a jingle
+constexpr int      MIXER_PRIO      = 5, LOADER_PRIO = 3, AUDIO_CORE = 0;
+constexpr int      MIXER_STACK     = 4096, LOADER_STACK = 8192;
+constexpr int      PGM_SLOTS       = 4;            // PROGMEM fallback samples playing at once
+}  // namespace audiocfg
 
-    // WAV file path (written before startWAV = true)
-    char           wavPath[64]    = {0};
-
-    // Path to resume after a one-shot WAV finishes (empty = don't resume)
-    char           resumePath[64] = {0};
-
-    // PROGMEM sample (written before startPROGMEM = true)
-    const uint8_t* pgmData        = nullptr;
-    size_t         pgmLen         = 0;
-
-    // Status (written by Core 0, read by Core 1)
-    volatile bool     playing          = false;
-    volatile uint32_t wavDurationMs    = 0;    // computed from header
-    volatile uint32_t dataOffset       = 0;    // byte offset of data chunk in file
-
-    // Volume control — written by Core 1, read by Core 0
-    // Range 0.0 (silent) to 1.0 (full). Applied to all audio output.
-    volatile float volume = 0.8f;
-
-    // WAV metadata (written by Core 0 after header parse)
-    volatile uint32_t sampleRate    = 44100;
-    volatile uint16_t bitsPerSample = 16;
-    volatile uint16_t channels      = 1;
+// SD card access for the loader.
+class SdAudioFile : public audiomix::AudioFile {
+public:
+    bool     open(const char* path) override { close(); _f = SD.open(path, FILE_READ); return (bool)_f; }
+    void     close() override { if (_f) _f.close(); }
+    bool     isOpen() const override { return (bool)_f; }
+    int      read(uint8_t* b, int n) override { return _f ? (int)_f.read(b, (size_t)n) : 0; }
+    bool     seek(uint32_t p) override { return _f && _f.seek(p); }
+    uint32_t position() override { return _f ? (uint32_t)_f.position() : 0; }
+private:
+    File _f;
 };
 
+// Effects and rings go in PSRAM (2MB, mostly unused), internal RAM being
+// the scarce kind on this board; internal only if PSRAM is missing.
+inline void* audioAlloc(size_t n) {
+    void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : heap_caps_malloc(n, MALLOC_CAP_8BIT);
+}
+inline void audioFree(void* p) { heap_caps_free(p); }
+
 // `inline`, not `static`: this header is included from more than one .cpp,
-// and every file must share the single state the audio task reads.
-// `static` would give each file its own private copy.
-inline AudioTaskState    _audioState;
-inline SemaphoreHandle_t _audioMutex = nullptr;
+// and every file must share the one mixer and loader the tasks run.
+inline audiomix::Mixer        _audioMixer;
+inline SdAudioFile            _audioMusicFile, _audioJingleFile, _audioLoadFile;
+inline audiomix::AudioLoader  _audioLoader(_audioMixer, &_audioMusicFile, &_audioJingleFile, &_audioLoadFile,
+                                           audioAlloc, audioFree,
+                                           audiocfg::CACHE_BUDGET, audiocfg::CACHE_MAX_ENTRY);
 
-// Read buffer lives in internal RAM for fast SD access
-inline uint8_t _wavBuf[WAV_READ_CHUNK];
+// Diagnostics the tasks and the game side fill in (see AUDIO_DEBUG).
+namespace audiodiag {
+inline std::atomic<uint32_t> wavRequests{0}, toneRequests{0};
+inline std::atomic<uint32_t> mixQueueFull{0}, loadQueueFull{0};
+inline std::atomic<uint32_t> renderMaxUs{0};    // longest render() (CPU cost)
+inline std::atomic<uint32_t> periodMaxUs{0};    // longest time between blocks: over
+                                                // ~35ms the speaker ran dry
+inline std::atomic<uint32_t> stepMaxUs{0};      // longest loader step (mostly SD time)
 
-// =============================================================================
-// AUDIO TASK — runs on Core 0
-// =============================================================================
-inline void audioTask(void* param) {
-    File wavFile;
-    bool pgmMode      = false;
-    size_t pgmPos     = 0;
-    const uint8_t* pgmData = nullptr;
-    size_t pgmLen     = 0;
+inline void raiseMax(std::atomic<uint32_t>& m, uint32_t v) { if (v > m.load()) m.store(v); }
 
-    static int16_t outBuf[WAV_READ_CHUNK * 2]; // worst case: 8-bit mono → 16-bit stereo
+inline void log(const char* fmt, ...) {
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    Serial.print(buf);
+}
 
-    while (true) {
-        // --- Check for new command ---
-        if (_audioState.stopRequested) {
-            _audioState.stopRequested = false;
-            _audioState.playing       = false;
-            if (wavFile) wavFile.close();
-            pgmMode = false;
-            i2s_zero_dma_buffer(I2S_PORT);
-            taskYIELD();
-            continue;
+// One line of counters since boot, and the worst timings since the last
+// line. Printed from the loader task, only when a counter has moved.
+inline void report() {
+    static uint32_t last[8] = {};
+    const auto& M = _audioMixer;
+    const auto& L = _audioLoader;
+    uint32_t now[8] = { wavRequests.load(), toneRequests.load(), M.voicesStarted.load(),
+                        M.underruns[audiomix::STREAM_MUSIC].load(), L.readErrors.load(),
+                        L.shortReads.load(), mixQueueFull.load() + loadQueueFull.load(),
+                        L.loops.load() };
+    if (memcmp(now, last, sizeof(now)) == 0) return;
+    memcpy(last, now, sizeof(now));
+    Serial.printf("[AUDIO] wav %u (hit %u load %u big %u drop %u) voices %u stolen %u | tone %u/%u"
+                  " | music underrun %u loops %u, jingle underrun %u | sd err %u short %u"
+                  " | qfull %u/%u epoch-drop %u | max: loader %ums mix %uus period %ums\n",
+                  (unsigned)now[0], (unsigned)L.cacheHits.load(), (unsigned)L.loads.load(),
+                  (unsigned)L.bigPlays.load(), (unsigned)L.dropped.load(),
+                  (unsigned)now[2], (unsigned)M.stolen.load(),
+                  (unsigned)M.tonesStarted.load(), (unsigned)now[1],
+                  (unsigned)now[3], (unsigned)now[7],
+                  (unsigned)M.underruns[audiomix::STREAM_JINGLE].load(),
+                  (unsigned)now[4], (unsigned)now[5],
+                  (unsigned)mixQueueFull.load(), (unsigned)loadQueueFull.load(),
+                  (unsigned)M.epochDropped.load(),
+                  (unsigned)(stepMaxUs.load() / 1000), (unsigned)renderMaxUs.load(),
+                  (unsigned)(periodMaxUs.load() / 1000));
+    stepMaxUs.store(0);
+    renderMaxUs.store(0);
+    periodMaxUs.store(0);
+}
+}  // namespace audiodiag
+
+inline void audioMixerTask(void*) {
+    static int16_t out[audiocfg::MIX_BLOCK * 2];
+    uint32_t prev = micros();
+    for (;;) {
+        const uint32_t t0 = micros();
+        _audioMixer.render(out, audiocfg::MIX_BLOCK);
+        audiodiag::raiseMax(audiodiag::renderMaxUs, micros() - t0);
+        audiodiag::raiseMax(audiodiag::periodMaxUs, t0 - prev);
+        prev = t0;
+        size_t bw = 0;
+        i2s_write(I2S_PORT, out, sizeof(out), &bw, portMAX_DELAY);   // paces the task
+    }
+}
+
+inline void audioLoaderTask(void*) {
+    uint32_t lastReport = millis();
+    for (;;) {
+        const uint32_t t0 = micros();
+        _audioLoader.step();
+        audiodiag::raiseMax(audiodiag::stepMaxUs, micros() - t0);
+#if AUDIO_DEBUG
+        if (millis() - lastReport >= 2000) {
+            lastReport = millis();
+            audiodiag::report();
         }
-
-        if (_audioState.startWAV) {
-            _audioState.startWAV      = false;
-            _audioState.wavDurationMs = 0;  // Clear stale value before new file opens
-            if (wavFile) wavFile.close();
-            pgmMode = false;
-
-            wavFile = SD.open(_audioState.wavPath);
-            if (!wavFile) {
-                Serial.printf("[AUDIO] Cannot open: %s\n", _audioState.wavPath);
-                _audioState.playing = false;
-                taskYIELD();
-                continue;
-            }
-
-            // --- Parse WAV header: scan for 'fmt ' and 'data' chunks ---
-            uint8_t hdr[12];
-            wavFile.read(hdr, 12);
-            if (hdr[0]!='R'||hdr[1]!='I'||hdr[2]!='F'||hdr[3]!='F'||
-                hdr[8]!='W'||hdr[9]!='A'||hdr[10]!='V'||hdr[11]!='E') {
-                Serial.println("[AUDIO] Not a WAV file");
-                wavFile.close();
-                _audioState.playing = false;
-                taskYIELD();
-                continue;
-            }
-
-            uint32_t sampleRate = 44100;
-            uint16_t bits = 16, ch = 1;
-            bool foundData = false;
-
-            // Scan chunks until we find 'data'
-            while (wavFile.available()) {
-                uint8_t chunkHdr[8];
-                if (wavFile.read(chunkHdr, 8) != 8) break;
-                uint32_t chunkSize = chunkHdr[4] | (chunkHdr[5]<<8) |
-                                     (chunkHdr[6]<<16) | (chunkHdr[7]<<24);
-
-                if (chunkHdr[0]=='f'&&chunkHdr[1]=='m'&&chunkHdr[2]=='t'&&chunkHdr[3]==' ') {
-                    uint8_t fmt[16];
-                    uint32_t toRead = min((uint32_t)16, chunkSize);
-                    wavFile.read(fmt, toRead);
-                    if (chunkSize > 16) wavFile.seek(wavFile.position() + chunkSize - 16);
-                    ch          = fmt[2]  | (fmt[3]  << 8);
-                    sampleRate  = fmt[4]  | (fmt[5]  << 8) | (fmt[6]  << 16) | (fmt[7]  << 24);
-                    bits        = fmt[14] | (fmt[15] << 8);
-                } else if (chunkHdr[0]=='d'&&chunkHdr[1]=='a'&&chunkHdr[2]=='t'&&chunkHdr[3]=='a') {
-                    _audioState.sampleRate    = sampleRate;
-                    _audioState.bitsPerSample = bits;
-                    _audioState.channels      = ch;
-                    _audioState.dataOffset    = wavFile.position();  // for loop seek
-
-                    // Compute duration in ms from header metadata
-                    uint32_t bytesPerSec = sampleRate * ch * (bits / 8);
-                    _audioState.wavDurationMs = bytesPerSec > 0
-                                               ? (chunkSize * 1000UL / bytesPerSec) : 0;
-
-                    foundData = true;
-                    Serial.printf("[AUDIO] %s: %uHz %u-bit %uch %ums\n",
-                        _audioState.wavPath, sampleRate, bits, ch,
-                        _audioState.wavDurationMs);
-
-                    // All files are 44.1kHz 16-bit — no clock reconfiguration needed
-                    _audioState.playing = true;
-
-                    // --- Stream audio data, loop or resume when done ---
-                    bool keepGoing = true;
-                    while (keepGoing) {
-                        uint32_t remaining = chunkSize;
-                        while (remaining > 0 && !_audioState.stopRequested &&
-                               !_audioState.startWAV && !_audioState.startPROGMEM) {
-                            size_t toRead = min((size_t)WAV_READ_CHUNK, (size_t)remaining);
-                            size_t nRead  = wavFile.read(_wavBuf, toRead);
-                            if (nRead == 0) break;
-                            remaining -= nRead;
-
-                            int outIdx = 0;
-                            float vol = _audioState.volume;
-                            if (bits == 16) {
-                                int16_t* src = (int16_t*)_wavBuf;
-                                int nSamples = nRead / 2;
-                                for (int i = 0; i < nSamples; i += ch) {
-                                    int16_t L = (int16_t)(src[i] * vol);
-                                    int16_t R = (ch > 1) ? (int16_t)(src[i+1] * vol) : L;
-                                    outBuf[outIdx++] = L;
-                                    outBuf[outIdx++] = R;
-                                }
-                            } else {
-                                for (size_t i = 0; i < nRead; i += ch) {
-                                    int16_t L = (int16_t)(((int16_t)_wavBuf[i] - 128) * 256 * vol);
-                                    int16_t R = (ch > 1)
-                                        ? (int16_t)(((int16_t)_wavBuf[i+1] - 128) * 256 * vol) : L;
-                                    outBuf[outIdx++] = L;
-                                    outBuf[outIdx++] = R;
-                                }
-                            }
-                            size_t bw = 0;
-                            i2s_write(I2S_PORT, outBuf,
-                                      outIdx * sizeof(int16_t), &bw, portMAX_DELAY);
-                        }
-
-                        // Check what to do when data is exhausted
-                        if (_audioState.stopRequested || _audioState.startWAV ||
-                            _audioState.startPROGMEM) {
-                            keepGoing = false;  // interrupted — exit loop
-                        } else if (_audioState.loopEnabled) {
-                            // Seek back to data start and replay
-                            wavFile.seek(_audioState.dataOffset);
-                        } else if (_audioState.resumePath[0] != '\0') {
-                            // One-shot finished — trigger resume track
-                            // Copy resume path to wavPath and restart
-                            strncpy(_audioState.wavPath, _audioState.resumePath,
-                                    sizeof(_audioState.wavPath) - 1);
-                            _audioState.resumePath[0] = '\0';
-                            _audioState.loopEnabled   = true;
-                            _audioState.startWAV      = true;
-                            keepGoing = false;
-                        } else {
-                            keepGoing = false;
-                        }
-                    }
-
-                    _audioState.playing = false;
-                    wavFile.close();
-                    break;
-
-                } else {
-                    // Unknown chunk — skip it
-                    wavFile.seek(wavFile.position() + chunkSize);
-                }
-            }
-
-            if (!foundData) {
-                Serial.println("[AUDIO] No data chunk found");
-                wavFile.close();
-                _audioState.playing = false;
-            }
-            taskYIELD();
-            continue;
-        }
-
-        if (_audioState.startPROGMEM) {
-            _audioState.startPROGMEM = false;
-            if (wavFile) wavFile.close();
-            pgmData  = _audioState.pgmData;
-            pgmLen   = _audioState.pgmLen;
-            pgmPos   = 44; // skip 8kHz WAV header
-            pgmMode  = true;
-            _audioState.playing = true;
-        }
-
-        // --- PROGMEM streaming ---
-        if (pgmMode && pgmData != nullptr) {
-            int outIdx = 0;
-            int srcCount = 0;
-            const int CHUNK = 140;
-            const int UP    = 5;
-            float vol = _audioState.volume;
-            while (pgmPos < pgmLen && srcCount < CHUNK) {
-                int16_t s = (int16_t)(((int16_t)pgm_read_byte(&pgmData[pgmPos++]) - 128) * 200 * vol);
-                for (int r = 0; r < UP; r++) {
-                    outBuf[outIdx++] = s;
-                    outBuf[outIdx++] = s;
-                }
-                srcCount++;
-            }
-            if (outIdx > 0) {
-                size_t bw = 0;
-                i2s_write(I2S_PORT, outBuf,
-                          outIdx * sizeof(int16_t), &bw, portMAX_DELAY);
-            }
-            if (pgmPos >= pgmLen) {
-                pgmMode = false;
-                _audioState.playing = false;
-            }
-            // No taskYIELD here — let i2s_write portMAX_DELAY pace us
-            continue;
-        }
-
-        // Nothing to do — yield to other tasks
-        vTaskDelay(pdMS_TO_TICKS(5));
+#endif
+        // Always sleep a tick: step() is bounded, and core 0's idle task
+        // must run or the task watchdog fires.
+        vTaskDelay(1);
     }
 }
 
 // =============================================================================
-// AUDIO ENGINE CLASS
+// AUDIO ENGINE CLASS: the game loop's side. Posts commands; never blocks.
 // =============================================================================
 class AudioEngine {
 private:
-    bool _i2sReady   = false;
-    TaskHandle_t _taskHandle = nullptr;
+    bool     _ready = false;
+    uint32_t _epoch = 0;                 // bumped by mute(); see AudioMixer.h
+    uint32_t _melodiesRequested = 0;
+    audiomix::Pcm _pgm[audiocfg::PGM_SLOTS];
+    int      _pgmNext = 0;
 
-    // ---- Deferred WAV-open-failed fallback (see playJumpSound) ----
+    // ---- Deferred WAV-open-failed fallbacks (see playJumpSound) ----
     bool          _jumpFallbackPending = false;
     unsigned long _jumpFallbackCheckAt = 0;
-    // ---- Deferred WAV-open-failed fallback (see playDeathSound) ----
     bool          _deathFallbackPending = false;
     unsigned long _deathFallbackCheckAt = 0;
-    // ---- Deferred WAV-open-failed fallback (see playGameOverToneSound) ----
     bool          _gameOverFallbackPending = false;
     unsigned long _gameOverFallbackCheckAt = 0;
 
-    // ---- Tone / melody state (Core 1 only) ----
-    bool          _toneActive     = false;
-    int           _toneFreq       = 0;
-    unsigned long _toneEndMs      = 0;
-    uint32_t      _sampleCounter  = 0;
-    uint32_t      _halfPeriod     = 0;
-    // Real time of the last tone sample write — writeToneSamples() produces
-    // exactly enough samples to cover the elapsed time since this, rather
-    // than a fixed count per update() call (see TONE_SAMPLES_PER_UPDATE).
-    unsigned long _lastToneWriteUs = 0;
-
-    const int*    _melodyFreqs    = nullptr;
-    const int*    _melodyDurations= nullptr;
-    int           _melodyLength   = 0;
-    int           _melodyIndex    = 0;
-    bool          _melodyPlaying  = false;
-    unsigned long _nextNoteMs     = 0;
-
-    uint32_t freqToHalfPeriod(int freq) {
-        if (freq <= 0) return 0;
-        return (uint32_t)(ArcadeConfig::I2S_SAMPLE_RATE / (2 * freq));
-    }
-
-    void writeToneSamples(int count, int16_t amplitude) {
-        static int16_t buf[TONE_SAMPLES_PER_UPDATE * 2];
-        int filled = 0;
-        int16_t scaledAmp = (int16_t)(amplitude * _audioState.volume);
-        for (int i = 0; i < count; i++) {
-            int16_t s = 0;
-            if (_halfPeriod > 0) {
-                s = (_sampleCounter < _halfPeriod) ? scaledAmp : -scaledAmp;
-                if (++_sampleCounter >= _halfPeriod * 2) _sampleCounter = 0;
-            }
-            buf[filled++] = s;
-            buf[filled++] = s;
+    void loaderCmd(audiomix::LoadCmdType t, const char* path = "", const char* path2 = "") {
+        audiomix::LoadCmd c;
+        c.type = t;
+        c.epoch = _epoch;
+        strncpy(c.path, path, sizeof(c.path) - 1);
+        strncpy(c.path2, path2, sizeof(c.path2) - 1);
+        if (t == audiomix::LC_PLAY_FX) {
+            _audioLoader.inFlight.fetch_add(1);
+            audiodiag::wavRequests.fetch_add(1);
         }
-        size_t bw = 0;
-        i2s_write(I2S_PORT, buf, filled * sizeof(int16_t), &bw, 0);
+        if (!_audioLoader.fromGame.push(c)) {
+            audiodiag::loadQueueFull.fetch_add(1);
+            if (t == audiomix::LC_PLAY_FX) _audioLoader.inFlight.fetch_sub(1);
+        }
     }
 
-    void writeSilence(int count = TONE_SAMPLES_PER_UPDATE) {
-        static int16_t sil[TONE_SAMPLES_PER_UPDATE * 2] = {0};
-        size_t bw = 0;
-        i2s_write(I2S_PORT, sil, count * 2 * sizeof(int16_t), &bw, 0);
-    }
-
-    // Signal only — never blocks. Every caller of this reaches it from the
-    // game loop, so a wait here is a frame-rate stall on every sound effect
-    // (it was 50ms, i.e. three dropped frames per shot or jump). No wait is
-    // needed: the streaming loop in audioTask() polls stopRequested/startWAV/
-    // startPROGMEM between i2s_write() calls, closes the file and drops back
-    // to the command check on its own. The old delay's stated reason -
-    // restoring the I2S clock - no longer applies either, since every WAV is
-    // 44.1kHz and the clock is never reconfigured.
-    void stopAudioTask() {
-        _audioState.stopRequested = true;
-        _audioState.playing       = false;
+    bool mixerCmd(audiomix::MixCmd m) {
+        m.epoch = _epoch;
+        if (_audioMixer.fromGame.push(m)) return true;
+        audiodiag::mixQueueFull.fetch_add(1);
+        return false;
     }
 
 public:
@@ -398,6 +246,10 @@ public:
     // INIT
     // -------------------------------------------------------------------------
     bool begin() {
+        for (int s = 0; s < audiomix::STREAMS; ++s) {
+            _audioMixer.streams[s].buf = (int16_t*)audioAlloc(audiomix::RING_SAMPLES * sizeof(int16_t));
+            if (!_audioMixer.streams[s].buf) return false;
+        }
         i2s_config_t cfg = {
             .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
             .sample_rate          = ArcadeConfig::I2S_SAMPLE_RATE,
@@ -405,8 +257,8 @@ public:
             .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
             .communication_format = I2S_COMM_FORMAT_STAND_I2S,
             .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
-            .dma_buf_count        = I2S_DMA_BUF_COUNT,
-            .dma_buf_len          = I2S_DMA_BUF_LEN,
+            .dma_buf_count        = audiocfg::DMA_BUF_COUNT,
+            .dma_buf_len          = audiocfg::DMA_BUF_LEN,
             .use_apll             = false,
             .tx_desc_auto_clear   = true,
             .fixed_mclk           = 0
@@ -420,140 +272,128 @@ public:
         if (i2s_driver_install(I2S_PORT, &cfg, 0, nullptr) != ESP_OK) return false;
         if (i2s_set_pin(I2S_PORT, &pins) != ESP_OK) return false;
         i2s_zero_dma_buffer(I2S_PORT);
-        _i2sReady = true;
 
-        // Start audio streaming task on Core 0
-        xTaskCreatePinnedToCore(audioTask, "audioTask",
-                                AUDIO_TASK_STACK, nullptr,
-                                AUDIO_TASK_PRIO, &_taskHandle,
-                                AUDIO_TASK_CORE);
-
-        Serial.println("[AUDIO] I2S + audio task ready.");
+        xTaskCreatePinnedToCore(audioMixerTask, "audioMix", audiocfg::MIXER_STACK, nullptr,
+                                audiocfg::MIXER_PRIO, nullptr, audiocfg::AUDIO_CORE);
+        xTaskCreatePinnedToCore(audioLoaderTask, "audioLoad", audiocfg::LOADER_STACK, nullptr,
+                                audiocfg::LOADER_PRIO, nullptr, audiocfg::AUDIO_CORE);
+#if AUDIO_DEBUG
+        _audioLoader.log = audiodiag::log;
+#endif
+        _ready = true;
+        Serial.printf("[AUDIO] Mixer ready: %d effect voices, music + jingle streams, %s cache.\n",
+                      audiomix::FX_VOICES, psramFound() ? "PSRAM" : "internal-RAM");
         return true;
     }
 
     // -------------------------------------------------------------------------
-    // SD WAV PLAYBACK — primary path
+    // SETTINGS
+    // -------------------------------------------------------------------------
+    void setVolume(float v) {
+        v = constrain(v, 0.0f, 1.0f);
+        _audioMixer.masterQ15.store((int32_t)(v * 32768.0f));
+    }
+    float getVolume() const { return _audioMixer.masterQ15.load() / 32768.0f; }
+    void setMusicEnabled(bool on) { _audioMixer.musicOn.store(on); }
+    void setFxEnabled(bool on)    { _audioMixer.fxOn.store(on); }
+    bool isMusicEnabled() const   { return _audioMixer.musicOn.load(); }
+    bool isFxEnabled() const      { return _audioMixer.fxOn.load(); }
+
+    // -------------------------------------------------------------------------
+    // WAVs FROM SD
     // -------------------------------------------------------------------------
     void playWAV(const char* path) {
-        if (!_i2sReady) return;
-        stopAudioTask();
-        _toneActive    = false;
-        _melodyPlaying = false;
-        _audioState.loopEnabled   = false;
-        _audioState.resumePath[0] = '\0';
-        strncpy(_audioState.wavPath, path, sizeof(_audioState.wavPath) - 1);
-        _audioState.startWAV = true;
+        if (!_ready) return;
+        _audioLoader.lastDurationMs.store(0);   // set again once its header's read
+        loaderCmd(audiomix::LC_PLAY_FX, path);
     }
-
-    // Play WAV and loop it indefinitely until stopped
     void loopWAV(const char* path) {
-        if (!_i2sReady) return;
-        stopAudioTask();
-        _toneActive    = false;
-        _melodyPlaying = false;
-        _audioState.loopEnabled   = true;
-        _audioState.resumePath[0] = '\0';
-        strncpy(_audioState.wavPath, path, sizeof(_audioState.wavPath) - 1);
-        _audioState.startWAV = true;
+        if (_ready) loaderCmd(audiomix::LC_LOOP_MUSIC, path);
     }
-
-    // Play a one-shot WAV then seamlessly resume looping another
+    // A one-shot, then loop another as music.
     void playWAVThenLoop(const char* oneShotPath, const char* loopPath) {
-        if (!_i2sReady) return;
-        stopAudioTask();
-        _toneActive    = false;
-        _melodyPlaying = false;
-        _audioState.loopEnabled   = false;
-        strncpy(_audioState.wavPath,    oneShotPath, sizeof(_audioState.wavPath)    - 1);
-        strncpy(_audioState.resumePath, loopPath,    sizeof(_audioState.resumePath) - 1);
-        _audioState.startWAV = true;
+        if (_ready) loaderCmd(audiomix::LC_PLAY_THEN_LOOP, oneShotPath, loopPath);
+    }
+    void stopLoop() {
+        if (_ready) loaderCmd(audiomix::LC_STOP_STREAMS);
+    }
+    // Loads an effect into memory now, so its first play isn't held up by
+    // the SD card. Worth calling in a game's init() for its frequent sounds.
+    void preload(const char* path) {
+        if (_ready) loaderCmd(audiomix::LC_PRELOAD, path);
     }
 
-    void stopLoop() { stopAudioTask(); }
+    // Duration of the most recent effect, once its header's been read (0
+    // until then, or if it couldn't be opened). Use to time gameplay phases.
+    uint32_t getLastWAVDurationMs() const { return _audioLoader.lastDurationMs.load(); }
 
-    // Duration of the most recently opened WAV file in ms.
-    // Valid as soon as playing == true. Use to time gameplay phases.
-    uint32_t getLastWAVDurationMs() const { return _audioState.wavDurationMs; }
-
-    bool isWAVPlaying() const { return _audioState.playing; }
+    // An effect or jingle playing, or asked for and not yet started.
+    bool isWAVPlaying() const    { return _audioMixer.fxBusy.load() || _audioLoader.inFlight.load() > 0; }
+    bool isSamplePlaying() const { return isWAVPlaying(); }
 
     // -------------------------------------------------------------------------
-    // PROGMEM FALLBACK
+    // PROGMEM FALLBACK (8kHz 8-bit WAV arrays, 44-byte header)
     // -------------------------------------------------------------------------
     void startSamplePROGMEM(const uint8_t* data, size_t len) {
-        if (!_i2sReady || !data || len <= 44) return;
-        stopAudioTask();
-        _toneActive    = false;
-        _melodyPlaying = false;
-        _audioState.pgmData        = data;
-        _audioState.pgmLen         = len;
-        _audioState.startPROGMEM   = true;
+        if (!_ready || !data || len <= 44) return;
+        for (int tries = 0; tries < audiocfg::PGM_SLOTS; ++tries) {
+            audiomix::Pcm& p = _pgm[_pgmNext];
+            _pgmNext = (_pgmNext + 1) % audiocfg::PGM_SLOTS;
+            if (p.playing.load() > 0 || p.queued.load() > 0) continue;
+            p.data = data + 44;
+            p.frames = (uint32_t)(len - 44);
+            p.rate = 8000;
+            p.is8bit = true;
+            p.queued.fetch_add(1);
+            audiomix::MixCmd m;
+            m.type = audiomix::MC_PLAY_PCM;
+            m.pcm = &p;
+            if (!mixerCmd(m)) p.queued.fetch_sub(1);
+            return;
+        }
     }
 
-    bool isSamplePlaying() const { return _audioState.playing; }
-
     // -------------------------------------------------------------------------
-    // CONVENIENCE WRAPPERS — attempt SD WAV, task handles file-not-found
-    // SD.exists() removed — avoids SPI bus collision with audio task on Core 0
+    // CONVENIENCE WRAPPERS: SD WAV, else the PROGMEM fallback or a melody
     // -------------------------------------------------------------------------
     void playStartupSound(const uint8_t* fallback, size_t fbLen) {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/gamestart.wav");
         else startSamplePROGMEM(fallback, fbLen);
     }
-
     void playGameOverSound(const uint8_t* fallback, size_t fbLen) {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/gameend.wav");
         else startSamplePROGMEM(fallback, fbLen);
     }
-
     void playExplosionSound(const uint8_t* fallback, size_t fbLen) {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/explosion.wav");
         else startSamplePROGMEM(fallback, fbLen);
     }
-
-    void setVolume(float v) { _audioState.volume = constrain(v, 0.0f, 1.0f); }
-    float getVolume() const { return _audioState.volume; }
-
     void playLanderStartSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/lander_start.wav");
         else playLaunchMelody();
     }
-
     void playTankStartSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/tank_start.wav");
         else playTankStartMelody();
     }
-
     void playLandingSuccessSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/land_success.wav");
         else playLandingSuccess();
     }
 
-    // Drop a WAV at /audio/jump.wav to override — falls back to a short
-    // rising two-note blip if the SD card isn't present, or if it is but
-    // that specific file is missing/fails to open. The open result isn't
-    // known synchronously (WAV streaming runs on its own task and opening
-    // over SPI can take a while, especially if it's contending with
-    // display traffic), so this is polled from update() with a generous
-    // deadline rather than checked once at a fixed short delay — a single
-    // too-early check was concluding "failed" while the file was still
-    // legitimately opening, firing the fallback tone on top of the WAV
-    // once it did start.
+    // /audio/jump.wav, or a two-note blip if there's no card or no such
+    // file. Whether the file opened isn't known at once (the loader reads
+    // it), so update() checks for its duration appearing, with a generous
+    // deadline, before falling back.
     void playJumpSound() {
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/jump.wav");
-            _jumpFallbackPending  = true;
-            _jumpFallbackCheckAt  = millis() + 300;
+            _jumpFallbackPending = true;
+            _jumpFallbackCheckAt = millis() + 300;
         } else {
             playJumpBlip();
         }
     }
-
-    // Drop a WAV at /audio/death.wav to override — falls back to a short
-    // descending tone if the SD card isn't present, or if it is but that
-    // specific file is missing/fails to open (same polled-deadline pattern
-    // as playJumpSound).
     void playDeathSound() {
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/death.wav");
@@ -563,11 +403,6 @@ public:
             playDeathBlip();
         }
     }
-
-    // Reuses the shared /audio/gameend.wav path (same convention as
-    // AsteroidFlux's playGameOverSound) but falls back to a tone melody
-    // instead of requiring a PROGMEM sample — same polled-deadline pattern
-    // as playJumpSound/playDeathSound.
     void playGameOverToneSound() {
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/gameend.wav");
@@ -579,32 +414,32 @@ public:
     }
 
     // -------------------------------------------------------------------------
-    // TONE MODE — Core 1, update() driven
-    // Does not play if WAV/sample is active
+    // SYNTH: square-wave tones and melodies, mixed with everything else.
+    // Melody arrays must outlive the melody (the canned ones are static).
     // -------------------------------------------------------------------------
     void playTone(int freqHz, int durationMs) {
-        if (!_i2sReady || _audioState.playing) return;
-        _toneFreq      = freqHz;
-        _halfPeriod    = freqToHalfPeriod(freqHz);
-        _sampleCounter = 0;
-        _toneActive    = true;
-        _toneEndMs     = millis() + durationMs;
-        _lastToneWriteUs = micros();
+        if (!_ready) return;
+        audiomix::MixCmd m;
+        m.type = audiomix::MC_TONE;
+        audiodiag::toneRequests.fetch_add(1);
+        m.a = freqHz;
+        m.b = durationMs;
+        mixerCmd(m);
     }
-
     void playMelody(const int* freqs, const int* durs, int len) {
-        if (!_i2sReady || _audioState.playing) return;
-        _melodyFreqs     = freqs;
-        _melodyDurations = durs;
-        _melodyLength    = len;
-        _melodyIndex     = 0;
-        _melodyPlaying   = true;
-        _nextNoteMs      = millis();
-        _toneActive      = false;
+        if (!_ready) return;
+        audiomix::MixCmd m;
+        m.type = audiomix::MC_MELODY;
+        m.freqs = freqs;
+        m.durs = durs;
+        m.a = len;
+        if (mixerCmd(m)) ++_melodiesRequested;
     }
-
-    bool isMelodyPlaying() const { return _melodyPlaying; }
-    bool isTonePlaying()   const { return _toneActive; }
+    // Playing, or asked for and not yet started.
+    bool isMelodyPlaying() const {
+        return _audioMixer.melodyBusy.load() || _audioMixer.melodiesStarted.load() != _melodiesRequested;
+    }
+    bool isTonePlaying() const { return _audioMixer.toneBusy.load(); }
 
     // --- Canned in-game tones ---
     void playLaunchMelody() {
@@ -636,13 +471,11 @@ public:
         static const int d[] = { 35,   45};
         playMelody(n, d, 2);
     }
-
     void playDeathBlip() {
         static const int n[] = {500, 350, 220};
         static const int d[] = {100, 100, 200};
         playMelody(n, d, 3);
     }
-
     void playGameOverBlip() {
         static const int n[] = {392, 330, 262, 196};
         static const int d[] = {150, 150, 150, 350};
@@ -650,119 +483,39 @@ public:
     }
 
     // -------------------------------------------------------------------------
-    // UPDATE — call every frame from render loop (Core 1)
-    // Only drives tone/melody. WAV streaming is handled by audio task.
+    // UPDATE: call every frame. The mixing happens on its own task; this
+    // only runs the WAV-missing fallbacks.
     // -------------------------------------------------------------------------
     void update() {
-        unsigned long now = millis();
-
-        // Polled check: did the jump/death WAV actually start? wavDurationMs
-        // is only set once the header is successfully parsed, and stays set
-        // (not cleared on natural playback end) until the next WAV request
-        // resets it — so it reliably distinguishes "never opened" from
-        // "played and already finished," unlike the transient playing flag.
-        // Polled every frame rather than checked once at a fixed delay:
-        // opening the file over SPI can legitimately take longer than a
-        // short fixed wait, especially under display-traffic contention, so
-        // a too-early single check was misreading "still opening" as
-        // "failed" and firing the fallback tone alongside the real WAV.
+        const unsigned long now = millis();
+        const bool opened = _audioLoader.lastDurationMs.load() != 0;
         if (_jumpFallbackPending) {
-            if (_audioState.wavDurationMs != 0) {
-                _jumpFallbackPending = false; // WAV opened fine — no fallback needed
-            } else if (now >= _jumpFallbackCheckAt) {
-                _jumpFallbackPending = false;
-                playJumpBlip();
-            }
+            if (opened) _jumpFallbackPending = false;
+            else if (now >= _jumpFallbackCheckAt) { _jumpFallbackPending = false; playJumpBlip(); }
         }
         if (_deathFallbackPending) {
-            if (_audioState.wavDurationMs != 0) {
-                _deathFallbackPending = false;
-            } else if (now >= _deathFallbackCheckAt) {
-                _deathFallbackPending = false;
-                playDeathBlip();
-            }
+            if (opened) _deathFallbackPending = false;
+            else if (now >= _deathFallbackCheckAt) { _deathFallbackPending = false; playDeathBlip(); }
         }
         if (_gameOverFallbackPending) {
-            if (_audioState.wavDurationMs != 0) {
-                _gameOverFallbackPending = false;
-            } else if (now >= _gameOverFallbackCheckAt) {
-                _gameOverFallbackPending = false;
-                playGameOverBlip();
-            }
-        }
-
-        // A WAV occupying the audio task (or I2S not ready yet) means no
-        // tone samples get written this call — reset the clock so that
-        // whenever tone playback does resume, elapsed time is measured
-        // from that point, not stretched back across however long the WAV
-        // played (which would otherwise demand an oversized catch-up burst).
-        if (!_i2sReady || _audioState.playing) {
-            _lastToneWriteUs = micros();
-            return;
-        }
-
-        if (_melodyPlaying) {
-            if (now >= _nextNoteMs) {
-                if (_melodyIndex >= _melodyLength) {
-                    _melodyPlaying = false;
-                    _toneActive    = false;
-                    writeSilence();
-                    return;
-                }
-                int freq = _melodyFreqs[_melodyIndex];
-                int dur  = _melodyDurations[_melodyIndex];
-                _melodyIndex++;
-                _toneFreq      = freq;
-                _halfPeriod    = freqToHalfPeriod(freq);
-                _sampleCounter = 0;
-                _toneActive    = (freq != NOTE_REST);
-                _toneEndMs     = now + (unsigned long)(dur * 0.85f);
-                _nextNoteMs    = now + dur;
-                _lastToneWriteUs = micros(); // fresh note — don't carry over the previous note's timing
-            }
-        }
-
-        if (_toneActive) {
-            if (millis() >= _toneEndMs) {
-                _toneActive = false;
-                writeSilence();
-            } else {
-                // Produce exactly as many samples as real time has actually
-                // elapsed since the last write, instead of a fixed count per
-                // update() call. The fixed-700-samples-per-call version
-                // assumed a steady ~16ms frame period; 700 samples is only
-                // ~15.9ms of audio at 44100Hz, so it was systematically
-                // under-feeding the DMA buffer by a fraction of a ms every
-                // single frame — which drains a very real (if generously
-                // sized) buffer over a few seconds and produces exactly the
-                // periodic stutter reported. Any frame that runs long (a
-                // slow render, SPI contention, etc.) made the shortfall
-                // worse, not better.
-                unsigned long nowUs = micros();
-                unsigned long elapsedUs = nowUs - _lastToneWriteUs;
-                _lastToneWriteUs = nowUs;
-                uint32_t samples = (uint32_t)((uint64_t)elapsedUs * ArcadeConfig::I2S_SAMPLE_RATE / 1000000ULL);
-                if (samples < 1) samples = 1;
-                if (samples > TONE_SAMPLES_PER_UPDATE) samples = TONE_SAMPLES_PER_UPDATE;
-                writeToneSamples(samples, 8000);
-            }
+            if (opened) _gameOverFallbackPending = false;
+            else if (now >= _gameOverFallbackCheckAt) { _gameOverFallbackPending = false; playGameOverBlip(); }
         }
     }
 
+    // Everything stops: music, effects, synth, and anything asked for but not
+    // yet started (the epoch makes sure it never does).
     void mute() {
-        stopAudioTask();
-        _toneActive    = false;
-        _melodyPlaying = false;
-        i2s_zero_dma_buffer(I2S_PORT);
-        // Cancel any pending WAV-open-failed fallback checks too — otherwise
-        // one could still fire its tone later (e.g. mid-new-game) for a
-        // sound that was deliberately cut off, not one that failed to open.
-        _jumpFallbackPending     = false;
-        _deathFallbackPending    = false;
-        _gameOverFallbackPending = false;
+        if (!_ready) return;
+        ++_epoch;
+        audiomix::MixCmd m;
+        m.type = audiomix::MC_STOP_ALL;
+        mixerCmd(m);
+        loaderCmd(audiomix::LC_STOP_ALL);
+        _jumpFallbackPending = _deathFallbackPending = _gameOverFallbackPending = false;
     }
-
     void stopAll() { mute(); }
 };
 
-#endif // AUDIO_ENGINE_H
+#endif  // AUDIO_LEGACY
+#endif  // AUDIO_ENGINE_H

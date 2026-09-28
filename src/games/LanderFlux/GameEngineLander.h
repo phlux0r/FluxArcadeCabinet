@@ -270,6 +270,9 @@ public:
                 _isTitleScreen = false;
                 _isGameOver    = false;
                 audio.playLaunchMelody();
+                // Music plays during a game only (through the between-level
+                // screens), not on the title screen; it stops at game over.
+                audio.loopWAV("/audio/flux-lander.wav");
             }
 
             // Single canvas flush — exactly like Asteroid Flux
@@ -312,6 +315,7 @@ public:
                 _isGameOver          = false;
                 _attractModeTimer    = millis();
                 _showInstructionPage = false;
+                audio.stopLoop();   // timed out on a between-level screen
                 audio.playLanderStartSound();
             }
             return true;
@@ -332,6 +336,7 @@ public:
                     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                     _isGameOver        = true;
                     _gameOverEnteredMs = now;
+                    audio.stopLoop();
                     audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 }
             }

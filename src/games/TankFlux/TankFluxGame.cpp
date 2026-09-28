@@ -38,17 +38,18 @@ void TankFluxGame::init(AudioEngine &audio) {
     _phase = PHASE_ATTRACT;
     _attractSlide      = SLIDE_GAME;
     _attractSlideTimer = millis();
-    _attractMusicStarted = false;
-    _attractMusicEarliestAt = millis() + ATTRACT_MUSIC_GRACE_MS;
     _btnBWasHeld = true;
     _btnBHoldStart = 0;
     _lastFrameMs = millis();   // so the first frame isn't a huge clamped step
     // /audio/tank_start.wav from SD, or a generated melody if it's missing.
     audio.playTankStartSound();
+    // Decoded into the mixer's cache now, so the first play isn't late.
+    static const char* const sfx[] = { "/audio/shot.wav", "/audio/explosion.wav",
+                                       "/audio/repair.wav" };
+    for (const char* f : sfx) audio.preload(f);
 }
 
 void TankFluxGame::startNewGame(AudioEngine &audio) {
-    audio.stopLoop();   // ends the attract music
     _x = 0.0f;
     _z = 0.0f;
     _vx = 0.0f;
@@ -90,6 +91,9 @@ void TankFluxGame::startNewGame(AudioEngine &audio) {
     for (auto &p : _particles.pool) p.active = false;
     _phase = PHASE_PLAYING;
     audio.playTone(900, 80);
+    // Music plays during a game only: not on the attract screen, and it
+    // stops at game over (restarting with the next game).
+    audio.loopWAV(TANK_MUSIC);
 }
 
 bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
@@ -124,15 +128,6 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 }
 
 bool TankFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    // Start the loop once, and not while the startup sound is still going:
-    // loopWAV() stops whatever is playing. isSamplePlaying() can't see an SD
-    // WAV that is still opening, hence the grace period as well.
-    if (!_attractMusicStarted && !audio.isSamplePlaying() && !audio.isMelodyPlaying() &&
-        reached(_attractMusicEarliestAt)) {
-        audio.loopWAV("/audio/tank_loop.wav");
-        _attractMusicStarted = true;
-    }
-
     if (millis() - _attractSlideTimer > ATTRACT_SLIDE_MS) {
         _attractSlide      = (_attractSlide == SLIDE_GAME) ? SLIDE_INFO : SLIDE_GAME;
         _attractSlideTimer = millis();
@@ -159,7 +154,6 @@ bool TankFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
         _phase = PHASE_ATTRACT;
         _attractSlide      = SLIDE_GAME;
         _attractSlideTimer = millis();
-        _attractMusicStarted = false;
         _btnBWasHeld = false;
     }
     return true;
@@ -216,6 +210,7 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
         recordHighScore();
         _phase = PHASE_GAMEOVER;
         _gameOverEnteredMs = millis();
+        audio.stopLoop();
         audio.playTone(150, 400);
     }
     return true;

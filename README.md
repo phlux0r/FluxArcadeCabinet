@@ -96,9 +96,15 @@ Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
 picked up the gun. Hold B to quit.
 
-The launcher's "[JOY] MOVE / [BTN A] GO" hint sits below the background
-art's menu box (rows 126 and 136), leaving the box for the game list: six
-rows fit, and a seventh would need a tighter row pitch.
+The launcher's "[JOY] MOVE / [BTN A] GO / [BTN B] SETUP" hint sits below the
+background art's menu box, leaving the box for the game list: six rows fit,
+and a seventh would need a tighter row pitch. The three hint lines are at a
+7px pitch (rows 124/131/138): the box's border is row 123 and the art's
+INSERT COIN starts at row 146, so there is no room for more.
+
+**B** in the launcher opens **SETUP**: master volume (joystick left/right),
+music on/off and sound effects on/off (left/right or A), and BACK (or B again).
+Every change is saved to NVS at once and applied on boot.
 
 ## Project Structure
 
@@ -117,7 +123,10 @@ FluxArcadeCabinet/
     ├── cabinet/                # Shared subsystems — no game logic here
     │   ├── ArcadeConfig.h      # Pins, screen constants, shared colours, CabinetState
     │   ├── InputManager.h      # Joystick + buttons, deadzone, edge detection
-    │   ├── AudioEngine.h       # I2S audio: tones, melodies, WAV from PROGMEM/SD
+    │   ├── AudioEngine.h       # I2S output, mixer/loader tasks, the games' audio API
+│   ├── AudioEngineLegacy.h # the old one-sound engine (-DAUDIO_LEGACY)
+│   ├── audio/AudioMixer.h  # software mixer: voices, streams, synth (host-tested)
+│   ├── audio/AudioLoader.h # WAV parsing, effect cache, music streaming (host-tested)
     │   ├── ParticleManager.h   # Shared 2D particle system (explosions, trails)
     │   └── PowerManager.h      # Power button, checked from the menu only
     │
@@ -174,15 +183,60 @@ art in `tools/tube_ship_sprite.py`, and its title screen is rendered by
 
 ## Audio
 
-All audio is routed through the MAX98357A via I2S. `AudioEngine` runs playback
-on its own FreeRTOS task (Core 0) so nothing blocks the game loop, and provides:
+All audio goes out through the MAX98357A via I2S. Like the retro-go
+emulators, the cabinet mixes in software: every playing source is summed
+into the one output stream, so music, effects and tones play together.
+At once it can play:
 
-- Non-blocking tones and melodies (`playTone`, `playMelody`)
-- PROGMEM sample playback (`playSamplePROGMEM`), used as the no-SD fallback
-- SD WAV playback, one-shot or looping (`playWAV`, `loopWAV`, `playWAVThenLoop`)
+- one music track (`loopWAV`) and one jingle (`playWAVThenLoop`'s intro, or
+  any effect too long to cache), both streamed from SD
+- four effects (`playWAV`, PROGMEM fallbacks); a fifth replaces the oldest
+- the tone/melody synth (`playTone`, `playMelody`)
 
-Only one sound plays at a time: starting a new one stops whatever was playing,
-and `playTone()` is skipped entirely while a WAV is streaming.
+Music and effects are separate buses, each switchable in the launcher's
+SETUP page, under a master volume. The sum is soft-clipped rather than
+scaled down, so a lone sound keeps its full level.
+
+Two FreeRTOS tasks run on core 0 (the game loop is on core 1, and only posts
+commands to them through lock-free queues, so it never blocks):
+
+- **mixer** (priority 5) mixes 256-frame blocks at 44.1kHz. It never touches
+  the SD card, so a slow card can't make it stutter, and only ~35ms of audio
+  is queued ahead of the speaker, so sounds start promptly.
+- **loader** (priority 3) does all SD access. Effects are decoded into PSRAM
+  the first time they play (or at `preload()`) and then play from memory;
+  the cache is 768KB, least-recently-used first out. Music streams through
+  a ~743ms ring buffer (it rides out the SD card stalling while the
+  display holds the shared bus, seen at up to 400ms).
+
+The mixer and loader are plain C++ (`src/cabinet/audio/`) with a host test,
+`test/audio_test.cpp`. `AudioEngine.h` is the device glue around them. If
+the mixer misbehaves on the hardware, build with `-DAUDIO_LEGACY`
+(commented out in `platformio.ini`) to get the old one-sound-at-a-time
+engine back; it honours the music/FX switches too.
+
+### Audio diagnostics
+
+For now the engine logs to serial (build with `-DAUDIO_DEBUG=0` to stop it):
+each file it opens (rate, bits, channels, length, cached or streamed), read
+failures, and every 2s while anything is happening a line like
+
+```
+[AUDIO] wav 40 (hit 36 load 4 big 0 drop 0) voices 40 stolen 3 | tone 12/12 | music underrun 0 loops 2, jingle underrun 0 | sd err 0 short 0 | qfull 0/0 epoch-drop 0 | max: loader 9ms mix 180us period 6ms
+```
+
+- `wav`: playWAVs asked for; `hit` played from memory, `load` read in from
+  SD, `big` too long to cache (streamed), `drop` given up on.
+- `voices`: effects that actually sounded; `stolen`: cut off for a newer one.
+- `tone started/asked`: a gap means tones went missing.
+- `underrun`: a stream ran dry (the SD card couldn't keep up): a gap in it.
+- `sd err`/`short`: reads that failed or came back short (retried; neither
+  restarts the music any more).
+- `qfull`: commands lost to a full queue (mixer/loader); `epoch-drop`:
+  sounds dropped for being asked for before a mute().
+- `max`: the slowest loader step (SD time), the slowest mix, and the longest
+  gap between mixed blocks, over the last 2s. A `period` past ~35ms means
+  the speaker ran out of audio.
 
 ### SD card
 
@@ -192,16 +246,25 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 
 | File | Used by |
 |---|---|
-| `gamestart.wav`, `gameend.wav`, `explosion.wav` | Shared across games |
-| `asteroid_loop.wav` | Asteroid Flux |
-| `lander_start.wav`, `countdown.wav`, `land_success.wav` | Lander Flux |
-| `jump.wav`, `death.wav` | Platform Flux |
-| `tank_start.wav`, `tank_loop.wav`, `shot.wav`, `repair.wav` | Tank Flux |
+| `gameend.wav`, `explosion.wav` | Shared across games |
+| `lander_start.wav`, `land_success.wav` | Lander Flux |
+| `jump.wav`, `death.wav` | Platform Flux (Runner) |
+| `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
 
+Each game also has a music track, named after its launcher entry:
+`flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
+`flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
+attract/title screen), carries on through lost lives and between-level
+screens, and stops at game over. A missing track just means no music.
+Mono 16-bit 44.1kHz is the best fit: it streams from SD while the game
+plays, and mono halves the card traffic.
+
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
-16-bit signed PCM. Keep them small: they stream from the SD card over the SPI
-bus the display also uses.
+16-bit signed PCM (mixed at 44.1kHz, stereo folded to mono). Effects up to
+~3.7s (320kB decoded) are cached; longer ones stream like music, which
+costs an SD open per play, and only one plays at a time. Music and long
+sounds share the SPI bus with the display, so keep them modest.
 
 ## Testing and Profiling
 

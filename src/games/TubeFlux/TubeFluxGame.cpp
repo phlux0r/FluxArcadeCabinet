@@ -47,6 +47,10 @@ void TubeFluxGame::init(AudioEngine &audio) {
     static const int n[] = { 440, 660, 880, 1320 };
     static const int d[] = {  80,  80,  80,  200 };
     audio.playMelody(n, d, 4);
+    // Decoded into the mixer's cache now, so the first play isn't late.
+    static const char* const sfx[] = { "/audio/shot.wav", "/audio/explosion.wav",
+                                       "/audio/tube_bump.wav", "/audio/tube_powerup.wav" };
+    for (const char* f : sfx) audio.preload(f);
 }
 
 void TubeFluxGame::startNewGame(AudioEngine &audio) {
@@ -54,6 +58,9 @@ void TubeFluxGame::startNewGame(AudioEngine &audio) {
     _phase = PHASE_PLAYING;
     _phaseEnteredMs = millis();
     audio.playTone(900, 80);
+    // Music plays during a run only: not on the attract screen or in its
+    // demo, and it stops at game over (restarting with the next run).
+    audio.loopWAV(TUBE_MUSIC);
 }
 
 // Everything a run starts from, shared by a real game and the attract demo.
@@ -110,6 +117,7 @@ void TubeFluxGame::enterGameOver(AudioEngine &audio) {
     _crossObj->enabled = false;
     hideChase();
     hideBonus();
+    audio.stopLoop();
     static const int n[] = { 520, 390, 260, 130 };
     static const int d[] = { 120, 120, 120, 320 };
     audio.playMelody(n, d, 4);

@@ -39,7 +39,7 @@ private:
     int  _asteroidsPassed = 0;
     int  _nextTargetScore = 0;
 
-    enum GamePhase { PHASE_ATTRACT, PHASE_COUNTDOWN, PHASE_PLAYING, PHASE_HIT, PHASE_GAMEOVER };
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_HIT, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
     enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO };
@@ -47,7 +47,6 @@ private:
     unsigned long _attractSlideTimer  = 0;
 
     unsigned long _phaseTimer   = 0;
-    int           _countdownVal = 3;
     bool          _uiDirty      = true;
 
     // Guards against instant exit on launch
@@ -66,13 +65,10 @@ private:
     static const int   SHIP_Y_MAX = ArcadeConfig::LANDSCAPE_HEIGHT - ArcadeConfig::SHIP_HEIGHT - 1;
     static constexpr float SHIP_MOVE_SPEED = 1.2f;  // px/frame, same for both axes
 
-    // Countdown WAV timing — set from WAV duration header on first play
-    uint32_t _countdownDurationMs = 1800;  // fallback if no SD card
-    bool     _countdownWAVReady   = false;
-
-    // Attract music — track whether loop command has been issued
-    // (independent of audio task playing state to avoid restart loop)
-    bool _attractMusicStarted = false;
+    // A game starts, and a lost life respawns, straight into play: the ship
+    // gets this long of flashing shield instead of a countdown. (A hit also
+    // clears the board, so a respawn doesn't land among asteroids.)
+    static const unsigned long SPAWN_SHIELD_MS = 2000;
 
     // Last-life hit — route through PHASE_HIT before PHASE_GAMEOVER
     bool _gameOverPending = false;
@@ -182,15 +178,14 @@ private:
         _shipXOffset  = 0.0f;
         _shipYOffset  = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
         _uiDirty      = true;
-        _phase        = PHASE_COUNTDOWN;
-        _countdownVal = 3;
+        _phase        = PHASE_PLAYING;
         _phaseTimer   = millis();
-        _gameOverPending     = false;
-        _attractMusicStarted = false;
+        _gameOverPending = false;
+        _ship.activateShield(SPAWN_SHIELD_MS);
 
-        // Stop attract music, play countdown WAV
-        audio.playWAV("/audio/countdown.wav");
-        _countdownWAVReady = false;
+        // Music plays during a game only: not on the attract screen, kept
+        // through respawns, stopped at game over.
+        audio.loopWAV("/audio/flux-asteroids.wav");
     }
 
     // Spawn explosion particles and start non-blocking WAV stream.
@@ -215,10 +210,8 @@ public:
         _btnBWasHeld       = true;
         _shipXOffset       = 0.0f;
         _shipYOffset       = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
-        _countdownWAVReady = false;
-        _attractMusicStarted = false;
         _gameOverPending   = false;
-        audio.playStartupSound(gamestart_data, sizeof(gamestart_data));
+        // No start sound: the attract loop starts straight away.
     }
 
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
@@ -244,13 +237,6 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            // Issue loop command once only — not every frame
-            if (!_attractMusicStarted) {
-                Serial.printf("[Asteroid] Playing loop");
-                audio.loopWAV("/audio/asteroid_loop.wav");
-                _attractMusicStarted = true;
-            }
-
             if (millis() - _attractSlideTimer > 8000) {
                 _attractSlide      = (_attractSlide == SLIDE_SPLASH) ? SLIDE_INFO : SLIDE_SPLASH;
                 _attractSlideTimer = millis();
@@ -269,46 +255,6 @@ public:
                 startNewGame(audio);
             }
 
-            flushLandscape(canvas);
-            return true;
-        }
-
-        // ---- PHASE: COUNTDOWN ----
-        if (_phase == PHASE_COUNTDOWN) {
-            canvas.fillRect(0, 11,
-                            ArcadeConfig::LANDSCAPE_WIDTH,
-                            ArcadeConfig::LANDSCAPE_HEIGHT - 11,
-                            ArcadeConfig::COLOR_BLACK);
-            drawUI(canvas);
-
-            // Read WAV duration once it's available from the audio task.
-            // Reset phaseTimer at that moment so countdown starts from zero
-            // relative to the actual WAV length (not the fallback 1800ms).
-            if (!_countdownWAVReady && audio.getLastWAVDurationMs() > 0) {
-                _countdownDurationMs = audio.getLastWAVDurationMs();
-                _countdownWAVReady   = true;
-                // Compensate for I2S DMA pipeline latency (~40ms from write to speaker)
-                // and file open/header parse time to align visuals with audio
-                _phaseTimer = millis() - 40;
-            }
-
-            unsigned long elapsed = millis() - _phaseTimer;
-
-            // Show a large countdown number that scales with WAV duration
-            // Divide total duration into thirds for 3→2→1
-            int third = _countdownDurationMs / 3;
-            int val = (elapsed < third) ? 3 : (elapsed < third * 2) ? 2 : 1;
-
-            if (elapsed < _countdownDurationMs) {
-                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 2 - 6,
-                                 ArcadeConfig::LANDSCAPE_HEIGHT / 2 - 8);
-                canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-                canvas.setTextSize(2);
-                canvas.print(val);
-                canvas.setTextSize(1);
-            } else {
-                _phase = PHASE_PLAYING;
-            }
             flushLandscape(canvas);
             return true;
         }
@@ -352,7 +298,7 @@ public:
 
                 // Always go through PHASE_HIT first so explosion plays out.
                 // _gameOverPending signals that PHASE_HIT should transition to
-                // PHASE_GAMEOVER instead of PHASE_COUNTDOWN.
+                // PHASE_GAMEOVER instead of respawning.
                 _phase      = PHASE_HIT;
                 _phaseTimer = millis();
                 _asteroids.forceBoardWipe();
@@ -397,7 +343,7 @@ public:
             return true;
         }
 
-        // ---- PHASE: HIT — show explosion, then countdown or game over ----
+        // ---- PHASE: HIT — show explosion, then respawn or game over ----
         if (_phase == PHASE_HIT) {
             _particles.update();
             canvas.fillRect(0, 11,
@@ -416,14 +362,13 @@ public:
                     _phaseTimer        = millis();
                     _gameOverEnteredMs = millis();
                     _gameOverPending   = false;
+                    audio.stopLoop();
                     audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 } else {
-                    // Respawn countdown
-                    _phase        = PHASE_COUNTDOWN;
-                    _countdownVal = 3;
-                    _phaseTimer   = millis();
-                    audio.playWAV("/audio/countdown.wav");
-                    _countdownWAVReady = false;
+                    // Respawn straight into play, shielded for a moment
+                    _phase      = PHASE_PLAYING;
+                    _phaseTimer = millis();
+                    _ship.activateShield(SPAWN_SHIELD_MS);
                 }
             }
             return true;
@@ -487,7 +432,6 @@ public:
                 _attractSlide        = SLIDE_SPLASH;
                 _attractSlideTimer   = millis();
                 _btnBWasHeld         = false;
-                _attractMusicStarted = false;  // Allow music to restart
             }
 
             return true;

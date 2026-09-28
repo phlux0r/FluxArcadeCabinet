@@ -97,6 +97,9 @@ void launchGame(IGame* game) {
     uint8_t rotation = game->getRotation();
     tft.setRotation(rotation);
     input.waitForButtonARelease();  // Prevent launch-press bleeding into game
+    // The launcher's launch melody gives way to the game's own start sound
+    // (the old one-sound engine cut it off the same way).
+    audio.mute();
     game->init(audio);
     Serial.printf("[CABINET] Launched: %s (rotation %d)\n", game->getName(), rotation);
 }

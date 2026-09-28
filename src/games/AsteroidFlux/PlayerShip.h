@@ -97,9 +97,11 @@ public:
         }
     }
 
-    void activateShield() {
+    // The power-up's full shield, or a shorter one (the spawn shield). Its
+    // last 2s flash red, so a 2s spawn shield flashes throughout.
+    void activateShield(unsigned long ms = SHIELD_DURATION) {
         _shieldActive  = true;
-        _shieldEndTime = millis() + SHIELD_DURATION;
+        _shieldEndTime = millis() + ms;
     }
 
     void updateShield() {

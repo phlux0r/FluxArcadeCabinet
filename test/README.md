@@ -17,6 +17,7 @@ test/build.sh                  # build, run every game's scenarios, print summar
 test/build.sh god 30000        # one Tank Flux scenario, full trace
 test/build.sh god 30000 45     # ...at a 45ms frame time (~22fps)
 test/build.sh tube god 30000   # the same for Tube Flux (tank is the default)
+test/build.sh audio            # the audio mixer/loader tests, full output
 test/build.sh --build-only
 ```
 
@@ -86,10 +87,15 @@ being freed on exit to the launcher).
 
 ## What it does not cover
 
-- **Audio.** `stub/cabinet/AudioEngine.h` only counts calls. The real engine
-  needs I2S, FreeRTOS and an SD card. It was blind to the bug where the
-  engine's shared task state was `static` in a header, which silenced the
-  whole cabinet once more than one `.cpp` included it.
+- **Audio output.** The game harnesses use `stub/cabinet/AudioEngine.h`,
+  which only counts calls. `audio_test.cpp` does test the real mixer and
+  loader logic (mixing, clipping, voice stealing, the synth, WAV parsing,
+  resampling, caching, streaming and seamless loops, mute ordering) against
+  WAV files it writes to a temp dir. What neither sees is the device glue in
+  `src/cabinet/AudioEngine.h`: I2S, the FreeRTOS tasks, the SD card, timing.
+  The stub was blind to the bug where the engine's shared task state was
+  `static` in a header, which silenced the whole cabinet once more than one
+  `.cpp` included it.
 - **How it looks or plays.** A framebuffer hash notices that pixels changed,
   never whether they're right. Same for feel, timing and difficulty.
 - **Real timing.** The clock is fake and advanced a fixed step per frame, so
@@ -104,14 +110,15 @@ good to ship". Hardware still decides that.
 
 ```
 test/
-├── build.sh                    # finds Jet, builds both harnesses, runs
+├── build.sh                    # finds Jet, builds both harnesses + audio_test, runs
+├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
 ├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
 └── stub/                       # shadows the hardware headers (-I'd first)
     ├── Arduino.h               # millis()/random()/math, no hardware
     ├── Adafruit_GFX.h          # GFXcanvas16 with a real RGB565 buffer
-    ├── Preferences.h           # no-op high score storage
+    ├── Preferences.h           # no-op settings/high score storage
     └── cabinet/AudioEngine.h   # call counter
 ```
 
