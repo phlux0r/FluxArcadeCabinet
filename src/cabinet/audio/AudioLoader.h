@@ -12,7 +12,7 @@
 //
 // It runs on its own task, below the mixer's priority: an SD card that
 // stalls holds up only the loader, and the ring keeps the music going
-// through ~186ms of that. step() does a bounded amount of work each call
+// through ~743ms of that. step() does a bounded amount of work each call
 // and never blocks: restarting a stream waits for the mixer's flush
 // acknowledgement across calls rather than in one.
 

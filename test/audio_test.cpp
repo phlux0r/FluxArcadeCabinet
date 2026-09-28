@@ -73,6 +73,7 @@ struct Rig {
     AudioLoader loader;
     std::vector<int16_t> ring0, ring1;
     uint32_t epoch = 0;
+    bool stalled = false;          // the loader gets no time (an SD card stall)
     Rig(uint32_t budget = 1 << 20, uint32_t maxEntry = 256 * 1024)
         : loader(mixer, &mf, &jf, &lf, testAlloc, testFree, budget, maxEntry),
           ring0(RING_SAMPLES), ring1(RING_SAMPLES) {
@@ -84,7 +85,7 @@ struct Rig {
     std::vector<int16_t> run(int frames, int block = 256) {
         std::vector<int16_t> out, buf(block * 2);
         while ((int)out.size() < frames) {
-            loader.step();
+            if (!stalled) loader.step();
             int n = std::min(block, frames - (int)out.size());
             mixer.render(buf.data(), n);
             for (int i = 0; i < n; ++i) out.push_back(buf[2 * i]);
@@ -282,6 +283,21 @@ int main() {
         for (int i = 0; exact && i < 5000; ++i) exact = out[fs + i] == -(i + 1);
         CHECK(exact && r.loader.isCached("/audio/fxf.wav"), "flaky card: effect loads sample-exact");
         g_flaky = false;
+    }
+
+    // --- The music rides out a 400ms loader stall (seen on hardware while
+    // the display held the SD card's bus).
+    {
+        std::vector<int> m(44100, 500);
+        writeWav("/audio/flat.wav", 44100, 16, 1, m);
+        Rig r;
+        r.cmd(LC_LOOP_MUSIC, "/audio/flat.wav");
+        r.run(20000);
+        r.stalled = true;
+        auto out = r.run(44100 * 400 / 1000);
+        r.stalled = false;
+        CHECK(r.mixer.underruns[STREAM_MUSIC] == 0 && nonZero(out) == (int)out.size(),
+              "400ms stall: no underrun (%u)", (unsigned)r.mixer.underruns[STREAM_MUSIC]);
     }
 
     // --- Effects over music, at their own level.

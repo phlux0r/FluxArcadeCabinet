@@ -206,7 +206,8 @@ commands to them through lock-free queues, so it never blocks):
 - **loader** (priority 3) does all SD access. Effects are decoded into PSRAM
   the first time they play (or at `preload()`) and then play from memory;
   the cache is 768KB, least-recently-used first out. Music streams through
-  a ~186ms ring buffer.
+  a ~743ms ring buffer (it rides out the SD card stalling while the
+  display holds the shared bus, seen at up to 400ms).
 
 The mixer and loader are plain C++ (`src/cabinet/audio/`) with a host test,
 `test/audio_test.cpp`. `AudioEngine.h` is the device glue around them. If
@@ -254,7 +255,8 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
 16-bit signed PCM (mixed at 44.1kHz, stereo folded to mono). Effects up to
-~2.2s are cached decoded; longer ones stream like music. Music and long
+~3.7s (320kB decoded) are cached; longer ones stream like music, which
+costs an SD open per play, and only one plays at a time. Music and long
 sounds share the SPI bus with the display, so keep them modest.
 
 ## Testing and Profiling

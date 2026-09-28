@@ -43,7 +43,8 @@ constexpr int      FX_VOICES     = 4;
 constexpr int      STREAM_MUSIC  = 0;
 constexpr int      STREAM_JINGLE = 1;
 constexpr int      STREAMS       = 2;
-constexpr uint32_t RING_SAMPLES  = 8192;       // per stream: ~186ms at 44.1kHz
+constexpr uint32_t RING_SAMPLES  = 32768;      // per stream: ~743ms at 44.1kHz, riding out
+                                               // SD stalls of 250-400ms seen on hardware
 constexpr int16_t  SYNTH_AMP     = 8000;       // the old engine's tone level
 
 static_assert((RING_SAMPLES & (RING_SAMPLES - 1)) == 0, "ring size must be a power of two");

@@ -32,7 +32,7 @@
 //           of audio is queued ahead of the speaker, so sounds start fast.
 //   loader  (priority 3): all SD access (audio/AudioLoader.h). Effects are
 //           decoded into PSRAM the first time and kept; music and jingles
-//           stream into ring buffers holding ~186ms, which rides out a
+//           stream into ring buffers holding ~743ms, which rides out a
 //           slow card.
 // The game loop only posts commands; nothing here blocks it.
 //
@@ -78,7 +78,7 @@ constexpr int      MIX_BLOCK       = 256;          // frames per mix (~5.8ms)
 constexpr int      DMA_BUF_LEN     = 256;          // frames
 constexpr int      DMA_BUF_COUNT   = 6;            // ~35ms queued ahead of the speaker
 constexpr uint32_t CACHE_BUDGET    = 768 * 1024;   // decoded effects, in PSRAM
-constexpr uint32_t CACHE_MAX_ENTRY = 192 * 1024;   // ~2.2s at 44.1kHz; longer plays as a jingle
+constexpr uint32_t CACHE_MAX_ENTRY = 320 * 1024;   // ~3.7s at 44.1kHz mono; longer plays as a jingle
 constexpr int      MIXER_PRIO      = 5, LOADER_PRIO = 3, AUDIO_CORE = 0;
 constexpr int      MIXER_STACK     = 4096, LOADER_STACK = 8192;
 constexpr int      PGM_SLOTS       = 4;            // PROGMEM fallback samples playing at once
