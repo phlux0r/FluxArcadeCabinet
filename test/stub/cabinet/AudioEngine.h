@@ -20,6 +20,7 @@ struct AudioEngine {
     void stopLoop() {}
     void mute() {}
     bool isSamplePlaying() const { return false; }
+    bool isWAVPlaying() const { return false; }
     bool isMelodyPlaying() const { return false; }
     void playExplosionSound(const uint8_t*, size_t) { ++wavs; }
     void playTankStartSound() {}

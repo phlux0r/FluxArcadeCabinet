@@ -150,6 +150,13 @@ public:
     std::atomic<bool> toneBusy{false};
     std::atomic<uint32_t> melodiesStarted{0};   // lets the game side tell "queued" from "done"
 
+    // Diagnostics (the engine logs them): only ever counted up, here.
+    std::atomic<uint32_t> underruns[STREAMS];   // a stream ran dry mid-play (events)
+    std::atomic<uint32_t> stolen{0};            // effects cut short for a new one
+    std::atomic<uint32_t> epochDropped{0};      // commands dropped as older than a mute
+    std::atomic<uint32_t> voicesStarted{0};     // effects that started sounding
+    std::atomic<uint32_t> tonesStarted{0};      // playTone()s that started sounding
+
     // Mixes `frames` stereo frames (L, R interleaved; the cabinet has one
     // speaker, so they're equal) into `out`.
     void render(int16_t* out, int frames) {
@@ -175,6 +182,8 @@ public:
         publishStatus();
     }
 
+    Mixer() { for (auto &u : underruns) u.store(0); }
+
     // Host tests: how many voices are sounding.
     int activeVoices() const {
         int n = 0;
@@ -198,6 +207,7 @@ private:
     uint32_t _streamFrac[STREAMS] = { 0, 0 };
     uint32_t _streamStep[STREAMS] = { 1u << 16, 1u << 16 };
     int16_t  _streamCur[STREAMS] = { 0, 0 };
+    bool     _starved[STREAMS] = { false, false };   // counted once per dry spell
 
     // Synth: a 32-bit phase accumulator for the square wave.
     bool       _synthOn = false;
@@ -228,6 +238,7 @@ private:
         if (c.type == MC_MELODY) melodiesStarted.fetch_add(1, std::memory_order_relaxed);
         if (c.type == MC_PLAY_PCM && c.pcm) c.pcm->queued.fetch_sub(1, std::memory_order_acq_rel);
         if (c.epoch < _epoch) {            // asked for before a mute: drop it
+            epochDropped.fetch_add(1, std::memory_order_relaxed);
             return;
         }
         switch (c.type) {
@@ -237,6 +248,7 @@ private:
             case MC_TONE:
                 if (!fxOn.load(std::memory_order_relaxed)) break;
                 _melody = false;
+                tonesStarted.fetch_add(1, std::memory_order_relaxed);
                 startNote(c.a, (uint32_t)c.b * OUT_RATE / 1000, (uint32_t)c.b * OUT_RATE / 1000);
                 break;
             case MC_MELODY:
@@ -250,6 +262,7 @@ private:
                 _streamOn[s] = true;
                 _streamFrac[s] = 0;
                 _streamCur[s] = 0;
+                _starved[s] = false;
                 _streamStep[s] = (uint32_t)(((uint64_t)streams[s].rate.load() << 16) / OUT_RATE);
                 break;
             }
@@ -269,12 +282,14 @@ private:
             slot = &_voices[0];
             for (auto &v : _voices) if (v.age < slot->age) slot = &v;
             stopVoice(*slot);
+            stolen.fetch_add(1, std::memory_order_relaxed);
         }
         slot->pcm = pcm;
         slot->pos = 0;
         slot->step = (uint32_t)(((uint64_t)pcm->rate << 16) / OUT_RATE);
         slot->age = ++_age;
         pcm->playing.fetch_add(1, std::memory_order_acq_rel);
+        voicesStarted.fetch_add(1, std::memory_order_relaxed);
     }
 
     void stopVoice(Voice& v) {
@@ -303,12 +318,15 @@ private:
             if (r != ring.w.load(std::memory_order_acquire)) {
                 _streamCur[s] = ring.buf[r & (RING_SAMPLES - 1)];
                 ring.r.store(r + 1, std::memory_order_release);
+                _starved[s] = false;
             } else if (ring.ended.load(std::memory_order_acquire)) {
                 _streamOn[s] = false;       // played to the end
                 _streamCur[s] = 0;
                 break;
-            } else {
-                break;                      // underrun: hold the last sample
+            } else {                        // underrun: hold the last sample
+                if (!_starved[s]) underruns[s].fetch_add(1, std::memory_order_relaxed);
+                _starved[s] = true;
+                break;
             }
         }
         return out;

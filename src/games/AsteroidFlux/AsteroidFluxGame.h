@@ -244,8 +244,9 @@ public:
 
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
-            // Issue loop command once only — not every frame
-            if (!_attractMusicStarted) {
+            // Issue loop command once only — not every frame — and only
+            // once the startup sound has finished, as the two now mix.
+            if (!_attractMusicStarted && !audio.isWAVPlaying()) {
                 Serial.printf("[Asteroid] Playing loop");
                 audio.loopWAV("/audio/asteroid_loop.wav");
                 _attractMusicStarted = true;

@@ -13,6 +13,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <stdarg.h>
 #include "ArcadeConfig.h"
 #include "audio/AudioLoader.h"
 
@@ -63,6 +64,13 @@
 #define NOTE_C6  1047
 #define NOTE_REST   0
 
+// Serial diagnostics: file opens, stream starts, read failures, and every
+// 2s (while anything's happening) a line of counters. See the README's
+// "Audio diagnostics". Build with -DAUDIO_DEBUG=0 to silence them.
+#ifndef AUDIO_DEBUG
+#define AUDIO_DEBUG 1
+#endif
+
 static const i2s_port_t I2S_PORT = I2S_NUM_0;
 
 namespace audiocfg {
@@ -105,18 +113,84 @@ inline audiomix::AudioLoader  _audioLoader(_audioMixer, &_audioMusicFile, &_audi
                                            audioAlloc, audioFree,
                                            audiocfg::CACHE_BUDGET, audiocfg::CACHE_MAX_ENTRY);
 
+// Diagnostics the tasks and the game side fill in (see AUDIO_DEBUG).
+namespace audiodiag {
+inline std::atomic<uint32_t> wavRequests{0}, toneRequests{0};
+inline std::atomic<uint32_t> mixQueueFull{0}, loadQueueFull{0};
+inline std::atomic<uint32_t> renderMaxUs{0};    // longest render() (CPU cost)
+inline std::atomic<uint32_t> periodMaxUs{0};    // longest time between blocks: over
+                                                // ~35ms the speaker ran dry
+inline std::atomic<uint32_t> stepMaxUs{0};      // longest loader step (mostly SD time)
+
+inline void raiseMax(std::atomic<uint32_t>& m, uint32_t v) { if (v > m.load()) m.store(v); }
+
+inline void log(const char* fmt, ...) {
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    Serial.print(buf);
+}
+
+// One line of counters since boot, and the worst timings since the last
+// line. Printed from the loader task, only when a counter has moved.
+inline void report() {
+    static uint32_t last[8] = {};
+    const auto& M = _audioMixer;
+    const auto& L = _audioLoader;
+    uint32_t now[8] = { wavRequests.load(), toneRequests.load(), M.voicesStarted.load(),
+                        M.underruns[audiomix::STREAM_MUSIC].load(), L.readErrors.load(),
+                        L.shortReads.load(), mixQueueFull.load() + loadQueueFull.load(),
+                        L.loops.load() };
+    if (memcmp(now, last, sizeof(now)) == 0) return;
+    memcpy(last, now, sizeof(now));
+    Serial.printf("[AUDIO] wav %u (hit %u load %u big %u drop %u) voices %u stolen %u | tone %u/%u"
+                  " | music underrun %u loops %u, jingle underrun %u | sd err %u short %u"
+                  " | qfull %u/%u epoch-drop %u | max: loader %ums mix %uus period %ums\n",
+                  (unsigned)now[0], (unsigned)L.cacheHits.load(), (unsigned)L.loads.load(),
+                  (unsigned)L.bigPlays.load(), (unsigned)L.dropped.load(),
+                  (unsigned)now[2], (unsigned)M.stolen.load(),
+                  (unsigned)M.tonesStarted.load(), (unsigned)now[1],
+                  (unsigned)now[3], (unsigned)now[7],
+                  (unsigned)M.underruns[audiomix::STREAM_JINGLE].load(),
+                  (unsigned)now[4], (unsigned)now[5],
+                  (unsigned)mixQueueFull.load(), (unsigned)loadQueueFull.load(),
+                  (unsigned)M.epochDropped.load(),
+                  (unsigned)(stepMaxUs.load() / 1000), (unsigned)renderMaxUs.load(),
+                  (unsigned)(periodMaxUs.load() / 1000));
+    stepMaxUs.store(0);
+    renderMaxUs.store(0);
+    periodMaxUs.store(0);
+}
+}  // namespace audiodiag
+
 inline void audioMixerTask(void*) {
     static int16_t out[audiocfg::MIX_BLOCK * 2];
+    uint32_t prev = micros();
     for (;;) {
+        const uint32_t t0 = micros();
         _audioMixer.render(out, audiocfg::MIX_BLOCK);
+        audiodiag::raiseMax(audiodiag::renderMaxUs, micros() - t0);
+        audiodiag::raiseMax(audiodiag::periodMaxUs, t0 - prev);
+        prev = t0;
         size_t bw = 0;
         i2s_write(I2S_PORT, out, sizeof(out), &bw, portMAX_DELAY);   // paces the task
     }
 }
 
 inline void audioLoaderTask(void*) {
+    uint32_t lastReport = millis();
     for (;;) {
+        const uint32_t t0 = micros();
         _audioLoader.step();
+        audiodiag::raiseMax(audiodiag::stepMaxUs, micros() - t0);
+#if AUDIO_DEBUG
+        if (millis() - lastReport >= 2000) {
+            lastReport = millis();
+            audiodiag::report();
+        }
+#endif
         // Always sleep a tick: step() is bounded, and core 0's idle task
         // must run or the task watchdog fires.
         vTaskDelay(1);
@@ -148,13 +222,21 @@ private:
         c.epoch = _epoch;
         strncpy(c.path, path, sizeof(c.path) - 1);
         strncpy(c.path2, path2, sizeof(c.path2) - 1);
-        if (t == audiomix::LC_PLAY_FX) _audioLoader.inFlight.fetch_add(1);
-        if (!_audioLoader.fromGame.push(c) && t == audiomix::LC_PLAY_FX) _audioLoader.inFlight.fetch_sub(1);
+        if (t == audiomix::LC_PLAY_FX) {
+            _audioLoader.inFlight.fetch_add(1);
+            audiodiag::wavRequests.fetch_add(1);
+        }
+        if (!_audioLoader.fromGame.push(c)) {
+            audiodiag::loadQueueFull.fetch_add(1);
+            if (t == audiomix::LC_PLAY_FX) _audioLoader.inFlight.fetch_sub(1);
+        }
     }
 
     bool mixerCmd(audiomix::MixCmd m) {
         m.epoch = _epoch;
-        return _audioMixer.fromGame.push(m);
+        if (_audioMixer.fromGame.push(m)) return true;
+        audiodiag::mixQueueFull.fetch_add(1);
+        return false;
     }
 
 public:
@@ -195,6 +277,9 @@ public:
                                 audiocfg::MIXER_PRIO, nullptr, audiocfg::AUDIO_CORE);
         xTaskCreatePinnedToCore(audioLoaderTask, "audioLoad", audiocfg::LOADER_STACK, nullptr,
                                 audiocfg::LOADER_PRIO, nullptr, audiocfg::AUDIO_CORE);
+#if AUDIO_DEBUG
+        _audioLoader.log = audiodiag::log;
+#endif
         _ready = true;
         Serial.printf("[AUDIO] Mixer ready: %d effect voices, music + jingle streams, %s cache.\n",
                       audiomix::FX_VOICES, psramFound() ? "PSRAM" : "internal-RAM");
@@ -336,6 +421,7 @@ public:
         if (!_ready) return;
         audiomix::MixCmd m;
         m.type = audiomix::MC_TONE;
+        audiodiag::toneRequests.fetch_add(1);
         m.a = freqHz;
         m.b = durationMs;
         mixerCmd(m);

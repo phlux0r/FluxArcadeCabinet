@@ -214,6 +214,29 @@ the mixer misbehaves on the hardware, build with `-DAUDIO_LEGACY`
 (commented out in `platformio.ini`) to get the old one-sound-at-a-time
 engine back; it honours the music/FX switches too.
 
+### Audio diagnostics
+
+For now the engine logs to serial (build with `-DAUDIO_DEBUG=0` to stop it):
+each file it opens (rate, bits, channels, length, cached or streamed), read
+failures, and every 2s while anything is happening a line like
+
+```
+[AUDIO] wav 40 (hit 36 load 4 big 0 drop 0) voices 40 stolen 3 | tone 12/12 | music underrun 0 loops 2, jingle underrun 0 | sd err 0 short 0 | qfull 0/0 epoch-drop 0 | max: loader 9ms mix 180us period 6ms
+```
+
+- `wav`: playWAVs asked for; `hit` played from memory, `load` read in from
+  SD, `big` too long to cache (streamed), `drop` given up on.
+- `voices`: effects that actually sounded; `stolen`: cut off for a newer one.
+- `tone started/asked`: a gap means tones went missing.
+- `underrun`: a stream ran dry (the SD card couldn't keep up): a gap in it.
+- `sd err`/`short`: reads that failed or came back short (retried; neither
+  restarts the music any more).
+- `qfull`: commands lost to a full queue (mixer/loader); `epoch-drop`:
+  sounds dropped for being asked for before a mute().
+- `max`: the slowest loader step (SD time), the slowest mix, and the longest
+  gap between mixed blocks, over the last 2s. A `period` past ~35ms means
+  the speaker ran out of audio.
+
 ### SD card
 
 Optional — without a card (or without a given file) the cabinet falls back to

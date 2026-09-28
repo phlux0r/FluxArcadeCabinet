@@ -37,17 +37,29 @@ static void writeWav(const char* name, uint32_t rate, int bits, int ch, const st
     fclose(f);
 }
 
+// Set to make reads misbehave like a busy SD card: every third read
+// returns nothing, and the others return one byte short (mid-sample).
+static bool g_flaky = false;
+
 class HostFile : public AudioFile {
 public:
     bool open(const char* path) override { close(); _f = fopen((g_dir + path).c_str(), "rb"); return _f != nullptr; }
     void close() override { if (_f) fclose(_f); _f = nullptr; }
     bool isOpen() const override { return _f != nullptr; }
-    int read(uint8_t* b, int n) override { return _f ? (int)fread(b, 1, n, _f) : 0; }
+    int read(uint8_t* b, int n) override {
+        if (!_f) return 0;
+        if (g_flaky && n >= 256) {                  // the data, not the header
+            if (++_reads % 3 == 0) return 0;
+            if (n > 1) --n;
+        }
+        return (int)fread(b, 1, n, _f);
+    }
     bool seek(uint32_t p) override { return _f && fseek(_f, p, SEEK_SET) == 0; }
     uint32_t position() override { return _f ? (uint32_t)ftell(_f) : 0; }
     ~HostFile() override { close(); }
 private:
     FILE* _f = nullptr;
+    int   _reads = 0;
 };
 
 static int g_allocs = 0;
@@ -236,6 +248,40 @@ int main() {
         r.cmd(LC_LOOP_MUSIC, "/audio/music.wav");
         r.run(1000);
         CHECK(!r.loader.streaming(STREAM_MUSIC), "music off ignores new music");
+    }
+
+    // --- A flaky card: failed and short reads neither restart the loop
+    // nor knock the samples out of alignment, and effects load exactly.
+    {
+        std::vector<int> m; for (int i = 0; i < 3000; ++i) m.push_back(i + 1);
+        writeWav("/audio/music.wav", 44100, 16, 1, m);
+        std::vector<int> fx; for (int i = 0; i < 5000; ++i) fx.push_back(-(i + 1));
+        writeWav("/audio/fxf.wav", 44100, 16, 1, fx);
+        g_flaky = true;
+        Rig r;
+        r.cmd(LC_LOOP_MUSIC, "/audio/music.wav");
+        auto out = r.run(20000);
+        int start = -1; for (int i = 0; i < (int)out.size(); ++i) if (out[i] == 1) { start = i; break; }
+        bool seamless = start >= 0;
+        int bad = -1;
+        for (int i = start; seamless && i < 20000; ++i) {
+            seamless = out[i] == (i - start) % 3000 + 1;
+            if (!seamless) bad = i;
+        }
+        CHECK(seamless, "flaky card: loop seamless from %d (broke at %d)", start, bad);
+        CHECK(r.loader.readErrors > 0 && r.loader.shortReads > 0, "flaky card: errors %u, short %u",
+              (unsigned)r.loader.readErrors, (unsigned)r.loader.shortReads);
+        CHECK(r.mixer.underruns[STREAM_MUSIC] == 0, "flaky card: no underruns (%u)",
+              (unsigned)r.mixer.underruns[STREAM_MUSIC]);
+        r.mixer.musicOn = false;
+        r.run(512);
+        r.cmd(LC_PLAY_FX, "/audio/fxf.wav");
+        out = r.run(8000);
+        int fs = -1; for (int i = 0; i < (int)out.size(); ++i) if (out[i] == -1) { fs = i; break; }
+        bool exact = fs >= 0;
+        for (int i = 0; exact && i < 5000; ++i) exact = out[fs + i] == -(i + 1);
+        CHECK(exact && r.loader.isCached("/audio/fxf.wav"), "flaky card: effect loads sample-exact");
+        g_flaky = false;
     }
 
     // --- Effects over music, at their own level.
