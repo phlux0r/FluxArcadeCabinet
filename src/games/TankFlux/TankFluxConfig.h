@@ -113,7 +113,7 @@ inline constexpr int     SCORE_PER_KILL = 100;
 
 // --- Enemy tanks -------------------------------------------------------------
 inline constexpr int     MAX_ENEMIES      = 3;
-inline constexpr int     MAX_ENEMY_SHELLS = 6;   // room for a boss spread (3) plus regular fire
+inline constexpr int     MAX_ENEMY_SHELLS = 8;   // room for an angry boss's spread (5) plus its burst
 inline constexpr float   ENEMY_SPEED      = 11.0f;
 inline constexpr float   ENEMY_SPEED_PER_LEVEL = 0.9f;
 // The turn-rate cap is what makes enemies beatable: you can flank one
@@ -180,6 +180,20 @@ inline constexpr float   BOSS_SPEED_MULT    = 0.8f;
 inline constexpr float   BOSS_SPREAD_DEG  = 14.0f;
 inline constexpr int     BOSS_BURST_SHOTS = 3;
 inline constexpr unsigned long BOSS_BURST_GAP_MS = 220;
+// Its own fire timer, well ahead of a regular tank's (3.6-6.2s at level 1):
+// each boss beaten takes STEP off both ends, up to STEP_MAX times.
+inline constexpr unsigned long BOSS_FIRE_MIN_MS  = 1800;
+inline constexpr unsigned long BOSS_FIRE_MAX_MS  = 2600;
+inline constexpr unsigned long BOSS_FIRE_STEP_MS = 120;
+inline constexpr int           BOSS_STEP_MAX     = 4;
+inline constexpr float         BOSS_TURN_STEP    = 0.1f;   // turn rate added per boss beaten
+// Bursts lead the target the way Class 3 does (the spread still aims
+// straight at you), so steady strafing no longer dodges everything.
+// Angry below half health: turns and fires faster, and its spread widens
+// to 5 shells. The turret and barrel glow red as the tell.
+inline constexpr float BOSS_RAGE_TURN_MULT  = 1.6f;
+inline constexpr float BOSS_RAGE_FIRE_MULT  = 0.7f;
+inline constexpr float BOSS_RAGE_SPREAD_DEG = 11.0f;       // 5 shells: 0, +-11, +-22
 // Rear armour: a shell travelling within 60 deg of the boss's facing
 // (cos 60 = 0.5) came from behind and does extra damage.
 inline constexpr float BOSS_REAR_ARC_COS = 0.5f;

@@ -16,7 +16,10 @@ Tank Flux and Tube Flux are rendered with
 [Jet](https://github.com/CubeCoders/Jet), a dependency-free fixed-function
 rasteriser. In Tank Flux you drive an arena of hills, rocks, trees and a
 river, fighting tanks that flank and fire back, with a boss every 15 kills
-that re-rolls the arena when it dies. In Tube Flux you fly down an endless
+that re-rolls the arena when it dies. The boss fires on its own faster
+timer, leads you with its bursts, and turns angry (red turret, faster,
+5-shell spread) below half health; each boss beaten makes the next one
+quicker. In Tube Flux you fly down an endless
 octagonal tunnel, rolling round its wall to dodge blocks; every ~30 seconds
 a gate raises the tier, which speeds things up, packs the blocks closer and
 brings in wider ones; from tier 4 the tunnel starts to curve, hiding what's

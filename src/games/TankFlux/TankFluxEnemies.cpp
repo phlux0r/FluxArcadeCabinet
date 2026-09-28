@@ -53,6 +53,34 @@ unsigned long TankFluxGame::fireDelay() const {
     return millis() + (unsigned long)random((long)lo, (long)hi);
 }
 
+// The boss's own, faster timer: quicker with each boss beaten, and quicker
+// again once it's angry.
+unsigned long TankFluxGame::bossFireDelay() const {
+    int steps = _bossesDefeated < BOSS_STEP_MAX ? _bossesDefeated : BOSS_STEP_MAX;
+    unsigned long cut = (unsigned long)steps * BOSS_FIRE_STEP_MS;
+    unsigned long lo = BOSS_FIRE_MIN_MS - cut, hi = BOSS_FIRE_MAX_MS - cut;
+    if (_boss.enraged) {
+        lo = (unsigned long)(lo * BOSS_RAGE_FIRE_MULT);
+        hi = (unsigned long)(hi * BOSS_RAGE_FIRE_MULT);
+    }
+    return millis() + (unsigned long)random((long)lo, (long)hi);
+}
+
+float TankFluxGame::bossTurnRate() const {
+    int steps = _bossesDefeated < BOSS_STEP_MAX ? _bossesDefeated : BOSS_STEP_MAX;
+    float rate = BOSS_TURN_RATE + BOSS_TURN_STEP * (float)steps;
+    return _boss.enraged ? rate * BOSS_RAGE_TURN_MULT : rate;
+}
+
+// Below half health: faster and wider-firing, turret and barrel glowing red.
+void TankFluxGame::enrageBoss(AudioEngine &audio) {
+    _boss.enraged = true;
+    _bossTurretMat.color = rgb565(31, 10, 2);       // hot red-orange
+    static const int n[] = { 220, 165, 110 };
+    static const int d[] = { 120, 120, 260 };
+    audio.playMelody(n, d, 3);
+}
+
 // Tougher classes only once more than one tank is on the field (enemyCap()).
 TankFluxGame::EnemyClass TankFluxGame::pickEnemyClass() const {
     if (_level <= 2) return CLASS_1;
@@ -137,8 +165,10 @@ bool TankFluxGame::trySpawnBoss(AudioEngine &audio) {
         resetFireState(_boss);
         _bossSpawnedAt = millis();
         _boss.hp = _boss.maxHp = BOSS_HP + BOSS_HP_STEP * _bossesDefeated;
+        _boss.enraged = false;
+        _bossTurretMat.color = rgb565(18, 17, 16);   // armour grey (setupMaterials())
         setTankVisible(_boss, true);
-        _boss.nextFireAt = fireDelay();
+        _boss.nextFireAt = bossFireDelay();
         _bossActive = true;
         audio.playTone(300, 400);   // low arrival cue
         return true;
@@ -154,6 +184,7 @@ void TankFluxGame::hitEnemy(Enemy &e, AudioEngine &audio, int damage) {
         destroyEnemy(e, audio);
         return;
     }
+    if (isBoss(e) && !e.enraged && e.hp * 2 <= e.maxHp) enrageBoss(audio);
     bool heavy = damage > 1;
     _particles.emitSparks(Renderer::Vec3f{ e.x, 120.0f, e.z },
                           Renderer::Vec3f{ 0, 1, 0 }, 300.0f, heavy ? 24 : 10);
@@ -253,8 +284,12 @@ void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
     // Class 3 leads its target: aims where the player will be when a shell
     // covering `dist` arrives. The others aim straight at the player, so
     // steady strafing still beats them.
+    // The boss leads with its bursts only: the next volley is a burst when
+    // `volley` is odd (see fireVolley()), and it keeps leading through one.
     float aimX = _x, aimZ = _z;
-    if (!boss && e.tankClass == CLASS_3) {
+    const bool leads = boss ? (e.volley % 2 == 1 || e.burstShotsLeft > 0)
+                            : e.tankClass == CLASS_3;
+    if (leads) {
         float framesToImpact = dist / ENEMY_SHELL_SPEED;
         aimX += _vx * framesToImpact;
         aimZ += _vz * framesToImpact;
@@ -262,7 +297,7 @@ void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
 
     // Turn and movement are per reference frame, so both scale with how long
     // this frame actually took (see updateFrameScale()).
-    float turnLimit = spec.turnRate * _frameScale;
+    float turnLimit = (boss ? bossTurnRate() : spec.turnRate) * _frameScale;
     float want = bearingTo(e.x, e.z, aimX, aimZ);
     float err  = angleDiff(want, e.headingDeg);
     e.headingDeg = wrapAngle(e.headingDeg + constrain(err, -turnLimit, turnLimit));
@@ -298,7 +333,7 @@ void TankFluxGame::updateEnemyAI(Enemy &e, AudioEngine &audio) {
             e.fireAt = 0;
             setBarrelHot(e, false);
             fireVolley(e, audio);
-            e.nextFireAt = fireDelay();
+            e.nextFireAt = boss ? bossFireDelay() : fireDelay();
         }
     } else if (e.burstShotsLeft == 0 && fabsf(err) < spec.aimTolerance &&
                dist < (float)ENEMY_FIRE_RANGE && reached(e.nextFireAt)) {
@@ -331,9 +366,15 @@ void TankFluxGame::fireVolley(Enemy &e, AudioEngine &audio) {
     bool fired;
     if (isBoss(e)) {
         if (e.volley++ % 2 == 0) {
-            fired  = fireEnemyShell(e, e.headingDeg - BOSS_SPREAD_DEG);
-            fired |= fireEnemyShell(e, e.headingDeg);
-            fired |= fireEnemyShell(e, e.headingDeg + BOSS_SPREAD_DEG);
+            if (e.enraged) {
+                fired = false;
+                for (int i = -2; i <= 2; ++i)
+                    fired |= fireEnemyShell(e, e.headingDeg + i * BOSS_RAGE_SPREAD_DEG);
+            } else {
+                fired  = fireEnemyShell(e, e.headingDeg - BOSS_SPREAD_DEG);
+                fired |= fireEnemyShell(e, e.headingDeg);
+                fired |= fireEnemyShell(e, e.headingDeg + BOSS_SPREAD_DEG);
+            }
         } else {
             fired = fireEnemyShell(e, e.headingDeg);
             e.burstShotsLeft = BOSS_BURST_SHOTS - 1;

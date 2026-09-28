@@ -87,13 +87,13 @@ private:
         int volley = 0;               // boss: alternates spread/burst
         int burstShotsLeft = 0;       // boss: follow-up shots still to fire
         unsigned long nextBurstAt = 0;
+        bool enraged = false;         // boss: below half health
     };
 
     // --- Session ---------------------------------------------------------------
     GamePhase     _phase = PHASE_ATTRACT;
     AttractSlide  _attractSlide = SLIDE_GAME;
     unsigned long _attractSlideTimer = 0;
-    // Attract music loops /audio/tank_loop.wav from SD (silent if missing).
     bool          _btnBWasHeld = false;     // B must be released before hold-to-exit counts
     unsigned long _btnBHoldStart = 0;       // attract/game over: hold B to exit
     unsigned long _quitHoldStart = 0;       // playing: hold A+B to quit; 0 = not held
@@ -190,7 +190,7 @@ private:
     Renderer::Material _enemyBarrelMat{ 0xFFFF };
     Renderer::Material _enemyTrackMat{ 0xFFFF };
     Renderer::Material _bossHullMat{ 0xFFFF };
-    Renderer::Material _bossTurretMat{ 0xFFFF };
+    Renderer::Material _bossTurretMat{ 0xFFFF };   // turret and barrel; red when angry
     Renderer::Material _barrelHotMat{ ArcadeConfig::COLOR_WHITE };   // fire telegraph
     Renderer::Material _playerShellMat{ ArcadeConfig::COLOR_CYAN };
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
@@ -238,6 +238,9 @@ private:
     int aliveEnemies() const;
     float enemySpeed() const;
     unsigned long fireDelay() const;
+    unsigned long bossFireDelay() const;
+    float bossTurnRate() const;
+    void enrageBoss(AudioEngine &audio);
     EnemyClass pickEnemyClass() const;
     void setTankVisible(Enemy &e, bool visible);
     void setBarrelHot(Enemy &e, bool hot);
