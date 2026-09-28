@@ -247,11 +247,19 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | File | Used by |
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
-| `asteroid_loop.wav` (music, looped during play, not on the attract screen) | Asteroid Flux |
-| `lander_start.wav`, `countdown.wav`, `land_success.wav` | Lander Flux |
-| `jump.wav`, `death.wav` | Platform Flux |
-| `tank_start.wav`, `tank_loop.wav`, `shot.wav`, `repair.wav` | Tank Flux |
-| `flux-tube-track.wav` (music, looped during a run), `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
+| `countdown.wav` | Asteroid Flux |
+| `lander_start.wav`, `land_success.wav` | Lander Flux |
+| `jump.wav`, `death.wav` | Platform Flux (Runner) |
+| `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
+| `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
+
+Each game also has a music track, named after its launcher entry:
+`flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
+`flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
+attract/title screen), carries on through lost lives and between-level
+screens, and stops at game over. A missing track just means no music.
+Mono 16-bit 44.1kHz is the best fit: it streams from SD while the game
+plays, and mono halves the card traffic.
 
 The header parser accepts any sample rate, mono or stereo, 8-bit unsigned or
 16-bit signed PCM (mixed at 44.1kHz, stereo folded to mono). Effects up to

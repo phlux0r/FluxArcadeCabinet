@@ -243,10 +243,8 @@ inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B on attrac
 // strafing is common.
 inline constexpr unsigned long QUIT_HOLD_MS       = 2000;
 inline constexpr unsigned long QUIT_HINT_DELAY_MS = 650;
-// playTankStartSound()'s SD path reports "not playing" until the file has
-// opened, so the attract loop waits this long before it may take over the
-// channel. Same deadline AudioEngine uses for its own SD-latency checks.
-inline constexpr unsigned long ATTRACT_MUSIC_GRACE_MS = 300;
+// Looped during a game (not on the attract screen).
+inline constexpr const char* TANK_MUSIC = "/audio/flux-tank.wav";
 
 }  // namespace tankflux
 

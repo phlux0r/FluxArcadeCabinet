@@ -302,7 +302,7 @@ public:
             } else {
                 _phase = PHASE_PLAYING;
                 if (!_gameMusicStarted) {
-                    audio.loopWAV("/audio/asteroid_loop.wav");
+                    audio.loopWAV("/audio/flux-asteroids.wav");
                     _gameMusicStarted = true;
                 }
             }

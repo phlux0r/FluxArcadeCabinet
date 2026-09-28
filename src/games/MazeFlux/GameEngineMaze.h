@@ -366,6 +366,7 @@ private:
                 if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                 _state      = STATE_GAMEOVER;
                 _gameOverMs = millis();
+                audio.stopLoop();
             } else {
                 _player.reset(0, 0);
             }
@@ -656,6 +657,9 @@ public:
                 initLevel();
                 _player.lives = 3;
                 _state = STATE_PLAYING;
+                // Music plays during a game only (through level-complete
+                // screens), not on the title screen; it stops at game over.
+                audio.loopWAV("/audio/flux-maze.wav");
             }
 
             if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
@@ -734,6 +738,7 @@ public:
                     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                     _state      = STATE_GAMEOVER;
                     _gameOverMs = millis();
+                    audio.stopLoop();
                 } else {
                     _timeLeft = 60;
                 }

@@ -94,8 +94,6 @@ private:
     AttractSlide  _attractSlide = SLIDE_GAME;
     unsigned long _attractSlideTimer = 0;
     // Attract music loops /audio/tank_loop.wav from SD (silent if missing).
-    bool          _attractMusicStarted = false;
-    unsigned long _attractMusicEarliestAt = 0;
     bool          _btnBWasHeld = false;     // B must be released before hold-to-exit counts
     unsigned long _btnBHoldStart = 0;       // attract/game over: hold B to exit
     unsigned long _quitHoldStart = 0;       // playing: hold A+B to quit; 0 = not held

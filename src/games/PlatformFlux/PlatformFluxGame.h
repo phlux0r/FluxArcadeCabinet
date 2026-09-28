@@ -158,6 +158,9 @@ private:
         _uiDirty = true;
         _phase = PHASE_PLAYING;
         _phaseTimer = millis();
+        // Music plays during a run only, not on the attract screen; it
+        // stops at game over.
+        audio.loopWAV("/audio/flux-runner.wav");
     }
 
     void triggerPlayerDeath(AudioEngine &audio) {
@@ -360,6 +363,7 @@ public:
                 _particles.clearAll();
                 _phase             = PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
+                audio.stopLoop();
                 audio.playGameOverToneSound();
             }
             return true;
