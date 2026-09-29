@@ -75,7 +75,9 @@ else
   for g in tankflux tubeflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")
     # Tube Flux's attract screen includes a demo run: idle sits through it.
+    # Both games' attract screens include a demo run: idle sits through it.
     [ "$g" = tubeflux ] && scenarios+=("idle 8000" "demoexit")
+    [ "$g" = tankflux ] && scenarios+=("idle 12000" "demoexit")
     for s in "${scenarios[@]}"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086

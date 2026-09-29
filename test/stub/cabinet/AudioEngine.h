@@ -25,9 +25,11 @@ struct AudioEngine {
     bool isSamplePlaying() const { return false; }
     bool isWAVPlaying() const { return false; }
     bool isMelodyPlaying() const { return false; }
-    void playExplosionSound(const uint8_t*, size_t) { ++wavs; }
+    // The real wrappers go through playWAV()/playMelody(), so they're
+    // silenced the same way.
+    void playExplosionSound(const uint8_t*, size_t) { playWAV("/audio/explosion.wav"); }
     void playTankStartSound() {}
-    void playLaunchMelody() { ++melodies; }
+    void playLaunchMelody() { playMelody(nullptr, nullptr, 0); }
     void preload(const char*) {}
     void setVolume(float) {}
     void setMusicEnabled(bool) {}

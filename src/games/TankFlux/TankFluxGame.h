@@ -47,7 +47,7 @@ public:
 
 private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_GAME, SLIDE_INFO };
+    enum AttractSlide { SLIDE_GAME, SLIDE_INFO, SLIDE_DEMO };
     enum EnemyClass : uint8_t { CLASS_1, CLASS_2, CLASS_3 };
 
     struct RepairKit {
@@ -200,10 +200,23 @@ private:
     void saveHighScore();
     void recordHighScore();
     void updateFrameScale();
-    void startNewGame(AudioEngine &audio);
+    void resetGame();                       // a fresh game's world and state, silently
+    void startNewGame(AudioEngine &audio);  // resetGame(), plus its start sound and music
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+
+    // --- TankFluxDemo.cpp ------------------------------------------------------
+    bool inDemo() const { return _phase == PHASE_ATTRACT && _attractSlide == SLIDE_DEMO; }
+    InputState demoPilot();
+    void startDemo();
+    bool updateDemo(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    void endDemo();
+    void drawDemoOverlay(GFXcanvas16 &canvas);
+    unsigned long _demoUntil = 0;
+    unsigned long _demoStrafeUntil = 0;
+    float _demoStrafeDir = 1.0f;
+    bool  _demoPrevA = false;
 
     // --- TankFluxScene.cpp -----------------------------------------------------
     void ensureSceneReady(GFXcanvas16 &canvas);
