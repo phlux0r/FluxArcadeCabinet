@@ -481,11 +481,18 @@ public:
 
     // Returns the ground-level Y the player should collide with given their
     // current footprint, or -1 if the player is over a gap (falling).
-    int groundYAt(float playerX, float playerRight, float playerY, float playerBottom) const {
+    // `ahead` > 0 asks where moving platforms will have bobbed to that many
+    // frames from now (for the attract demo's prediction); positions are
+    // the caller's to shift.
+    int groundYAt(float playerX, float playerRight, float playerY, float playerBottom, int ahead = 0) const {
         int best = -1;
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
             if (playerRight <= _pool[i].x || playerX >= _pool[i].x + _pool[i].width) continue;
+            int y = _pool[i].y;
+            if (ahead > 0 && _pool[i].isMoving) {
+                y = (int)(_pool[i].baseY + sinf(_pool[i].bobPhase + 0.04f * ahead) * ArcadeConfig::PLATFORM_BOB_AMPLITUDE);
+            }
 
             // Tolerance for "is this close enough to count as ground yet."
             // Contiguous stairs steps (no gap before them) get a generous
@@ -501,8 +508,8 @@ public:
             // lethal gap regardless of jumping.
             int tolerance = (_pool[i].isGroundSegment && !_pool[i].firePitBefore) ? 8 : 2;
 
-            if (playerBottom <= _pool[i].y + tolerance) {
-                if (best == -1 || _pool[i].y < best) best = _pool[i].y;
+            if (playerBottom <= y + tolerance) {
+                if (best == -1 || y < best) best = y;
             }
         }
         return best;
@@ -518,6 +525,18 @@ public:
     bool spikeHitsPlayer(float playerX, float playerRight, float playerBottom) const {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active || !_pool[i].hasSpike || _pool[i].spikePhase != SPIKE_DANGER) continue;
+            float sx = _pool[i].x + _pool[i].spikeOffsetX;
+            if (playerRight <= sx - 6 || playerX >= sx + 6) continue;
+            if (playerBottom >= _pool[i].y - 8) return true;
+        }
+        return false;
+    }
+
+    // A spike under the player's feet, whatever its phase: the attract
+    // demo's autopilot treats every trap as live rather than timing them.
+    bool spikeNear(float playerX, float playerRight, float playerBottom) const {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            if (!_pool[i].active || !_pool[i].hasSpike) continue;
             float sx = _pool[i].x + _pool[i].spikeOffsetX;
             if (playerRight <= sx - 6 || playerX >= sx + 6) continue;
             if (playerBottom >= _pool[i].y - 8) return true;

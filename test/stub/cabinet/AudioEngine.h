@@ -12,19 +12,24 @@
 
 struct AudioEngine {
     int tones = 0, melodies = 0, wavs = 0;
+    int silencedCalls = 0;   // sounds asked for while silenced (a demo)
+    bool silenced = false;
 
-    void playTone(int, int) { ++tones; }
-    void playMelody(const int*, const int*, int) { ++melodies; }
-    void playWAV(const char*) { ++wavs; }
+    void setSilenced(bool on) { silenced = on; }
+    void playTone(int, int) { if (silenced) ++silencedCalls; else ++tones; }
+    void playMelody(const int*, const int*, int) { if (silenced) ++silencedCalls; else ++melodies; }
+    void playWAV(const char*) { if (silenced) ++silencedCalls; else ++wavs; }
     void loopWAV(const char*) {}
     void stopLoop() {}
     void mute() {}
     bool isSamplePlaying() const { return false; }
     bool isWAVPlaying() const { return false; }
     bool isMelodyPlaying() const { return false; }
-    void playExplosionSound(const uint8_t*, size_t) { ++wavs; }
+    // The real wrappers go through playWAV()/playMelody(), so they're
+    // silenced the same way.
+    void playExplosionSound(const uint8_t*, size_t) { playWAV("/audio/explosion.wav"); }
     void playTankStartSound() {}
-    void playLaunchMelody() { ++melodies; }
+    void playLaunchMelody() { playMelody(nullptr, nullptr, 0); }
     void preload(const char*) {}
     void setVolume(float) {}
     void setMusicEnabled(bool) {}

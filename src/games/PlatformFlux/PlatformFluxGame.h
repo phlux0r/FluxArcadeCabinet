@@ -49,7 +49,10 @@ private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
+    // Title, how-to-play, then the autopilot demo (a run with _demo set).
     enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO };
+    bool _demo = false;
+    unsigned long _demoUntil = 0;
     AttractSlide  _attractSlide      = SLIDE_SPLASH;
     unsigned long _attractSlideTimer = 0;
 
@@ -271,6 +274,158 @@ private:
         audio.playDeathSound();
     }
 
+    // ---- Attract demo --------------------------------------------------------
+
+    // The autopilot's stick: forward in the air (a fire pit is wider than a
+    // standing jump carries the runner's whole body, so pushing forward
+    // through a jump is what clears one, for the bot as for a player), and
+    // on the ground `groundStick`: normally back, keeping the most room to
+    // go forward, or forward to step out from under a falling rock.
+    static float demoStick(bool onGround, float groundStick) { return onGround ? groundStick : 1.0f; }
+
+    // The runner as the autopilot's prediction sees it.
+    struct DemoState { float off, y, vy; bool onGround, canJump; };
+    // Predicted frames the autopilot may spend deciding one frame's input:
+    // a hopeless spot can otherwise try hundreds of two-jump plans, which
+    // on the ESP32 would stall a frame. Out of budget counts as "no".
+    static const int DEMO_STEP_BUDGET = 2500;
+    mutable int _demoBudget = 0;
+
+    // Does the runner come through to frame `horizon` alive if it jumps at
+    // frame `jumpAt` (-1: doesn't), starting from `st` at frame `t0`? A
+    // prediction on the game's own rules: the same physics, stick movement,
+    // ground test, fire pits, spikes (all treated as live) and boulders,
+    // with the ground scrolling at today's speed. A jump must land and stay
+    // down a few frames, and then, `depth` more moves deep, still have a
+    // way on: running on, or another jump that works. (Without that it will
+    // happily land just in front of a spike it can't then clear.)
+    bool demoSurvives(DemoState st, int t0, int jumpAt, int horizon, int depth,
+                      float groundStick = -1.0f) const {
+        const float s = _platforms.getScrollSpeed();
+        bool jumped = false;
+        int landed = 0;
+        for (int t = t0 + 1; t <= horizon; ++t) {
+            if (--_demoBudget < 0) return false;
+            const float stick = demoStick(st.onGround, groundStick);   // read before this frame's jump, as in play
+            if (t - 1 == jumpAt && (t == t0 + 1 ? st.canJump : st.onGround)) {
+                st.vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
+                st.onGround = false;
+                jumped = true;
+            }
+            st.off = constrain(st.off + stick * ArcadeConfig::RUNNER_X_MOVE_SPEED,
+                               (float)ArcadeConfig::RUNNER_X_MIN_OFFSET, (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
+            const float x = (float)ArcadeConfig::RUNNER_BASE_X + st.off;
+            const float shift = s * (float)t;
+            const float px = x + shift, pr = px + RUNNER_WIDTH, pb = st.y + RUNNER_HEIGHT;
+            if (_platforms.firePitHitsPlayer(px, pr, pb)) return false;
+            if (_platforms.spikeNear(px, pr, pb)) return false;
+            int g = _platforms.groundYAt(px, pr, st.y, pb, t);
+            float gy = (g == -1) ? (float)(ArcadeConfig::LANDSCAPE_HEIGHT + 40) : (float)g;
+            st.vy += ArcadeConfig::RUNNER_GRAVITY;
+            st.y += st.vy;
+            if (st.y + RUNNER_HEIGHT >= gy && st.vy >= 0.0f) {
+                st.y = gy - RUNNER_HEIGHT;
+                st.vy = 0.0f;
+                st.onGround = true;
+            } else {
+                st.onGround = false;
+            }
+            st.canJump = st.onGround;
+            if (st.y > ArcadeConfig::LANDSCAPE_HEIGHT) return false;
+            // Boulders and rocks move and hit after the runner has, as in play.
+            if (_boulders.wouldHit(t, s, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT, _platforms)) return false;
+            if (_enemies.rockWouldHit(t, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT)) return false;
+            if (jumped && st.onGround && ++landed >= 4) {
+                if (depth <= 0) return true;
+                if (demoSurvives(st, t, -1, horizon, depth - 1)) return true;
+                for (int k = t; k < horizon - 4; k += 3) {
+                    if (demoSurvives(st, t, k, horizon, depth - 1)) return true;
+                }
+                return false;
+            }
+        }
+        return !jumped;
+    }
+
+    bool demoSurvives(int jumpAt, int horizon, float groundStick = -1.0f) const {
+        DemoState st{ _playerXOffset, _player.getY(), _player.getVy(),
+                      _player.isOnGround(), _player.canJump() };
+        return demoSurvives(st, 0, jumpAt, horizon, 1, groundStick);
+    }
+
+    // The autopilot: keeps running while that's safe (stepping forward
+    // instead if that's what dodges a rock), and otherwise jumps at the
+    // earliest good moment, so it lands just past a hazard with room for
+    // the next one, or at the last one if the window's short. Levitating, it
+    // cruises high and comes down onto ground as it ends.
+    InputState demoPilot() const {
+        InputState in{};
+        const int H = ArcadeConfig::RUNNER_DEMO_LOOKAHEAD;
+        _demoBudget = DEMO_STEP_BUDGET;
+        if (_player.isLevitating()) {
+            float targetY = 30.0f;
+            if (_player.levitationLeftMs() < 1500) {
+                float px = _player.getX();
+                targetY = (float)_platforms.surfaceYNear(px, px + RUNNER_WIDTH) - RUNNER_HEIGHT;
+            }
+            in.joyX = constrain((targetY - _player.getY()) / 8.0f, -1.0f, 1.0f);
+            return in;
+        }
+        in.joyY = demoStick(_player.isOnGround(), -1.0f);
+        if (!_player.canJump() || demoSurvives(-1, H)) return in;
+        if (_player.isOnGround() && demoSurvives(-1, H, 1.0f)) { in.joyY = 1.0f; return in; }
+        const bool now = demoSurvives(0, H);
+        if ((now && demoSurvives(2, H)) ||          // early, with a margin
+            (now && !demoSurvives(1, H)) ||         // or the last chance
+            (!now && !demoSurvives(-1, 3))) {       // or nothing better
+            in.btnAPressed = true;
+        }
+        return in;
+    }
+
+    // A game's world at a random stage, played by demoPilot().
+    void startDemo() {
+        _demo = true;
+        _score = 0;
+        _lives = ArcadeConfig::RUNNER_LIVES;
+        _loopsSeen = 0;
+        startStage((int)random(ArcadeConfig::RUNNER_DEMO_MIN_STAGE, ArcadeConfig::RUNNER_DEMO_MAX_STAGE + 1));
+        _loopsSeen = _platforms.loopsCompleted();
+        _demoUntil = millis() + (unsigned long)random((long)ArcadeConfig::RUNNER_DEMO_MIN_MS,
+                                                      (long)ArcadeConfig::RUNNER_DEMO_MAX_MS + 1);
+    }
+
+    // Back to the title, leaving nothing of the demo behind.
+    void endDemo() {
+        _demo = false;
+        _particles.clearAll();
+        _bannerUntil = 0;
+        _score = 0;
+        _phase = PHASE_ATTRACT;
+        _attractSlide = SLIDE_SPLASH;
+        _attractSlideTimer = millis();
+    }
+
+    void drawDemoOverlay(GFXcanvas16 &canvas) {
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 28, 14);
+        canvas.print("DEMO");
+        if ((millis() / 500) % 2 == 0) {
+            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 2 - 45, 118);
+            canvas.print("[BTN A] START");
+        }
+    }
+
+    // While a demo runs, new sounds are dropped (and the guard always lifts
+    // the silence again, whichever way update() returns).
+    struct Silence {
+        AudioEngine &a; bool on;
+        Silence(AudioEngine &a_, bool on_) : a(a_), on(on_) { if (on) a.setSilenced(true); }
+        ~Silence() { if (on) a.setSilenced(false); }
+    };
+
 public:
     PlatformFluxGame() {}
 
@@ -280,6 +435,7 @@ public:
         _attractSlide       = SLIDE_SPLASH;
         _attractSlideTimer  = millis();
         _btnBWasHeld        = true;
+        _demo               = false;
         audio.playLanderStartSound(); // shared game-select jingle, same as Lander/Maze
     }
 
@@ -301,11 +457,25 @@ public:
             btnBHoldStart = 0;
         }
 
+        // ---- ATTRACT DEMO: A plays for real, B leaves, time's up ends it ----
+        if (_demo) {
+            if (input.btnAPressed) { endDemo(); startNewGame(audio); return true; }
+            if (input.btnBPressed) { endDemo(); audio.mute(); return false; }
+            if (millis() >= _demoUntil && _phase == PHASE_PLAYING) { endDemo(); return true; }
+        }
+        Silence silence(audio, _demo);
+        const InputState in = _demo ? demoPilot() : input;
+
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
             if (millis() - _attractSlideTimer > ArcadeConfig::ATTRACT_MODE_TIMER) {
-                _attractSlide      = (_attractSlide == SLIDE_SPLASH) ? SLIDE_INFO : SLIDE_SPLASH;
-                _attractSlideTimer = millis();
+                if (_attractSlide == SLIDE_SPLASH) {
+                    _attractSlide      = SLIDE_INFO;
+                    _attractSlideTimer = millis();
+                } else {
+                    startDemo();                 // then back to the splash
+                    return true;
+                }
             }
 
             if (_attractSlide == SLIDE_SPLASH) renderSplash(canvas);
@@ -342,7 +512,7 @@ public:
             _enemies.setActive(shipsActive);
 
             // Jump buffer: a press just before landing still jumps on landing.
-            if (input.btnAPressed) _jumpPressedAt = millis();
+            if (in.btnAPressed) _jumpPressedAt = millis();
             if (_jumpPressedAt != 0) {
                 if (millis() - _jumpPressedAt > ArcadeConfig::RUNNER_JUMP_BUFFER_MS) {
                     _jumpPressedAt = 0;
@@ -355,7 +525,7 @@ public:
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap
             // AsteroidFlux uses for its physical orientation.
-            _playerXOffset += input.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED;
+            _playerXOffset += in.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED;
             _playerXOffset  = constrain(_playerXOffset,
                                         (float)ArcadeConfig::RUNNER_X_MIN_OFFSET,
                                         (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
@@ -364,7 +534,7 @@ public:
             // While levitating, joyX (otherwise unused in this game) drives
             // free vertical movement instead of gravity/ground collision.
             if (_player.isLevitating()) {
-                _player.moveVertical(input.joyX * ArcadeConfig::RUNNER_LEVITATE_SPEED);
+                _player.moveVertical(in.joyX * ArcadeConfig::RUNNER_LEVITATE_SPEED);
                 if (millis() % 120 < 20) {
                     _particles.spawnFire(_player.getX() + RUNNER_WIDTH / 2.0f,
                                          _player.getY() + RUNNER_HEIGHT,
@@ -431,10 +601,12 @@ public:
 
             if (fellOffScreen || (playerHit && !_player.isInvincible())) {
                 triggerPlayerDeath(audio);
-                _lives--;
-                _diedThisStage = true;
                 _bannerUntil = 0;
-                if (_score > _highScore) { _highScore = _score; saveHighScore(); }
+                if (!_demo) {                // a demo death just ends the demo
+                    _lives--;
+                    _diedThisStage = true;
+                    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
+                }
                 _phase = PHASE_DEATH;
                 _phaseTimer = millis();
 
@@ -456,6 +628,7 @@ public:
             _boulders.render(canvas, _platforms, _platforms.getLoop());
             _player.render(canvas);
             drawBanner(canvas);
+            if (_demo) drawDemoOverlay(canvas);
 
             // The progress rule moves every frame, so the HUD redraws every
             // frame now rather than only when uiNeedsUpdate/_uiDirty say so.
@@ -474,8 +647,13 @@ public:
                             ArcadeConfig::LANDSCAPE_HEIGHT - 11, ArcadeConfig::COLOR_BLACK);
             _particles.render(canvas, 11);
             drawUI(canvas);
+            if (_demo) drawDemoOverlay(canvas);
             flushLandscape(canvas);
 
+            if (_demo) {
+                if (millis() - _phaseTimer > 800) endDemo();
+                return true;
+            }
             if (millis() - _phaseTimer > 800 && _lives > 0) {
                 // Back to the start of the stage you died in, briefly shielded.
                 int stage = _stage;

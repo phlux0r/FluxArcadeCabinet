@@ -18,6 +18,7 @@ void TankFluxGame::saveHighScore() {
 }
 
 void TankFluxGame::recordHighScore() {
+    if (inDemo()) return;   // the attract demo's score is nobody's
     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
 }
 
@@ -50,6 +51,14 @@ void TankFluxGame::init(AudioEngine &audio) {
 }
 
 void TankFluxGame::startNewGame(AudioEngine &audio) {
+    resetGame();
+    audio.playTone(900, 80);
+    // Music plays during a game only: not on the attract screen, and it
+    // stops at game over (restarting with the next game).
+    audio.loopWAV(TANK_MUSIC);
+}
+
+void TankFluxGame::resetGame() {
     _x = 0.0f;
     _z = 0.0f;
     _vx = 0.0f;
@@ -90,10 +99,6 @@ void TankFluxGame::startNewGame(AudioEngine &audio) {
     _arenaShiftFlashUntil = 0;
     for (auto &p : _particles.pool) p.active = false;
     _phase = PHASE_PLAYING;
-    audio.playTone(900, 80);
-    // Music plays during a game only: not on the attract screen, and it
-    // stops at game over (restarting with the next game).
-    audio.loopWAV(TANK_MUSIC);
 }
 
 bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
@@ -128,9 +133,16 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 }
 
 bool TankFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (_attractSlide == SLIDE_DEMO) return updateDemo(canvas, input, audio);
+    // Title, how-to-play, then the demo, which returns to the title.
     if (millis() - _attractSlideTimer > ATTRACT_SLIDE_MS) {
-        _attractSlide      = (_attractSlide == SLIDE_GAME) ? SLIDE_INFO : SLIDE_GAME;
-        _attractSlideTimer = millis();
+        if (_attractSlide == SLIDE_GAME) {
+            _attractSlide      = SLIDE_INFO;
+            _attractSlideTimer = millis();
+        } else {
+            startDemo();
+            return updateDemo(canvas, input, audio);
+        }
     }
 
     if (_attractSlide == SLIDE_GAME) renderAttractGame(canvas);

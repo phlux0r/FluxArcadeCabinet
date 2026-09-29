@@ -113,15 +113,15 @@ public:
                 lives++;
                 _nextExtraLifeScore *= 2;
                 uiUpdate = true;
-                audio.playSound(1500, 150); 
+                audio.playWAV("/audio/powerup.wav");
             } 
             else if (_data.type == SHIELD) {
                 ship.activateShield();
-                audio.playSound(1000, 250);
+                audio.playWAV("/audio/powerup.wav");
             }
             else if (_data.type == SLOW_SPEED) {
                 asteroids.reduceGameSpeed(); // Dial back the hazard scroll speeds safely
-                audio.playSound(600, 400);   // Deeper satisfying down-tempo chime
+                audio.playWAV("/audio/powerup.wav");
             }
             resetTimeline();
         }

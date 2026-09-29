@@ -255,6 +255,15 @@ inline constexpr unsigned long ARENA_SHIFT_FLASH_MS     = 320;
 
 // --- Menus / session ---------------------------------------------------------
 inline constexpr unsigned long ATTRACT_SLIDE_MS    = 8000;
+// Attract demo (TankFluxDemo.cpp): after the title and how-to-play, the
+// autopilot plays a random level for DEMO_MIN..MAX_MS or until it's
+// destroyed, silently; DEMO_BOSS_PCT of demos have a boss due at once.
+inline constexpr int           DEMO_MIN_LEVEL = 3;
+inline constexpr int           DEMO_MAX_LEVEL = 6;
+inline constexpr int           DEMO_BOSS_PCT  = 25;
+inline constexpr unsigned long DEMO_MIN_MS    = 30000;
+inline constexpr unsigned long DEMO_MAX_MS    = 40000;
+inline constexpr unsigned long DEMO_DODGE_MS  = 450;    // strafe on seeing a barrel glow
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 30000;
 inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B on attract to exit
 // B alone is strafe during play, so quitting mid-game needs A+B held. The

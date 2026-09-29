@@ -328,6 +328,7 @@ private:
     bool _musicOn    = true;
     bool _fxOn       = true;
     float _master    = 0.8f;
+    bool  _silenced  = false;
     float _musicVol  = 1.0f;
     float _fxVol     = 1.0f;
     void applyVolume(bool music) { _audioState.volume = _master * (music ? _musicVol : _fxVol); }
@@ -448,6 +449,7 @@ public:
     // -------------------------------------------------------------------------
     void playWAV(const char* path) {
         if (!_i2sReady || !_fxOn) return;
+        if (_silenced) return;
         applyVolume(false);
         stopAudioTask();
         _toneActive    = false;
@@ -496,6 +498,7 @@ public:
     // -------------------------------------------------------------------------
     void startSamplePROGMEM(const uint8_t* data, size_t len) {
         if (!_i2sReady || !_fxOn || !data || len <= 44) return;
+        if (_silenced) return;
         applyVolume(false);
         stopAudioTask();
         _toneActive    = false;
@@ -540,6 +543,7 @@ public:
         setFxEnabled(_fxVol > 0.0f);
         if (!_audioState.loopEnabled) applyVolume(false);
     }
+    void setSilenced(bool on) { _silenced = on; }   // see the mixer engine's note
     float getMusicVolume() const { return _musicVol; }
     float getFxVolume() const    { return _fxVol; }
 
@@ -576,6 +580,7 @@ public:
     // legitimately opening, firing the fallback tone on top of the WAV
     // once it did start.
     void playJumpSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/jump.wav");
             _jumpFallbackPending  = true;
@@ -590,6 +595,7 @@ public:
     // specific file is missing/fails to open (same polled-deadline pattern
     // as playJumpSound).
     void playDeathSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/death.wav");
             _deathFallbackPending = true;
@@ -604,6 +610,7 @@ public:
     // instead of requiring a PROGMEM sample — same polled-deadline pattern
     // as playJumpSound/playDeathSound.
     void playGameOverToneSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/gameend.wav");
             _gameOverFallbackPending = true;
@@ -619,6 +626,7 @@ public:
     // -------------------------------------------------------------------------
     void playTone(int freqHz, int durationMs) {
         if (!_i2sReady || !_fxOn || _audioState.playing) return;
+        if (_silenced) return;
         applyVolume(false);
         _toneFreq      = freqHz;
         _halfPeriod    = freqToHalfPeriod(freqHz);
@@ -630,6 +638,7 @@ public:
 
     void playMelody(const int* freqs, const int* durs, int len) {
         if (!_i2sReady || !_fxOn || _audioState.playing) return;
+        if (_silenced) return;
         applyVolume(false);
         _melodyFreqs     = freqs;
         _melodyDurations = durs;

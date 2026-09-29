@@ -101,7 +101,10 @@ being freed on exit to the launcher).
 - **Real timing.** The clock is fake and advanced a fixed step per frame, so
   nothing here reflects the frame rate on hardware. `profile` compares
   relative cost only.
-- **The four 2D games, and `main.cpp`.** Tank Flux and Tube Flux only.
+- **Most of the 2D games, and `main.cpp`.** Beyond Tank Flux and Tube
+  Flux, only the Runner and Asteroid attract demos are covered
+  (`games2d_harness.cpp`: every demo silent, high score untouched, A
+  mid-demo starts a clean game), not their gameplay.
 
 So a clean harness run means "nothing changed unintentionally", not "this is
 good to ship". Hardware still decides that.
@@ -112,6 +115,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds both harnesses + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
+├── games2d_harness.cpp         # Runner and Asteroid attract demos: idle + demoexit
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
 ├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
@@ -119,6 +123,8 @@ test/
     ├── Arduino.h               # millis()/random()/math, no hardware
     ├── Adafruit_GFX.h          # GFXcanvas16 with a real RGB565 buffer
     ├── Preferences.h           # no-op settings/high score storage
+    ├── Adafruit_ST7735.h, Fonts/   # display driver + font, for the 2D games
+    ├── driver/, freertos/, SD.h, esp_heap_caps.h  # enough ESP32 for the real (inert) AudioEngine
     └── cabinet/AudioEngine.h   # call counter
 ```
 

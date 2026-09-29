@@ -37,6 +37,22 @@ long random(long hi);
 long random(long lo, long hi);
 void randomSeed(unsigned long s);
 
+inline long map(long x, long inMin, long inMax, long outMin, long outMax) {
+    return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+}
+inline void delayMicroseconds(unsigned int) {}
+inline bool psramFound() { return true; }
+inline void neopixelWrite(int, int, int, int) {}
+inline void digitalWrite(int, int) {}
+// Serial output is swallowed.
+struct HardwareSerialStub {
+    void begin(unsigned long) {}
+    int  printf(const char*, ...) { return 0; }
+    void print(const char*) {}
+    void println(const char* = "") {}
+};
+inline HardwareSerialStub Serial;
+
 inline float radians(float d) { return d * (float)PI / 180.0f; }
 inline float degrees(float r) { return r * 180.0f / (float)PI; }
 inline int  analogRead(int) { return 2048; }

@@ -38,6 +38,19 @@ Left alone, its attract screen cycles the title, a how-to-play slide and a
 silent 30-45 second demo, the autopilot playing a random tier (sometimes
 into a bonus round).
 
+**Attract demos.** Left alone, every game except Maze does the same: title,
+how-to-play, then a silent 30-40 second demo played by an autopilot, and
+back to the title. A starts a real game straight from a demo; nothing from
+a demo (score, high score) is kept.
+
+| Game | The demo |
+|---|---|
+| Runner | a random stage 2-7; the autopilot predicts on the game's own rules and jumps at the best moment |
+| Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
+| Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
+| Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
+| Tube | a random tier, sometimes into the bonus round |
+
 ## Build
 
 A [PlatformIO](https://platformio.org/) project — open the folder in VS Code
@@ -262,10 +275,11 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | File | Used by |
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
-| `lander_start.wav`, `land_success.wav` | Lander Flux |
+| `lander_start.wav`, `land_success.wav`, `pickup.wav` (fuel pickup) | Lander Flux |
+| `powerup.wav` (extra life, shield and slow-time pickups) | Asteroid Flux |
 | `jump.wav`, `death.wav` | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
-| `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
+| `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,

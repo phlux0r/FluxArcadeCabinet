@@ -141,6 +141,47 @@ public:
         }
     }
 
+    // For the attract demo: a busier field at once, `active` asteroids at
+    // `speed`, as a game some way in would have.
+    void setDemoField(int active, float speed) {
+        _currentMaxActive = constrain(active, 1, ArcadeConfig::MAX_ASTEROIDS);
+        _currentSpeed = speed;
+        _cometOnScreen = false;
+        for (int i = 0; i < ArcadeConfig::MAX_ASTEROIDS; i++) {
+            _pool[i].active = (i < _currentMaxActive);
+            resetAsteroid(i, true);
+        }
+    }
+    int activeCount() const { return _currentMaxActive; }
+
+    // Where each asteroid will be for the next `horizon` frames, by the
+    // same motion as update() (steady speed left, drift bouncing off the
+    // top and bottom): x/y[t * MAX_ASTEROIDS + i], radius r[i] as hit-tested
+    // (0 for an inactive one). One that passes the left edge respawns
+    // somewhere unknown, so its path just carries on off-screen. For the
+    // attract demo's autopilot.
+    void predictPaths(int horizon, float* xs, float* ys, float* rs) const {
+        const int N = ArcadeConfig::MAX_ASTEROIDS;
+        for (int i = 0; i < N; i++) {
+            const Asteroid &a = _pool[i];
+            rs[i] = a.active ? a.radius * 0.9f : 0.0f;
+            float speed = _currentSpeed;
+            if (a.isComet) {
+                speed = _currentSpeed * 1.5f;
+                if (speed > ArcadeConfig::COMET_SPEED_CAP) speed = ArcadeConfig::COMET_SPEED_CAP + (_currentSpeed / 10.0f);
+            }
+            float x = a.x, y = a.y, vy = a.vy;
+            for (int t = 0; t < horizon; t++) {
+                x -= speed;
+                y += vy;
+                if (y - a.radius < ArcadeConfig::UI_MARGIN_TOP) { y = ArcadeConfig::UI_MARGIN_TOP + a.radius; vy = -vy; }
+                else if (y + a.radius > ArcadeConfig::SCREEN_HEIGHT) { y = ArcadeConfig::SCREEN_HEIGHT - a.radius; vy = -vy; }
+                xs[t * N + i] = x;
+                ys[t * N + i] = y;
+            }
+        }
+    }
+
     void reduceGameSpeed() {
         _currentSpeed -= (ArcadeConfig::SPEED_STEP * ArcadeConfig::SPEED_STEPS_TO_REDUCE);
         if (_currentSpeed < ArcadeConfig::BASE_SPEED) {

@@ -5,6 +5,7 @@
 #   test/build.sh god 30000        # one Tank Flux scenario
 #   test/build.sh tube god 30000   # one Tube Flux scenario
 #   test/build.sh audio            # just the audio mixer tests
+#   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
 #   test/build.sh --build-only
 #
 # Needs a host g++ with C++17 and Jet's sources. Jet is found automatically
@@ -54,6 +55,12 @@ build_harness() {   # <name> <sources...>
 }
 build_harness tankflux_harness "$HERE/tankflux_harness.cpp" "$ROOT"/src/games/TankFlux/*.cpp
 build_harness tubeflux_harness "$HERE/tubeflux_harness.cpp" "$ROOT"/src/games/TubeFlux/*.cpp
+# The 2D games' attract demos. These games include the real (inert) audio
+# engine, so src/ goes ahead of the stubs here; no Jet needed.
+echo "building games2d_harness"
+g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-sign-compare \
+    -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
+    "$HERE/games2d_harness.cpp" -o "$OUT/games2d_harness"
 # The audio mixer and loader are plain C++; this uses no stubs at all.
 echo "building audio_test"
 g++ "${CXXFLAGS[@]}" -Wall -I"$ROOT/src" "$HERE/audio_test.cpp" -o "$OUT/audio_test"
@@ -62,6 +69,7 @@ g++ "${CXXFLAGS[@]}" -Wall -I"$ROOT/src" "$HERE/audio_test.cpp" -o "$OUT/audio_t
 
 cd "$OUT"
 [ "${1:-}" = audio ] && exec ./audio_test
+[ "${1:-}" = games2d ] && { shift; exec ./games2d_harness "$@"; }
 game=tankflux
 case "${1:-}" in
   tank) game=tankflux; shift ;;
@@ -72,10 +80,14 @@ if [ $# -gt 0 ]; then
 else
   echo "=== audio"
   ./audio_test | tail -1
+  echo "=== games2d (Runner, Asteroid, Lander attract demos)"
+  ./games2d_harness all 30000
   for g in tankflux tubeflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")
     # Tube Flux's attract screen includes a demo run: idle sits through it.
+    # Both games' attract screens include a demo run: idle sits through it.
     [ "$g" = tubeflux ] && scenarios+=("idle 8000" "demoexit")
+    [ "$g" = tankflux ] && scenarios+=("idle 12000" "demoexit")
     for s in "${scenarios[@]}"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086

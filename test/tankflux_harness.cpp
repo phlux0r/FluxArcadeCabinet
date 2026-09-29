@@ -54,6 +54,9 @@ struct Bucket {
 //   god     health pinned, so a long run reaches many bosses and arena resets
 //   menus   exercises attract exit, in-game A+B quit and the game-over timeout
 //   profile god, plus per-frame render cost grouped by what was on screen
+//   idle     no input at all: the attract cycle (title, how-to-play, demo),
+//            reporting how demos went and that they made no sound
+//   demoexit press A mid-demo: the real game must start clean (PASS/FAIL)
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
     const bool profile = strcmp(mode, "profile") == 0;
@@ -73,6 +76,59 @@ int main(int argc, char** argv) {
     AudioEngine audio;
     TankFluxGame g;
     g.init(audio);
+
+    if (strcmp(mode, "idle") == 0) {
+        // Only the attract cycle runs; count demos and how each ended, and
+        // any sound a demo made that wasn't silenced.
+        InputState none{};
+        int demos = 0, destroyed = 0, timedOut = 0, maxKills = 0, bosses = 0;
+        int audible = 0;
+        bool was = false, bossWas = false;
+        long demoFrames = 0;
+        for (long f = 0; f < frames; ++f) {
+            const int heard = audio.tones + audio.melodies + audio.wavs;
+            const float health = g._health;
+            g.update(canvas, none, audio);
+            const bool now = g.inDemo();
+            if (now) {
+                ++demoFrames;
+                audible += audio.tones + audio.melodies + audio.wavs - heard;
+                if (g._kills > maxKills) maxKills = g._kills;
+                if (g._bossActive && !bossWas) ++bosses;
+            }
+            bossWas = now && g._bossActive;
+            if (!was && now) ++demos;
+            if (was && !now) (health <= 0 || g._health <= 0 || health < 25 ? ++destroyed : ++timedOut);
+            was = now;
+            g_fakeMillis += stepMs;
+        }
+        printf("DONE idle frames=%ld demos=%d destroyed=%d timedout=%d avgDemoS=%.1f maxKills=%d bosses=%d "
+               "audibleInDemo=%d silenced=%d\n",
+               frames, demos, destroyed, timedOut, demos ? demoFrames * stepMs / 1000.0 / demos : 0.0,
+               maxKills, bosses, audible, audio.silencedCalls);
+        g.onExit();
+        return audible == 0 ? 0 : 1;
+    }
+
+    if (strcmp(mode, "demoexit") == 0) {
+        InputState none{};
+        for (long f = 0; f < 20000 && !g.inDemo(); ++f) { g.update(canvas, none, audio); g_fakeMillis += stepMs; }
+        for (int i = 0; i < 900; ++i) { g.update(canvas, none, audio); g_fakeMillis += stepMs; }
+        printf("demo at level %d, kills %d, score %d, health %d\n", g._level, g._kills, g._score, (int)g._health);
+        InputState press{}; press.btnA = true; press.btnAPressed = true;
+        g.update(canvas, press, audio);
+        g_fakeMillis += stepMs;
+        int visible = 0;
+        for (auto &e : g._enemies) visible += e.alive;
+        visible += g._boss.alive + g._bossActive + g._bossPending;
+        for (auto &s : g._enemyShells) visible += s.active;
+        bool ok = g._phase == TankFluxGame::PHASE_PLAYING && g._level == 1 && g._kills == 0 &&
+                  g._score == 0 && g._health == tankflux::HEALTH_MAX && visible == 0 && !g.inDemo();
+        printf("after A: phase %d level %d kills %d score %d health %d leftovers %d -> %s\n",
+               (int)g._phase, g._level, g._kills, g._score, (int)g._health, visible, ok ? "PASS" : "FAIL");
+        g.onExit();
+        return ok ? 0 : 1;
+    }
 
     bool prevA = false, prevB = false, wasBoss = false;
     int bossesSeen = 0, quits = 0, gameOvers = 0, lastPhase = -1;
