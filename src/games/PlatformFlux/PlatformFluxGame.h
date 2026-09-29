@@ -33,6 +33,19 @@ private:
     int _highScore = 0;
     float _playerXOffset = 0.0f;
 
+    // Lives and stages (see ArcadeConfig's RUNNER_LIVES block).
+    int  _lives = ArcadeConfig::RUNNER_LIVES;
+    int  _stage = 1;
+    bool _diedThisStage = false;
+    int  _loopsSeen = 0;
+    unsigned long _jumpPressedAt = 0;      // jump buffer; 0 = none pending
+
+    // Centre-screen banner: "STAGE 3", a bonus line, "EXTRA LIFE".
+    char _bannerTitle[20] = "";
+    char _bannerSub[24]   = "";
+    uint16_t _bannerSubColor = ArcadeConfig::COLOR_GREEN;
+    unsigned long _bannerUntil = 0;
+
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
@@ -59,18 +72,59 @@ private:
         _prefs.end();
     }
 
+    // Stage, lives, score and best along the top; the rule under them is
+    // the stage progress bar (green up to how far through the stage you are).
     void drawUI(GFXcanvas16 &canvas) {
         canvas.fillRect(0, 0, ArcadeConfig::LANDSCAPE_WIDTH, 10, ArcadeConfig::COLOR_BLACK);
-        canvas.drawFastHLine(0, 10, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::COLOR_GREEN);
+        int done = (int)(ArcadeConfig::LANDSCAPE_WIDTH * _platforms.stageProgress());
+        canvas.drawFastHLine(0, 10, ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::COLOR_GREY);
+        if (done > 0) canvas.drawFastHLine(0, 10, done, ArcadeConfig::COLOR_GREEN);
 
         canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setCursor(2, 1);
+        canvas.print("ST"); canvas.print(_stage);
+
+        // Lives as small blocks in the runner's colours.
+        int lx = _stage >= 10 ? 29 : 23;
+        for (int i = 0; i < _lives; i++) {
+            canvas.fillRect(lx + i * 5, 2, 3, 6, ArcadeConfig::COLOR_ORANGE);
+        }
+
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(4, 1);
-        canvas.print("DIST:"); canvas.print(_score);
+        canvas.setCursor(58, 1);
+        canvas.print(_score);
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 60, 1);
+        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 54, 1);
         canvas.print("HI:"); canvas.print(_highScore);
+    }
+
+    void showBanner(const char* title, const char* sub, uint16_t subColor) {
+        snprintf(_bannerTitle, sizeof(_bannerTitle), "%s", title);
+        snprintf(_bannerSub, sizeof(_bannerSub), "%s", sub);
+        _bannerSubColor = subColor;
+        _bannerUntil = millis() + ArcadeConfig::RUNNER_BANNER_MS;
+    }
+
+    void drawBanner(GFXcanvas16 &canvas) {
+        if (millis() >= _bannerUntil) return;
+        int16_t x1, y1;
+        uint16_t w, h;
+        canvas.setTextSize(1);
+        canvas.getTextBounds(_bannerTitle, 0, 0, &x1, &y1, &w, &h);
+        canvas.fillRect((ArcadeConfig::LANDSCAPE_WIDTH - w) / 2 - 3, 27, w + 6, _bannerSub[0] ? 22 : 12,
+                        ArcadeConfig::COLOR_BLACK);
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - w) / 2, 29);
+        canvas.print(_bannerTitle);
+        if (_bannerSub[0]) {
+            canvas.getTextBounds(_bannerSub, 0, 0, &x1, &y1, &w, &h);
+            canvas.fillRect((ArcadeConfig::LANDSCAPE_WIDTH - w) / 2 - 3, 37, w + 6, 12, ArcadeConfig::COLOR_BLACK);
+            canvas.setTextColor(_bannerSubColor);
+            canvas.setCursor((ArcadeConfig::LANDSCAPE_WIDTH - w) / 2, 39);
+            canvas.print(_bannerSub);
+        }
     }
 
     void renderSplash(GFXcanvas16 &canvas) {
@@ -147,8 +201,22 @@ private:
         // running into the new game.
         audio.mute();
         _score = 0;
+        _lives = ArcadeConfig::RUNNER_LIVES;
+        _loopsSeen = 0;
+        startStage(1);
+        // Music plays during a game only, not on the attract screen; it
+        // carries on through lost lives and stops at game over.
+        audio.loopWAV("/audio/flux-runner.wav");
+    }
+
+    // (Re)starts the world at `stage`: its terrain, hazards and speed, on a
+    // safe ledge. Used for a new game and after each lost life.
+    void startStage(int stage) {
+        _stage = stage;
+        _diedThisStage = false;
+        _jumpPressedAt = 0;
         _particles.clearAll();
-        _platforms.initGame();
+        _platforms.initGame(stage);
         _enemies.initGame();
         _boulders.initGame();
         _powerUp.reset();
@@ -158,9 +226,43 @@ private:
         _uiDirty = true;
         _phase = PHASE_PLAYING;
         _phaseTimer = millis();
-        // Music plays during a run only, not on the attract screen; it
-        // stops at game over.
-        audio.loopWAV("/audio/flux-runner.wav");
+        char title[20];
+        snprintf(title, sizeof(title), "STAGE %d", stage);
+        showBanner(title, "", ArcadeConfig::COLOR_GREEN);
+    }
+
+    // Called each frame: a new stage reached means the last one was cleared.
+    void checkStageProgress(AudioEngine &audio) {
+        int now = _platforms.stageNumber();
+        if (now <= _stage) return;
+        bool perfect = !_diedThisStage;
+        int bonus = ArcadeConfig::RUNNER_STAGE_BONUS * (perfect ? 2 : 1);
+        _score += bonus;
+        _stage = now;
+        _diedThisStage = false;
+        _uiDirty = true;
+
+        char title[20], sub[24];
+        snprintf(title, sizeof(title), "STAGE %d", _stage);
+        snprintf(sub, sizeof(sub), perfect ? "PERFECT +%d" : "CLEAR +%d", bonus);
+        showBanner(title, sub, perfect ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_WHITE);
+
+        // A whole loop of stages done: an extra life.
+        if (_platforms.loopsCompleted() > _loopsSeen) {
+            _loopsSeen = _platforms.loopsCompleted();
+            if (_lives < ArcadeConfig::RUNNER_MAX_LIVES) {
+                _lives++;
+                snprintf(sub, sizeof(sub), "EXTRA LIFE +%d", bonus);
+                showBanner(title, sub, ArcadeConfig::COLOR_ORANGE);
+                static const int n[] = { 880, 1175, 1568, 2093 };
+                static const int d[] = {  70,   70,   70,  200 };
+                audio.playMelody(n, d, 4);
+                return;
+            }
+        }
+        static const int n[] = { 784, 988, 1175 };
+        static const int d[] = {  60,  60,  140 };
+        audio.playMelody(n, d, 3);
     }
 
     void triggerPlayerDeath(AudioEngine &audio) {
@@ -224,6 +326,7 @@ public:
             _particles.update();
             _platforms.update();
             _platforms.advanceDifficulty();
+            checkStageProgress(audio);
 
             // Terrain/hazard progression (see PlatformManager class comment
             // and ArcadeConfig's RUNNER_*_TIER constants for the full map):
@@ -238,7 +341,16 @@ public:
                                (tier >= ArcadeConfig::RUNNER_ENEMY_TIER);
             _enemies.setActive(shipsActive);
 
-            if (input.btnAPressed && _player.jump()) audio.playJumpSound();
+            // Jump buffer: a press just before landing still jumps on landing.
+            if (input.btnAPressed) _jumpPressedAt = millis();
+            if (_jumpPressedAt != 0) {
+                if (millis() - _jumpPressedAt > ArcadeConfig::RUNNER_JUMP_BUFFER_MS) {
+                    _jumpPressedAt = 0;
+                } else if (_player.jump()) {
+                    _jumpPressedAt = 0;
+                    audio.playJumpSound();
+                }
+            }
 
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap
@@ -319,6 +431,9 @@ public:
 
             if (fellOffScreen || (playerHit && !_player.isInvincible())) {
                 triggerPlayerDeath(audio);
+                _lives--;
+                _diedThisStage = true;
+                _bannerUntil = 0;
                 if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                 _phase = PHASE_DEATH;
                 _phaseTimer = millis();
@@ -340,11 +455,13 @@ public:
             _enemies.render(canvas, _platforms.getLoop());
             _boulders.render(canvas, _platforms, _platforms.getLoop());
             _player.render(canvas);
+            drawBanner(canvas);
 
-            if (uiNeedsUpdate || _uiDirty) {
-                drawUI(canvas);
-                _uiDirty = false;
-            }
+            // The progress rule moves every frame, so the HUD redraws every
+            // frame now rather than only when uiNeedsUpdate/_uiDirty say so.
+            (void)uiNeedsUpdate;
+            drawUI(canvas);
+            _uiDirty = false;
 
             flushLandscape(canvas);
             return true;
@@ -359,6 +476,15 @@ public:
             drawUI(canvas);
             flushLandscape(canvas);
 
+            if (millis() - _phaseTimer > 800 && _lives > 0) {
+                // Back to the start of the stage you died in, briefly shielded.
+                int stage = _stage;
+                bool died = _diedThisStage;
+                startStage(stage);
+                _diedThisStage = died;
+                _player.activateInvincibility(ArcadeConfig::RUNNER_RESPAWN_SHIELD_MS);
+                return true;
+            }
             if (millis() - _phaseTimer > 800) {
                 _particles.clearAll();
                 _phase             = PHASE_GAMEOVER;
@@ -380,7 +506,9 @@ public:
             canvas.setTextSize(1);
             canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
             canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 45);
-            canvas.print("DIST: "); canvas.print(_score);
+            canvas.print("SCORE: "); canvas.print(_score);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 55);
+            canvas.print("STAGE: "); canvas.print(_stage);
 
             if (_score >= _highScore && _score > 0) {
                 canvas.setTextColor(ArcadeConfig::COLOR_GREEN);

@@ -28,6 +28,10 @@ private:
     unsigned long _invincibleEndTime;
     bool  _levitating;
     unsigned long _levitationEndTime;
+    // Coyote time: a jump still works for a moment after running off an
+    // edge (see jump()).
+    unsigned long _groundedAt;
+    bool  _jumpedSinceGround;
 
     const uint16_t* frameData(int frame) const {
         switch (frame) {
@@ -41,7 +45,8 @@ public:
     PlayerRunner() : _x(30.0f), _y(0.0f), _vy(0.0f), _onGround(true),
                      _currentFrame(0), _nextFrameTime(0),
                      _invincible(false), _invincibleEndTime(0),
-                     _levitating(false), _levitationEndTime(0) {}
+                     _levitating(false), _levitationEndTime(0),
+                     _groundedAt(0), _jumpedSinceGround(false) {}
 
     void reset(float x, float groundY) {
         _x        = x;
@@ -51,14 +56,21 @@ public:
         _currentFrame = 0;
         _invincible = false;
         _levitating = false;
+        _groundedAt = millis();
+        _jumpedSinceGround = false;
     }
 
     // Returns true only if the jump actually took effect (grounded), so
     // callers can gate a jump sound to real jumps rather than every press.
+    // Also allowed for RUNNER_COYOTE_MS after running off an edge (falling,
+    // not already jumped): a jump pressed a hair late still counts.
     bool jump() {
-        if (!_onGround) return false;
+        bool coyote = !_onGround && !_levitating && !_jumpedSinceGround && _vy >= 0.0f &&
+                      millis() - _groundedAt <= ArcadeConfig::RUNNER_COYOTE_MS;
+        if (!_onGround && !coyote) return false;
         _vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
         _onGround = false;
+        _jumpedSinceGround = true;
         return true;
     }
 
@@ -76,6 +88,8 @@ public:
             _y = groundY - RUNNER_HEIGHT;
             _vy = 0.0f;
             _onGround = true;
+            _groundedAt = millis();
+            _jumpedSinceGround = false;
         } else {
             _onGround = false;
         }

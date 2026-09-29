@@ -8,7 +8,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Asteroid Flux | Asteroids | Landscape | Asteroid shooter with power-ups and a nebula backdrop |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Platform Flux | Runner | Landscape | Side-scrolling runner: platforms, boulders, flying enemies |
+| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
@@ -94,6 +94,14 @@ file; `esptool.py flash_id` confirms which chip you have.
 Tank Flux differs: **hold B** strafes while driving, so quitting mid-game is
 **hold A+B** for 2s instead (a progress bar appears once you've held them long
 enough for it not to be a normal shot).
+
+Runner (Platform Flux) plays in stages, like Moon Patrol's checkpoints:
+each hazard section is a numbered stage, and the rule under the HUD fills
+as you get through it. You have 3 lives; losing one restarts the stage you
+were on (score kept) with 2s of blinking protection. Clearing a stage
+scores 50, or 100 if you didn't die in it, and finishing a full loop of 8
+stages gives an extra life (up to 5). Jumps are forgiving: A pressed just
+before landing still jumps, and so does one just after running off an edge.
 
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
