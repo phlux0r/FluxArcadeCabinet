@@ -14,11 +14,11 @@
 // =============================================================================
 // GAME ENGINE — LANDER FLUX
 //
-// PHYSICS APPROACH: Simple 50fps throttle matching original delay(20).
-// update() is called at 60fps by the framework but physics only step when
-// 20ms have elapsed since the last physics tick. This means the original
-// per-frame constants (gravity=0.04, thrust=0.09, fuel-=0.4) produce
-// identical behaviour to the standalone version. No delta-time needed.
+// PHYSICS APPROACH: fixed 50Hz steps, matching the original delay(20).
+// update() runs at the frame rate; physics steps once per 20ms of real
+// time (catching up after a slow frame), so the original per-step
+// constants (gravity, thrust=0.09, fuel-=0.4) behave as in the standalone
+// version whatever the frame rate. No delta-time needed.
 //
 // TITLE SCREEN: Bitmap is blitted to TFT only when blink state changes
 // (once per 600ms) — not every frame — so the startup melody doesn't
@@ -93,7 +93,7 @@ private:
         _currentGravity = 0.025f + (gravityIncrements * 0.005f);
         if (_currentGravity > 0.10f) _currentGravity = 0.10f;
 
-        _obstacles.generateNewMap(_level);
+        _obstacles.generateNewMap(_level, _padX, _padWidth);
 
         // Safe-spawn fuel tank — original 50-attempt collision check
         if (gravityIncrements >= 2) {
@@ -334,11 +334,22 @@ public:
             return true;
         }
 
-        // ---- PHYSICS TICK (50fps throttle) ----
-        // Only step physics when 20ms have elapsed — matches original delay(20)
+        // ---- PHYSICS: fixed 50Hz steps ----
+        // Exactly one step per PHYSICS_TICK_MS of real time, whatever the
+        // frame rate: the clock advances by the step, not to "now", so a
+        // 60fps frame loop still gets 50 steps a second (resetting to "now"
+        // gave a step only every other 16.7ms frame, 30 a second, and the
+        // whole game slowed and changed with the frame rate). A slow frame
+        // catches up, at most MAX_STEPS at once; beyond that time is dropped.
         unsigned long now = millis();
-        bool physicsTick = (now - _lastPhysicsTick >= PHYSICS_TICK_MS);
-        if (physicsTick) _lastPhysicsTick = now;
+        static const int MAX_STEPS = 3;
+        int steps = 0;
+        while (now - _lastPhysicsTick >= PHYSICS_TICK_MS && steps < MAX_STEPS) {
+            _lastPhysicsTick += PHYSICS_TICK_MS;
+            ++steps;
+        }
+        if (now - _lastPhysicsTick >= PHYSICS_TICK_MS) _lastPhysicsTick = now;
+        const bool physicsTick = steps > 0;
 
         if (_lander.isDisintegrating) {
             if (physicsTick) _particles.update();
@@ -354,7 +365,8 @@ public:
                     audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 }
             }
-        } else if (physicsTick) {
+        } else {
+          for (int step = 0; step < steps && !_lander.isDisintegrating && !_isGameOver; ++step) {
             float targetAngle = map(joyX, 0, 4095, -45, 45) * (PI / 180.0f);
             _lander.updatePhysics(btnA, targetAngle, _currentGravity,
                                   THRUST_POWER, _particles);
@@ -417,6 +429,7 @@ public:
                     audio.playExplosionSound(explosion_data, sizeof(explosion_data));
                 }
             }
+          }
         }
 
         // ---- RENDER (every frame regardless of physics tick) ----

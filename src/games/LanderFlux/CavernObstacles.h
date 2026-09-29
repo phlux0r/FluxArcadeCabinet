@@ -8,7 +8,7 @@
 class CavernObstacles {
 private:
     static const int NUM_POINTS  = 6;
-    static const int MAX_HAZARDS = 6;
+    static const int MAX_HAZARDS = 5;
 
     struct Hazard {
         int x, y;
@@ -23,14 +23,19 @@ private:
 
     const uint16_t ROCK_COLORS[4] = {0xCE59, 0x7BF3, 0x93A6, 0xBDF7};
 
-    // Returns true if rock at index i overlaps any previously placed rock
+    // Space the ship needs between two rocks' surfaces to fly through: a
+    // hit is the ship's centre within (rock radius + 2), so 4px is the bare
+    // minimum; this leaves room to steer a heavy lander through.
+    static const int SHIP_GAP = 18;
+
+    // Returns true if rock at index i is closer to any previously placed
+    // rock than a ship-sized gap.
     bool overlapsExisting(int i) {
         for (int j = 0; j < i; j++) {
             float dx = _rocks[i].x - _rocks[j].x;
             float dy = _rocks[i].y - _rocks[j].y;
             float distSq = dx * dx + dy * dy;
-            // Minimum separation: sum of radii plus a 6px gap
-            int minSep = _rocks[i].maxRadius + _rocks[j].maxRadius + 6;
+            int minSep = _rocks[i].maxRadius + _rocks[j].maxRadius + SHIP_GAP;
             if (distSq < (float)(minSep * minSep)) return true;
         }
         return false;
@@ -47,46 +52,52 @@ private:
     }
 
 public:
-    void generateNewMap(int currentLevel) {
-        _activeHazardsCount = 2 + (currentLevel / 2);
-        if (_activeHazardsCount > MAX_HAZARDS) _activeHazardsCount = MAX_HAZARDS;
+    // Up to 5 rocks (2, plus one every other level), each in its own
+    // height band, growing slowly with level. Every pair leaves a ship-sized
+    // gap: a rock that won't fit shrinks, and one that still won't is left
+    // out, rather than walling the cavern off. The lowest rock keeps clear
+    // of the column above the landing pad, so the final approach is open.
+    void generateNewMap(int currentLevel, int padX, int padWidth) {
+        int wanted = 2 + (currentLevel / 2);
+        if (wanted > MAX_HAZARDS) wanted = MAX_HAZARDS;
 
         int safeCeilingY = 45;
         int spawnFloorY  = ArcadeConfig::PORTRAIT_HEIGHT - 35;
         int playSpace    = spawnFloorY - safeCeilingY;
-        int interval     = playSpace / _activeHazardsCount;
+        int interval     = playSpace / wanted;
         int shipSpawnX   = ArcadeConfig::PORTRAIT_WIDTH / 2;
+        int padCentre    = padX + padWidth / 2;
 
-        // Rock size scaled with level, capped so they stay reasonable
-        int minSize = min(5 + currentLevel, 10);
-        int maxSize = min(8 + currentLevel, 14);
+        // Rock size grows a step every other level, capped.
+        int minSize = min(5 + currentLevel / 2, 8);
+        int maxSize = min(8 + currentLevel / 2, 11);
 
-        for (int i = 0; i < _activeHazardsCount; i++) {
+        _activeHazardsCount = 0;
+        for (int band = 0; band < wanted; band++) {
+            const int i = _activeHazardsCount;
             _rocks[i].maxRadius = random(minSize, maxSize + 1);
             _rocks[i].color     = ROCK_COLORS[random(0, 4)];
+            const bool lowest = band == wanted - 1;
 
-            // Each rock gets up to 20 placement attempts to avoid overlap
-            int attempts = 0;
-            do {
-                _rocks[i].x = random(20, ArcadeConfig::PORTRAIT_WIDTH - 20);
-                // Keep rocks in their vertical band (prevents all stacking top/bottom)
-                _rocks[i].y = safeCeilingY + (i * interval) + random(-4, 5);
-                attempts++;
-            } while (overlapsExisting(i) && attempts < 20);
+            bool placed = false;
+            while (!placed && _rocks[i].maxRadius >= 4) {
+                for (int attempts = 0; attempts < 30 && !placed; attempts++) {
+                    _rocks[i].x = random(20, ArcadeConfig::PORTRAIT_WIDTH - 20);
+                    // Keep rocks in their vertical band (prevents all stacking top/bottom)
+                    _rocks[i].y = safeCeilingY + (band * interval) + random(-4, 5);
 
-            // Spawn shield: push rock i=0 away from ship spawn X if too close
-            if (i == 0 && _rocks[i].y < 60) {
-                int buffer = _rocks[i].maxRadius + 12;
-                if (abs(_rocks[i].x - shipSpawnX) < buffer) {
-                    _rocks[i].x = (_rocks[i].x < shipSpawnX)
-                                  ? shipSpawnX - buffer - random(2, 6)
-                                  : shipSpawnX + buffer + random(2, 6);
-                    _rocks[i].x = constrain(_rocks[i].x, 20,
-                                            ArcadeConfig::PORTRAIT_WIDTH - 20);
+                    // Spawn shield: the top rock stays off the ship's spawn column.
+                    if (band == 0 && _rocks[i].y < 60 &&
+                        abs(_rocks[i].x - shipSpawnX) < _rocks[i].maxRadius + 12) continue;
+                    // The lowest rock stays off the column above the pad.
+                    if (lowest && abs(_rocks[i].x - padCentre) < _rocks[i].maxRadius + padWidth / 2 + 8) continue;
+                    placed = !overlapsExisting(i);
                 }
+                if (!placed) _rocks[i].maxRadius--;
             }
-
+            if (!placed) continue;          // no room left for this one
             generatePoints(i);
+            _activeHazardsCount++;
         }
     }
 
