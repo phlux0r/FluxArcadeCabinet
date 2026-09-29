@@ -319,7 +319,8 @@ public:
         audio.preload("/audio/powerup.wav");   // every pickup; loaded now, not on the first
     }
 
-    void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
+    void setTFT(Adafruit_ST7735 &tft) override { _tft = &tft; }
+    bool flushesItself() const override { return true; }
 
     bool update(GFXcanvas16 &canvas,
                 const InputState &input,

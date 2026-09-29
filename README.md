@@ -347,14 +347,23 @@ still follows the frame rate.
 ## Adding a New Game
 
 1. Create `src/games/MyGame/MyGameGame.h` implementing `IGame`
-2. Add `STATE_MY_GAME` to the `CabinetState` enum in `src/cabinet/ArcadeConfig.h`
-3. `#include` the game in `src/main.cpp`
-4. Instantiate it and add it to `gameRegistry[]`
-5. Add a `case STATE_MY_GAME:` to the switch in `loop()`
+2. `#include` the game in `src/main.cpp`
+3. Add `{ "My Game", makeGame<MyGameGame> }` to `gameRegistry[]`
+
+Games are built when launched and destroyed on the way back to the menu
+(`makeGame()` in `main.cpp`, in internal RAM where there's room), so only the
+game being played takes memory, however many there are: each game object is
+7-11kB, and six of them used to sit in RAM permanently. Keep a game's state
+in its object rather than in globals or statics, which stay allocated.
 
 `IGame::onExit()` is optional and worth implementing if the game allocates
-anything substantial: it's called when returning to the launcher, so the heap
-goes back to whatever runs next (Tank Flux frees its whole 3D scene there).
+anything substantial outside its object (Tank Flux frees its 3D scene there).
+A game that pushes its canvas to the display itself overrides `setTFT()` and
+returns true from `flushesItself()`; otherwise `main.cpp` pushes each frame.
+
+The launcher list shows six games at a time and scrolls, with an arrow above
+or below when there are more that way, and keeps its place when you return
+from a game.
 
 ## 3D Rendering (Tank Flux, Tube Flux)
 

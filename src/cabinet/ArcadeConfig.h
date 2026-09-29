@@ -308,17 +308,11 @@ struct ArcadeConfig {
 
 // -------------------------------------------------------------------------
 // CABINET STATE MACHINE
-// Add a new entry here when adding a new game.
+// Which game is running is main.cpp's activeGame, not a state per game.
 // -------------------------------------------------------------------------
 enum CabinetState {
     STATE_LAUNCHER_MENU,
-    STATE_ASTEROID_FLUX,
-    STATE_LANDER_FLUX,
-    STATE_MAZE_FLUX,
-    STATE_PLATFORM_FLUX,
-    STATE_TANK_FLUX,
-    STATE_TUBE_FLUX
-    // STATE_NEW_GAME  <-- add future games here
+    STATE_IN_GAME          // gameRegistry[] in main.cpp says which
 };
 
 #endif // ARCADE_CONFIG_H

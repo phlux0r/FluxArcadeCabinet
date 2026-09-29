@@ -115,7 +115,8 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds both harnesses + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner and Asteroid attract demos: idle + demoexit
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
+├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
 ├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
