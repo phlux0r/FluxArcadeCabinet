@@ -66,6 +66,11 @@ private:
     static const int           TIME_BONUS_SECONDS  = 15;
 
     bool _btnAWasHeld      = false;
+    // Game over: A counts only once it has been up after
+    // GAMEOVER_INPUT_DELAY_MS. Title: B (exit) only once it has been up
+    // since arriving, so mashing at game over can't quit to the menu.
+    bool _endInputArmed    = false;
+    bool _titleBWasHeld    = true;
     bool _showInstructions = false;
 
     // Hold BTN B 2s during play to bring up an exit confirmation
@@ -366,6 +371,7 @@ private:
                 if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                 _state      = STATE_GAMEOVER;
                 _gameOverMs = millis();
+                _endInputArmed = false;
                 audio.stopLoop();
             } else {
                 _player.reset(0, 0);
@@ -624,6 +630,7 @@ public:
         _state        = STATE_TITLE;
         _attractTimer = millis();
         _btnAWasHeld  = true;
+        _titleBWasHeld = true;
 
         initLevel();
         _player.lives = 3;
@@ -635,9 +642,11 @@ public:
 
         // ---- TITLE ----
         if (_state == STATE_TITLE) {
-            if (btnB) {
-                audio.mute(); 
-                return false; 
+            if (_titleBWasHeld) {
+                if (!btnB) _titleBWasHeld = false;
+            } else if (btnB) {
+                audio.mute();
+                return false;
             }
 
             if (millis() - _attractTimer > ATTRACT_INTERVAL_MS) {
@@ -672,10 +681,15 @@ public:
             renderGameOver(canvas);
             if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
                 ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
-            if (btnA || millis() - _gameOverMs > GAMEOVER_TIMEOUT_MS) {
-                _state        = STATE_TITLE;
-                _attractTimer = millis();
-                _btnAWasHeld  = true;
+            if (!_endInputArmed && !btnA &&
+                millis() - _gameOverMs >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
+                _endInputArmed = true;
+            }
+            if ((_endInputArmed && btnA) || millis() - _gameOverMs > GAMEOVER_TIMEOUT_MS) {
+                _state         = STATE_TITLE;
+                _attractTimer  = millis();
+                _btnAWasHeld   = true;
+                _titleBWasHeld = true;
             }
             return true;
         }
@@ -738,6 +752,7 @@ public:
                     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                     _state      = STATE_GAMEOVER;
                     _gameOverMs = millis();
+                    _endInputArmed = false;
                     audio.stopLoop();
                 } else {
                     _timeLeft = 60;

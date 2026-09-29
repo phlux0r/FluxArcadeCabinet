@@ -216,7 +216,7 @@ bool TubeFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
     renderGameOver(canvas);
 
     unsigned long elapsed = millis() - _phaseEnteredMs;
-    if (elapsed > GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) {
+    if (elapsed > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) {
         startNewGame(audio);
     } else if (elapsed > GAMEOVER_TIMEOUT_MS) {
         for (auto &o : _obstacles) { o.active = false; o.obj->enabled = false; }

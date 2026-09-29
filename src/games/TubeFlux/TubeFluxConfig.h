@@ -277,7 +277,6 @@ inline constexpr unsigned long ATTRACT_SLIDE_MS    = 8000;
 inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B
 inline constexpr unsigned long QUIT_HINT_DELAY_MS  = 650;
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 15000;
-inline constexpr unsigned long GAMEOVER_INPUT_DELAY_MS = 800;  // so a held stick/button can't skip it
 
 // Looped during a run (not on the attract screen or in its demo).
 inline constexpr const char* TUBE_MUSIC = "/audio/flux-tube.wav";
