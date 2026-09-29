@@ -101,6 +101,17 @@ public:
         }
     }
 
+    // Is (x, y) at least `margin` clear of every rock's hit circle for a
+    // ship of hit radius `shipRadius`? For the attract demo's route.
+    bool clearOf(float x, float y, int shipRadius, int margin) const {
+        for (int i = 0; i < _activeHazardsCount; i++) {
+            float dx = x - _rocks[i].x, dy = y - _rocks[i].y;
+            int r = shipRadius + _rocks[i].maxRadius - 2 + margin;
+            if (dx * dx + dy * dy < (float)(r * r)) return false;
+        }
+        return true;
+    }
+
     bool checkCollision(float shipX, float shipY, int shipRadius) {
         for (int i = 0; i < _activeHazardsCount; i++) {
             float dx = shipX - _rocks[i].x;

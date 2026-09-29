@@ -38,6 +38,19 @@ Left alone, its attract screen cycles the title, a how-to-play slide and a
 silent 30-45 second demo, the autopilot playing a random tier (sometimes
 into a bonus round).
 
+**Attract demos.** Left alone, every game except Maze does the same: title,
+how-to-play, then a silent 30-40 second demo played by an autopilot, and
+back to the title. A starts a real game straight from a demo; nothing from
+a demo (score, high score) is kept.
+
+| Game | The demo |
+|---|---|
+| Runner | a random stage 2-7; the autopilot predicts on the game's own rules and jumps at the best moment |
+| Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
+| Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
+| Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
+| Tube | a random tier, sometimes into the bonus round |
+
 ## Build
 
 A [PlatformIO](https://platformio.org/) project — open the folder in VS Code

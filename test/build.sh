@@ -80,7 +80,7 @@ if [ $# -gt 0 ]; then
 else
   echo "=== audio"
   ./audio_test | tail -1
-  echo "=== games2d (Runner, Asteroid attract demos)"
+  echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
   for g in tankflux tubeflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")

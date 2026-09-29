@@ -26,16 +26,21 @@ void randomSeed(unsigned long s) { g_rng = (uint32_t)s; }
 #define private public
 #include "games/PlatformFlux/PlatformFluxGame.h"
 #include "games/AsteroidFlux/AsteroidFluxGame.h"
+#include "games/LanderFlux/LanderFluxGame.h"
 #undef private
 
 static const unsigned long STEP_MS = 17;
+
+static int highScoreOf(PlatformFluxGame &g) { return g._highScore; }
+static int highScoreOf(AsteroidFluxGame &g) { return g._highScore; }
+static int highScoreOf(LanderFluxGame &g)   { return g._engine._highScore; }
 
 template <typename Game, typename InDemo, typename Report>
 static bool idle(const char* name, Game &g, long frames, InDemo inDemo, Report report) {
     AudioEngine audio;
     GFXcanvas16 canvas(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
     g.init(audio);
-    const int hs0 = g._highScore;
+    const int hs0 = highScoreOf(g);
     int demos = 0, ended = 0;
     long demoFrames = 0;
     bool was = false, leftSilenced = false;
@@ -51,10 +56,10 @@ static bool idle(const char* name, Game &g, long frames, InDemo inDemo, Report r
         g_fakeMillis += STEP_MS;
     }
     report(g, true);
-    const bool ok = !leftSilenced && g._highScore == hs0 && demos > 0;
+    const bool ok = !leftSilenced && highScoreOf(g) == hs0 && demos > 0;
     printf("DONE %s idle frames=%ld demos=%d ended=%d avgDemoS=%.1f leftSilenced=%d highScoreTouched=%d -> %s\n",
            name, frames, demos, ended, demos ? demoFrames * STEP_MS / 1000.0 / demos : 0.0,
-           (int)leftSilenced, (int)(g._highScore != hs0), ok ? "PASS" : "FAIL");
+           (int)leftSilenced, (int)(highScoreOf(g) != hs0), ok ? "PASS" : "FAIL");
     return ok;
 }
 
@@ -112,6 +117,37 @@ int main(int argc, char** argv) {
                     h._asteroids.activeCount() == 1 && !audio._silenced;
         printf("asteroid demoexit: phase %d lives %d score %d asteroids %d -> %s\n",
                (int)h._phase, h._lives, h._score, h._asteroids.activeCount(), pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+    if (!strcmp(which, "all") || !strcmp(which, "lander")) {
+        static LanderFluxGame g;
+        int landings = 0, crashes = 0, fastApproaches = 0, lastLandings = 0;
+        bool wasDis = false;
+        ok &= idle("lander", g, frames, [](LanderFluxGame &g) { return g._engine._demo; },
+            [&](LanderFluxGame &g, bool final) {
+                auto &e = g._engine;
+                if (final) {
+                    printf("lander demos: %d landings, %d crashes (%d on a deliberately fast approach)\n",
+                           landings, crashes, fastApproaches);
+                    return;
+                }
+                if (e._demoLandings > lastLandings) ++landings;
+                lastLandings = e._demoLandings;
+                if (e._lander.isDisintegrating && !wasDis) { ++crashes; fastApproaches += e._demoDescent > 1.0f; }
+                wasDis = e._lander.isDisintegrating;
+            });
+        static LanderFluxGame h;
+        AudioEngine audio;
+        h.init(audio);
+        for (long f = 0; f < 100000 && !h._engine._demo; ++f) { InputState n{}; h.update(canvas, n, audio); g_fakeMillis += STEP_MS; }
+        for (int f = 0; f < 600; ++f) { InputState n{}; h.update(canvas, n, audio); g_fakeMillis += STEP_MS; }
+        InputState a{}; a.btnA = a.btnAPressed = true;
+        h.update(canvas, a, audio);
+        auto &e = h._engine;
+        bool pass = !e._demo && !e._isTitleScreen && !e._isGameOver && e._level == 1 && e._score == 0 &&
+                    e._lander.lives == 3 && !audio._silenced;
+        printf("lander demoexit: title %d level %d score %d lives %d -> %s\n",
+               (int)e._isTitleScreen, e._level, e._score, e._lander.lives, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
     return ok ? 0 : 1;
