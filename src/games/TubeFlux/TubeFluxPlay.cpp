@@ -315,7 +315,7 @@ void TubeFluxGame::collectPickup(AudioEngine &audio) {
             break;
     }
     _pickupBannerUntil = millis() + PICKUP_BANNER_MS;
-    sfxWAV(audio, "/audio/tube_powerup.wav");
+    sfxWAV(audio, "/audio/powerup.wav");
 }
 
 void TubeFluxGame::missPickup() {
@@ -356,7 +356,7 @@ void TubeFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
         fireShot(_angle);
     }
     _reloadAt = millis() + (rapid ? RAPID_RELOAD_MS : SHOT_RELOAD_MS);
-    sfxWAV(audio, "/audio/shot.wav");
+    sfxWAV(audio, "/audio/tube_shot.wav");
 }
 
 // Shots fly down the lane they were fired from and stop at the first thing

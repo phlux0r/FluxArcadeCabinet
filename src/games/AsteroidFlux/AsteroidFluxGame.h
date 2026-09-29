@@ -316,6 +316,7 @@ public:
         _gameOverPending   = false;
         _demo              = false;
         // No start sound: the attract loop starts straight away.
+        audio.preload("/audio/powerup.wav");   // every pickup; loaded now, not on the first
     }
 
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }

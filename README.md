@@ -275,10 +275,11 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | File | Used by |
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
-| `lander_start.wav`, `land_success.wav` | Lander Flux |
+| `lander_start.wav`, `land_success.wav`, `pickup.wav` (fuel pickup) | Lander Flux |
+| `powerup.wav` (extra life, shield and slow-time pickups) | Asteroid Flux |
 | `jump.wav`, `death.wav` | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
-| `tube_powerup.wav` (any pickup), `tube_bump.wav` (losing a shield); also `shot.wav`, `explosion.wav` | Tube Flux |
+| `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,

@@ -441,6 +441,7 @@ public:
         _demo                = false;
         initLevel();
         audio.playLanderStartSound();
+        audio.preload("/audio/pickup.wav");     // the fuel pickup; loaded now, not on the first
     }
 
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
@@ -627,7 +628,7 @@ public:
                         _particles.spawnFire(_fuelTankX, _fuelTankY,
                             random(-10, 10) * 0.1f, random(-10, 10) * 0.1f);
                     }
-                    audio.playPowerUpExtraLife();
+                    audio.playWAV("/audio/pickup.wav");
                 }
             }
 
