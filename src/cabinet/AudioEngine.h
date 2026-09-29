@@ -42,7 +42,7 @@
 //   playTone/Melody   the synth, mixed over everything (was: skipped while
 //                     a WAV played)
 //   preload()         load an effect ahead of its first play
-//   setMusicEnabled / setFxEnabled, setVolume (master)
+//   setMusicVolume / setFxVolume (0 = off), setVolume (master)
 //
 // SD CARD PATHS: see the README's SD card section. WAVs: 8 or 16-bit PCM,
 // mono or stereo, any rate (mixed at 44.1kHz).
@@ -294,6 +294,20 @@ public:
         _audioMixer.masterQ15.store((int32_t)(v * 32768.0f));
     }
     float getVolume() const { return _audioMixer.masterQ15.load() / 32768.0f; }
+    // Each bus's volume, under the master. 0 switches it off (music then
+    // isn't streamed from SD at all).
+    void setMusicVolume(float v) {
+        v = constrain(v, 0.0f, 1.0f);
+        _audioMixer.musicQ15.store((int32_t)(v * 32768.0f));
+        _audioMixer.musicOn.store(v > 0.0f);
+    }
+    void setFxVolume(float v) {
+        v = constrain(v, 0.0f, 1.0f);
+        _audioMixer.fxQ15.store((int32_t)(v * 32768.0f));
+        _audioMixer.fxOn.store(v > 0.0f);
+    }
+    float getMusicVolume() const { return _audioMixer.musicQ15.load() / 32768.0f; }
+    float getFxVolume() const    { return _audioMixer.fxQ15.load() / 32768.0f; }
     void setMusicEnabled(bool on) { _audioMixer.musicOn.store(on); }
     void setFxEnabled(bool on)    { _audioMixer.fxOn.store(on); }
     bool isMusicEnabled() const   { return _audioMixer.musicOn.load(); }

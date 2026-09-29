@@ -13,8 +13,8 @@
 //     cache) or PROGMEM samples. A new effect with every voice busy
 //     replaces the oldest.
 //   - 1 synth: the square-wave tones and melodies playTone/playMelody make.
-// Music is one bus; everything else is the effects bus. Each bus can be
-// switched off, and a master volume applies to both. Sources are summed at
+// Music is one bus; everything else is the effects bus. Each bus has its
+// own volume (and can be switched off), under a master volume. Sources are summed at
 // their own level (a sound plays as loud mixed as alone) and only the peaks
 // that would overflow are rounded off (softClip), rather than dividing by
 // the number of sources, which makes everything quieter in busy moments.
@@ -141,7 +141,9 @@ public:
 
     // Settings, written by the game loop.
     std::atomic<int32_t> masterQ15{26214};      // 0.8
-    std::atomic<bool>    musicOn{true};
+    std::atomic<int32_t> musicQ15{32768};       // each bus, under the master
+    std::atomic<int32_t> fxQ15{32768};
+    std::atomic<bool>    musicOn{true};         // off: the loader stops streaming too
     std::atomic<bool>    fxOn{true};
 
     // Status, written here after each block, read by the game loop.
@@ -167,6 +169,8 @@ public:
         const bool music = musicOn.load(std::memory_order_relaxed);
         const bool fx = fxOn.load(std::memory_order_relaxed);
         const int32_t master = masterQ15.load(std::memory_order_relaxed);
+        const int32_t musicGain = music ? musicQ15.load(std::memory_order_relaxed) : 0;
+        const int32_t fxGain = fx ? fxQ15.load(std::memory_order_relaxed) : 0;
 
         for (int i = 0; i < frames; ++i) {
             int32_t fxSum = 0;
@@ -175,8 +179,8 @@ public:
             if (_synthOn) fxSum += synthSample();
             int32_t musicSum = _streamOn[STREAM_MUSIC] ? streamSample(STREAM_MUSIC) : 0;
 
-            int32_t mix = (music ? musicSum : 0) + (fx ? fxSum : 0);
-            int16_t o = softClip((int32_t)(((int64_t)mix * master) >> 15));
+            int64_t mix = (int64_t)musicSum * musicGain + (int64_t)fxSum * fxGain;   // Q15
+            int16_t o = softClip((int32_t)(((mix >> 15) * master) >> 15));
             out[2 * i] = o;
             out[2 * i + 1] = o;
         }

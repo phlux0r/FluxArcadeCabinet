@@ -327,6 +327,10 @@ private:
     bool _i2sReady   = false;
     bool _musicOn    = true;
     bool _fxOn       = true;
+    float _master    = 0.8f;
+    float _musicVol  = 1.0f;
+    float _fxVol     = 1.0f;
+    void applyVolume(bool music) { _audioState.volume = _master * (music ? _musicVol : _fxVol); }
     TaskHandle_t _taskHandle = nullptr;
 
     // ---- Deferred WAV-open-failed fallback (see playJumpSound) ----
@@ -444,6 +448,7 @@ public:
     // -------------------------------------------------------------------------
     void playWAV(const char* path) {
         if (!_i2sReady || !_fxOn) return;
+        applyVolume(false);
         stopAudioTask();
         _toneActive    = false;
         _melodyPlaying = false;
@@ -456,6 +461,7 @@ public:
     // Play WAV and loop it indefinitely until stopped
     void loopWAV(const char* path) {
         if (!_i2sReady || !_musicOn) return;
+        applyVolume(true);
         stopAudioTask();
         _toneActive    = false;
         _melodyPlaying = false;
@@ -490,6 +496,7 @@ public:
     // -------------------------------------------------------------------------
     void startSamplePROGMEM(const uint8_t* data, size_t len) {
         if (!_i2sReady || !_fxOn || !data || len <= 44) return;
+        applyVolume(false);
         stopAudioTask();
         _toneActive    = false;
         _melodyPlaying = false;
@@ -519,8 +526,22 @@ public:
         else startSamplePROGMEM(fallback, fbLen);
     }
 
-    void setVolume(float v) { _audioState.volume = constrain(v, 0.0f, 1.0f); }
-    float getVolume() const { return _audioState.volume; }
+    // One output level, so the bus volumes apply per sound: the master
+    // times music's or effects' volume, set as each one starts.
+    void setVolume(float v) { _master = constrain(v, 0.0f, 1.0f); applyVolume(_audioState.loopEnabled); }
+    float getVolume() const { return _master; }
+    void setMusicVolume(float v) {
+        _musicVol = constrain(v, 0.0f, 1.0f);
+        setMusicEnabled(_musicVol > 0.0f);
+        if (_audioState.loopEnabled) applyVolume(true);
+    }
+    void setFxVolume(float v) {
+        _fxVol = constrain(v, 0.0f, 1.0f);
+        setFxEnabled(_fxVol > 0.0f);
+        if (!_audioState.loopEnabled) applyVolume(false);
+    }
+    float getMusicVolume() const { return _musicVol; }
+    float getFxVolume() const    { return _fxVol; }
 
     // The new engine's settings API, approximated: see the header comment.
     void setMusicEnabled(bool on) { _musicOn = on; if (!on && _audioState.loopEnabled) stopAudioTask(); }
@@ -598,6 +619,7 @@ public:
     // -------------------------------------------------------------------------
     void playTone(int freqHz, int durationMs) {
         if (!_i2sReady || !_fxOn || _audioState.playing) return;
+        applyVolume(false);
         _toneFreq      = freqHz;
         _halfPeriod    = freqToHalfPeriod(freqHz);
         _sampleCounter = 0;
@@ -608,6 +630,7 @@ public:
 
     void playMelody(const int* freqs, const int* durs, int len) {
         if (!_i2sReady || !_fxOn || _audioState.playing) return;
+        applyVolume(false);
         _melodyFreqs     = freqs;
         _melodyDurations = durs;
         _melodyLength    = len;

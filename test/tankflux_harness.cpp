@@ -76,6 +76,10 @@ int main(int argc, char** argv) {
 
     bool prevA = false, prevB = false, wasBoss = false;
     int bossesSeen = 0, quits = 0, gameOvers = 0, lastPhase = -1;
+    // Boss difficulty: how long fights last and how much they hurt (god
+    // mode pins health each frame, so the drop since the pin is this
+    // frame's damage).
+    long bossFrames = 0, bossDamage = 0;
     uint32_t traceHash = 2166136261u;
 
     for (long f = 0; f < frames; ++f) {
@@ -149,6 +153,11 @@ int main(int argc, char** argv) {
             g.init(audio);
         }
 
+        if (g._bossActive || wasBoss) {
+            ++bossFrames;
+            if (god && g._phase == TankFluxGame::PHASE_PLAYING && g._health < tankflux::HEALTH_MAX)
+                bossDamage += tankflux::HEALTH_MAX - g._health;
+        }
         if (g._bossActive && !wasBoss) ++bossesSeen;
         wasBoss = g._bossActive;
         if (g._phase == TankFluxGame::PHASE_GAMEOVER && lastPhase != TankFluxGame::PHASE_GAMEOVER) ++gameOvers;
@@ -178,6 +187,9 @@ int main(int argc, char** argv) {
            "tones=%d melodies=%d wavs=%d final=%08x\n",
            frames, bossesSeen, g._bossesDefeated, gameOvers, quits,
            audio.tones, audio.melodies, audio.wavs, traceHash);
+    if (bossesSeen)
+        printf("boss fights: %ld frames each on average, %ld damage taken per fight%s\n",
+               bossFrames / bossesSeen, bossDamage / bossesSeen, god ? "" : " (god mode only)");
 
     if (profile) {
         // Host microseconds are not ESP32 microseconds; compare buckets to

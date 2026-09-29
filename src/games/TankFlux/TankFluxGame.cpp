@@ -148,8 +148,10 @@ bool TankFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
     renderGameOver(canvas);
 
     unsigned long elapsed = millis() - _gameOverEnteredMs;
-    if (input.btnAPressed) { startNewGame(audio); return true; }
-    if (input.btnBPressed) { audio.mute(); return false; }
+    // Only after the input delay, so mashing at the end doesn't.
+    const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
+    if (inputOk && input.btnAPressed) { startNewGame(audio); return true; }
+    if (inputOk && input.btnBPressed) { audio.mute(); return false; }
     if (elapsed > GAMEOVER_TIMEOUT_MS) {
         _phase = PHASE_ATTRACT;
         _attractSlide      = SLIDE_GAME;
@@ -210,6 +212,7 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
         recordHighScore();
         _phase = PHASE_GAMEOVER;
         _gameOverEnteredMs = millis();
+        _btnBWasHeld = true;   // B held from strafing must be released before hold-to-exit counts
         audio.stopLoop();
         audio.playTone(150, 400);
     }

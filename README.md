@@ -16,7 +16,10 @@ Tank Flux and Tube Flux are rendered with
 [Jet](https://github.com/CubeCoders/Jet), a dependency-free fixed-function
 rasteriser. In Tank Flux you drive an arena of hills, rocks, trees and a
 river, fighting tanks that flank and fire back, with a boss every 15 kills
-that re-rolls the arena when it dies. In Tube Flux you fly down an endless
+that re-rolls the arena when it dies. The boss fires on its own faster
+timer, leads you with its bursts, and turns angry (red turret, faster,
+5-shell spread) below half health; each boss beaten makes the next one
+quicker. In Tube Flux you fly down an endless
 octagonal tunnel, rolling round its wall to dodge blocks; every ~30 seconds
 a gate raises the tier, which speeds things up, packs the blocks closer and
 brings in wider ones; from tier 4 the tunnel starts to curve, hiding what's
@@ -98,13 +101,17 @@ picked up the gun. Hold B to quit.
 
 The launcher's "[JOY] MOVE / [BTN A] GO / [BTN B] SETUP" hint sits below the
 background art's menu box, leaving the box for the game list: six rows fit,
-and a seventh would need a tighter row pitch. The three hint lines are at a
-7px pitch (rows 124/131/138): the box's border is row 123 and the art's
-INSERT COIN starts at row 146, so there is no room for more.
+and a seventh would need a tighter row pitch. The hint uses the 5px TomThumb
+font, centred, at a 9px pitch (baselines 129/138/147): the box's border is
+row 123 and the last line just touches the art's INSERT COIN at row 146.
 
-**B** in the launcher opens **SETUP**: master volume (joystick left/right),
-music on/off and sound effects on/off (left/right or A), and BACK (or B again).
-Every change is saved to NVS at once and applied on boot.
+**B** in the launcher opens **SETUP**: MASTER, MUSIC and FX volume bars
+(joystick up/down to pick, left/right to set, 0 is off) and BACK (or B
+again). Every change is saved to NVS at once and applied on boot.
+
+Every game's game-over screen ignores A and B for its first second, then
+acts only on a fresh press (`ArcadeConfig::GAMEOVER_INPUT_DELAY_MS`), so
+buttons still being mashed when a game ends can't restart it or quit.
 
 ## Project Structure
 

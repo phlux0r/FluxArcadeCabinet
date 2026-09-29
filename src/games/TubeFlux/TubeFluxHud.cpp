@@ -155,7 +155,7 @@ void TubeFluxGame::renderGameOver(GFXcanvas16 &canvas) {
         snprintf(buf, sizeof(buf), "HI %ld", _highScore);
         drawCentred(canvas, buf, 78, ArcadeConfig::COLOR_GREEN);
     }
-    if (millis() - _phaseEnteredMs > GAMEOVER_INPUT_DELAY_MS) {
+    if (millis() - _phaseEnteredMs > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
         drawCentred(canvas, "A: AGAIN", 94, ArcadeConfig::COLOR_WHITE);
     }
     drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);

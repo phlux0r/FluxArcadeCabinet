@@ -125,6 +125,11 @@ struct ArcadeConfig {
     // -------------------------------------------------------------------------
     static const uint32_t FRAME_INTERVAL_US = 16666UL;
 
+    // Every game's game-over screen ignores A and B for this long, then
+    // acts only on a fresh press, so buttons still being mashed when the
+    // game ends can't restart it or quit to the menu straight away.
+    static const unsigned long GAMEOVER_INPUT_DELAY_MS = 1000UL;
+
     // -------------------------------------------------------------------------
     // ATTRACT MODE
     // -------------------------------------------------------------------------

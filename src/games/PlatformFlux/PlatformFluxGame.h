@@ -408,8 +408,10 @@ public:
 
             flushLandscape(canvas);
 
-            if (input.btnAPressed) { startNewGame(audio); return true; }
-            if (input.btnBPressed) { audio.mute(); return false; }
+            // Only after the input delay, so mashing at the end doesn't.
+            const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
+            if (inputOk && input.btnAPressed) { startNewGame(audio); return true; }
+            if (inputOk && input.btnBPressed) { audio.mute(); return false; }
 
             if (elapsed > GAMEOVER_TIMEOUT_MS) {
                 _phase       = PHASE_ATTRACT;

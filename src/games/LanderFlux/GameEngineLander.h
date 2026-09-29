@@ -43,6 +43,11 @@ private:
     int   _level         = 1;
     int   _highScore     = 0;
     bool  _isGameOver    = false;
+    // Between-level and game-over screens: A counts only once it has been
+    // up after GAMEOVER_INPUT_DELAY_MS, so thrust held or mashed at the end
+    // doesn't skip them.
+    bool  _endInputArmed = false;
+    bool  _titleAWasHeld = true;    // title: A starts only once it has been up
     bool  _isTitleScreen = true;
 
     unsigned long _attractModeTimer    = 0;
@@ -225,6 +230,7 @@ public:
         _isTitleScreen       = true;
         _isGameOver          = false;
         _attractModeTimer    = millis();
+        _titleAWasHeld       = true;
         _showInstructionPage = false;
         _btnBWasHeld         = true;
         initLevel();
@@ -262,7 +268,9 @@ public:
             if (!_showInstructionPage) renderTitleScreen(canvas);
             else                       renderInstructionScreen(canvas);
 
-            if (btnA) {
+            if (_titleAWasHeld) {
+                if (!btnA) _titleAWasHeld = false;
+            } else if (btnA) {
                 _score = 0; _level = 1;
                 _lander.resetPools();
                 _particles.clearAll();
@@ -291,7 +299,11 @@ public:
             if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
                 ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
 
-            if (btnA) {
+            if (!_endInputArmed && !btnA &&
+                millis() - _gameOverEnteredMs >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
+                _endInputArmed = true;
+            }
+            if (_endInputArmed && btnA) {
                 if (_lander.lives > 0) {
                     initLevel();
                 } else {
@@ -299,6 +311,7 @@ public:
                     _particles.clearAll();
                     initLevel();
                     _isTitleScreen    = true;
+                    _titleAWasHeld    = true;
                     _attractModeTimer = millis();
                     _showInstructionPage = false;
                 }
@@ -336,6 +349,7 @@ public:
                     if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                     _isGameOver        = true;
                     _gameOverEnteredMs = now;
+                    _endInputArmed     = false;
                     audio.stopLoop();
                     audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 }
@@ -396,6 +410,7 @@ public:
                     _level++;
                     _isGameOver        = true;
                     _gameOverEnteredMs = now;
+                    _endInputArmed     = false;
                     audio.playLandingSuccessSound();
                 } else {
                     _lander.kill(_particles);

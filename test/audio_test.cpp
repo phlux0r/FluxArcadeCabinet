@@ -334,6 +334,29 @@ int main() {
         CHECK(fxOnly == 0 && r.loader.inFlight == 0, "fx off: music only, request resolved");
     }
 
+    // --- Bus volumes: music at half, effects at a quarter, under the master.
+    {
+        std::vector<int> m(20000, 1000);
+        writeWav("/audio/flat.wav", 44100, 16, 1, m);
+        std::vector<int> fx(4000, 4000);
+        writeWav("/audio/beep.wav", 44100, 16, 1, fx);
+        Rig r;
+        r.mixer.musicQ15 = 16384;
+        r.mixer.fxQ15 = 8192;
+        r.cmd(LC_LOOP_MUSIC, "/audio/flat.wav");
+        r.run(2000);
+        r.cmd(LC_PLAY_FX, "/audio/beep.wav");
+        auto out = r.run(5000);
+        int mixed = 0, musicOnly = 0;
+        for (auto v : out) { mixed += v == 500 + 1000; musicOnly += v == 500; }
+        CHECK(mixed > 3000 && musicOnly > 500, "bus volumes: music 500, +fx 1000 (%d mixed, %d music)",
+              mixed, musicOnly);
+        r.mixer.masterQ15 = 16384;
+        out = r.run(1000);
+        int half = 0; for (auto v : out) half += v == 250;
+        CHECK(half > 900, "master halves the music bus: %d", half);
+    }
+
     // --- A file too big for the cache plays as the jingle stream; then music after it.
     {
         std::vector<int> big(30000, 700);

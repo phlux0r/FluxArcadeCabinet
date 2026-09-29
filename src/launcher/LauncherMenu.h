@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <Preferences.h>
+#include <Fonts/TomThumb.h>
 #include "cabinet/ArcadeConfig.h"
 #include "cabinet/InputManager.h"
 #include "cabinet/AudioEngine.h"
@@ -26,11 +27,11 @@ private:
     unsigned long _blinkTimer = 0;
     bool          _blinkState = false;
 
-    // Settings, persisted in NVS ("cabinet": volume, music, fx) and edited
-    // on the setup page, which B opens.
-    float         _volume  = 0.8f;
-    bool          _musicOn = true;
-    bool          _fxOn    = true;
+    // Settings, persisted in NVS ("cabinet": volume, music_vol, fx_vol) and
+    // edited on the setup page, which B opens. A bus at 0 is off.
+    float         _volume   = 0.8f;
+    float         _musicVol = 1.0f;
+    float         _fxVol    = 1.0f;
     Preferences   _prefs;
 
     bool _inSetup  = false;
@@ -40,31 +41,32 @@ private:
     bool _bArmed   = false;
     bool _aArmed   = false;
 
-    enum { SET_VOLUME, SET_MUSIC, SET_FX, SET_BACK, SET_COUNT };
+    enum { SET_MASTER, SET_MUSIC, SET_FX, SET_BACK, SET_COUNT };
 
     static const int VOL_STEPS = 10;
     static constexpr float VOL_STEP_SIZE = 1.0f / VOL_STEPS;
 
     void loadSettings() {
         _prefs.begin("cabinet", true);
-        _volume  = _prefs.getFloat("volume", 0.8f);
-        _musicOn = _prefs.getBool("music", true);
-        _fxOn    = _prefs.getBool("fx", true);
+        _volume   = _prefs.getFloat("volume", 0.8f);
+        // Before the volume bars these were on/off switches: carry them over.
+        _musicVol = _prefs.getFloat("music_vol", _prefs.getBool("music", true) ? 1.0f : 0.0f);
+        _fxVol    = _prefs.getFloat("fx_vol", _prefs.getBool("fx", true) ? 1.0f : 0.0f);
         _prefs.end();
     }
 
     void saveSettings() {
         _prefs.begin("cabinet", false);
         _prefs.putFloat("volume", _volume);
-        _prefs.putBool("music", _musicOn);
-        _prefs.putBool("fx", _fxOn);
+        _prefs.putFloat("music_vol", _musicVol);
+        _prefs.putFloat("fx_vol", _fxVol);
         _prefs.end();
     }
 
     void applySettings(AudioEngine &audio) {
         audio.setVolume(_volume);
-        audio.setMusicEnabled(_musicOn);
-        audio.setFxEnabled(_fxOn);
+        audio.setMusicVolume(_musicVol);
+        audio.setFxVolume(_fxVol);
     }
 
     void drawBackground(GFXcanvas16 &canvas) {
@@ -86,17 +88,24 @@ private:
         }
     }
 
-    // Nav hint, below the background art's menu box: its bottom border is
-    // row 123 and the art's INSERT COIN starts at row 146, so three lines
-    // fit only at a 7px pitch (124/131/138, the last ending on row 145).
+    // Nav hint, below the background art's menu box, in the 5px TomThumb
+    // font (as Asteroid's info screen uses), centred. Its box border is row
+    // 123 and the art's INSERT COIN starts at row 146: baselines 129/138/147
+    // put the glyphs (5 rows above the baseline) at 124-128, 133-137 and
+    // 142-146, the last just touching the art.
     void drawHint(GFXcanvas16 &canvas, const char* a, const char* b, const char* c) {
+        canvas.setFont(&TomThumb);
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
         const char* lines[3] = { a, b, c };
         for (int i = 0; i < 3; i++) {
             if (!lines[i]) continue;
-            canvas.setCursor(36, 124 + i * 7);
+            int16_t x1, y1;
+            uint16_t w, h;
+            canvas.getTextBounds(lines[i], 0, 0, &x1, &y1, &w, &h);
+            canvas.setCursor((ArcadeConfig::PORTRAIT_WIDTH - (int)w) / 2 - x1, 129 + i * 9);
             canvas.print(lines[i]);
         }
+        canvas.setFont();   // back to the built-in font for everything else
     }
 
     void renderMenu(GFXcanvas16 &canvas) {
@@ -115,6 +124,26 @@ private:
         drawHint(canvas, "[JOY] MOVE", "[BTN A] GO", "[BTN B] SETUP");
     }
 
+    // A label and a 10-step bar on one row, inside the row highlight.
+    void drawVolumeRow(GFXcanvas16 &canvas, int y, const char* label, float v, bool selected) {
+        drawRow(canvas, y, selected);
+        canvas.setCursor(30, y);
+        canvas.print(label);
+        const int bx = 67, bw = 33;                 // bar x 67..99, inside the highlight
+        canvas.fillRect(bx, y, bw, 7, ArcadeConfig::COLOR_BLACK);
+        canvas.drawRect(bx, y, bw, 7, ArcadeConfig::COLOR_AMBER);
+        int fillW = (int)((bw - 2) * v + 0.5f);
+        if (fillW > 0) {
+            uint16_t fillColor = (v > 0.6f) ? ArcadeConfig::COLOR_GREEN
+                               : (v > 0.3f) ? ArcadeConfig::COLOR_AMBER
+                               :              ArcadeConfig::COLOR_RED;
+            canvas.fillRect(bx + 1, y + 1, fillW, 5, fillColor);
+        }
+        for (int s = 1; s < VOL_STEPS; s++) {
+            canvas.drawFastVLine(bx + 1 + (bw - 2) * s / VOL_STEPS, y + 1, 5, ArcadeConfig::COLOR_BLACK);
+        }
+    }
+
     void renderSetup(GFXcanvas16 &canvas) {
         drawBackground(canvas);
 
@@ -122,39 +151,19 @@ private:
         canvas.setCursor(49, 38);
         canvas.print("SETUP");
 
-        // VOLUME, with its bar on the line below.
-        drawRow(canvas, 52, _setupSel == SET_VOLUME);
-        canvas.setCursor(38, 52);
-        canvas.print("VOLUME");
-        canvas.drawRect(30, 63, 68, 5, ArcadeConfig::COLOR_AMBER);
-        int fillW = (int)(66.0f * _volume + 0.5f);
-        if (fillW > 0) {
-            uint16_t fillColor = (_volume > 0.6f) ? ArcadeConfig::COLOR_GREEN
-                               : (_volume > 0.3f) ? ArcadeConfig::COLOR_AMBER
-                               :                    ArcadeConfig::COLOR_RED;
-            canvas.fillRect(31, 64, fillW, 3, fillColor);
-        }
-        for (int s = 1; s < VOL_STEPS; s++) {
-            canvas.drawFastVLine(31 + 66 * s / VOL_STEPS, 64, 3, ArcadeConfig::COLOR_BLACK);
-        }
-
-        drawRow(canvas, 74, _setupSel == SET_MUSIC);
-        canvas.setCursor(38, 74);
-        canvas.print(_musicOn ? "MUSIC  ON" : "MUSIC  OFF");
-
-        drawRow(canvas, 86, _setupSel == SET_FX);
-        canvas.setCursor(38, 86);
-        canvas.print(_fxOn ? "FX     ON" : "FX     OFF");
+        drawVolumeRow(canvas, 54, "MASTER", _volume,   _setupSel == SET_MASTER);
+        drawVolumeRow(canvas, 68, "MUSIC",  _musicVol, _setupSel == SET_MUSIC);
+        drawVolumeRow(canvas, 82, "FX",     _fxVol,    _setupSel == SET_FX);
 
         drawRow(canvas, 98, _setupSel == SET_BACK);
-        canvas.setCursor(38, 98);
+        canvas.setCursor(30, 98);
         canvas.print("BACK");
 
-        drawHint(canvas, "[JOY] SELECT", "[BTN A] CHANGE", "[BTN B] BACK");
+        drawHint(canvas, "[JOY] SELECT", "[JOY] < > SET", "[BTN B] BACK");
     }
 
-    // One setup page frame. Left/right and A change the selected setting;
-    // every change is saved at once, so nothing is lost at power-off.
+    // One setup page frame. Left/right changes the selected level (0 is
+    // off); every change is saved at once, so nothing is lost at power-off.
     void updateSetup(const InputState &input, bool press, AudioEngine &audio) {
         bool joyYActive = (input.joyUp || input.joyDown);
         if (!joyYActive) {
@@ -176,43 +185,27 @@ private:
             dir = input.joyLeft ? -1 : 1;
         }
 
-        switch (_setupSel) {
-        case SET_VOLUME:
-            if (dir != 0) {
-                float v = constrain(_volume + dir * VOL_STEP_SIZE, 0.0f, 1.0f);
-                if (v != _volume) {
-                    _volume = v;
-                    audio.setVolume(_volume);
-                    saveSettings();
-                    audio.playTone(880, 150);
-                }
-            }
-            break;
-        case SET_MUSIC:
-            if (dir != 0 || press) {
-                _musicOn = !_musicOn;
-                audio.setMusicEnabled(_musicOn);
-                saveSettings();
-                audio.playTone(_musicOn ? 880 : 440, 80);
-            }
-            break;
-        case SET_FX:
-            if (dir != 0 || press) {
-                _fxOn = !_fxOn;
-                audio.setFxEnabled(_fxOn);
-                saveSettings();
-                audio.playTone(880, 80);   // silent when just switched off
-            }
-            break;
-        case SET_BACK:
+        if (_setupSel == SET_BACK) {
             if (press) closeSetup(audio);
-            break;
+            return;
         }
+        if (dir == 0) return;
+        float &level = _setupSel == SET_MASTER ? _volume
+                     : _setupSel == SET_MUSIC  ? _musicVol : _fxVol;
+        // Snapped to whole steps, so 0 is exactly off, not a float crumb.
+        float v = constrain(roundf((level + dir * VOL_STEP_SIZE) * VOL_STEPS) / VOL_STEPS, 0.0f, 1.0f);
+        if (v == level) return;
+        level = v;
+        applySettings(audio);
+        saveSettings();
+        // A beep at the new level (effects bus, so silent with FX at 0;
+        // no music plays here to preview the music level with).
+        audio.playTone(880, 120);
     }
 
     void openSetup(AudioEngine &audio) {
         _inSetup = true;
-        _setupSel = SET_VOLUME;
+        _setupSel = SET_MASTER;
         audio.playTone(784, 60);
     }
 

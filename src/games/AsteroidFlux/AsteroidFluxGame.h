@@ -414,14 +414,15 @@ public:
 
             flushLandscape(canvas);
 
-            // Button A: play again
-            if (input.btnAPressed) {
+            // A plays again, B exits (no hold needed from game over): both
+            // only after the input delay, so mashing at the end doesn't.
+            const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
+            if (inputOk && input.btnAPressed) {
                 startNewGame(audio);
                 return true;
             }
 
-            // Button B: exit to launcher immediately (no hold needed from game over)
-            if (input.btnBPressed) {
+            if (inputOk && input.btnBPressed) {
                 audio.mute();
                 return false;
             }
