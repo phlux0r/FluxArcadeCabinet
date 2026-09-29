@@ -217,6 +217,13 @@ struct ArcadeConfig {
     // Jump forgiveness: a jump pressed up to BUFFER before landing still
     // happens on landing, and one pressed up to COYOTE after running off an
     // edge still takes off.
+    // Attract demo: the autopilot plays a random stage in this range for
+    // DEMO_MIN..MAX_MS (or until it dies), silently.
+    static const int   RUNNER_DEMO_MIN_STAGE = 2;
+    static const int   RUNNER_DEMO_MAX_STAGE = 7;
+    static const unsigned long RUNNER_DEMO_MIN_MS = 30000;
+    static const unsigned long RUNNER_DEMO_MAX_MS = 40000;
+    static const int   RUNNER_DEMO_LOOKAHEAD  = 50;   // frames the autopilot predicts
     static const unsigned long RUNNER_COYOTE_MS      = 80;
     static const unsigned long RUNNER_JUMP_BUFFER_MS = 120;
 

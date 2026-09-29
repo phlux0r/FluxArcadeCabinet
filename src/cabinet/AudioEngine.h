@@ -203,6 +203,7 @@ inline void audioLoaderTask(void*) {
 class AudioEngine {
 private:
     bool     _ready = false;
+    bool     _silenced = false;
     uint32_t _epoch = 0;                 // bumped by mute(); see AudioMixer.h
     uint32_t _melodiesRequested = 0;
     audiomix::Pcm _pgm[audiocfg::PGM_SLOTS];
@@ -306,6 +307,10 @@ public:
         _audioMixer.fxQ15.store((int32_t)(v * 32768.0f));
         _audioMixer.fxOn.store(v > 0.0f);
     }
+    // Attract demos run the real game silently: while set, new effects,
+    // tones and melodies are dropped (whatever's already playing carries on,
+    // and nothing is saved; see the games' demo code).
+    void setSilenced(bool on) { _silenced = on; }
     float getMusicVolume() const { return _audioMixer.musicQ15.load() / 32768.0f; }
     float getFxVolume() const    { return _audioMixer.fxQ15.load() / 32768.0f; }
     void setMusicEnabled(bool on) { _audioMixer.musicOn.store(on); }
@@ -318,6 +323,7 @@ public:
     // -------------------------------------------------------------------------
     void playWAV(const char* path) {
         if (!_ready) return;
+        if (_silenced) return;
         _audioLoader.lastDurationMs.store(0);   // set again once its header's read
         loaderCmd(audiomix::LC_PLAY_FX, path);
     }
@@ -350,6 +356,7 @@ public:
     // -------------------------------------------------------------------------
     void startSamplePROGMEM(const uint8_t* data, size_t len) {
         if (!_ready || !data || len <= 44) return;
+        if (_silenced) return;
         for (int tries = 0; tries < audiocfg::PGM_SLOTS; ++tries) {
             audiomix::Pcm& p = _pgm[_pgmNext];
             _pgmNext = (_pgmNext + 1) % audiocfg::PGM_SLOTS;
@@ -400,6 +407,7 @@ public:
     // it), so update() checks for its duration appearing, with a generous
     // deadline, before falling back.
     void playJumpSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/jump.wav");
             _jumpFallbackPending = true;
@@ -409,6 +417,7 @@ public:
         }
     }
     void playDeathSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/death.wav");
             _deathFallbackPending = true;
@@ -418,6 +427,7 @@ public:
         }
     }
     void playGameOverToneSound() {
+        if (_silenced) return;             // no fallback blip later either
         if (SD.cardType() != CARD_NONE) {
             playWAV("/audio/gameend.wav");
             _gameOverFallbackPending = true;
@@ -433,6 +443,7 @@ public:
     // -------------------------------------------------------------------------
     void playTone(int freqHz, int durationMs) {
         if (!_ready) return;
+        if (_silenced) return;
         audiomix::MixCmd m;
         m.type = audiomix::MC_TONE;
         audiodiag::toneRequests.fetch_add(1);
@@ -442,6 +453,7 @@ public:
     }
     void playMelody(const int* freqs, const int* durs, int len) {
         if (!_ready) return;
+        if (_silenced) return;
         audiomix::MixCmd m;
         m.type = audiomix::MC_MELODY;
         m.freqs = freqs;

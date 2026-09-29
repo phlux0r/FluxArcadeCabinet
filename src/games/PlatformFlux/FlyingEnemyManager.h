@@ -172,6 +172,23 @@ public:
         }
     }
 
+    // Would a falling rock touch this player box `t` frames from now?
+    // Rocks fall straight down on screen with a steady pull, so where each
+    // will be is exact. For the attract demo's prediction, with a pixel of
+    // margin. (Rocks not dropped yet can't be seen coming.)
+    bool rockWouldHit(int t, float px, float pRight, float py, float pBottom) const {
+        const float ft = (float)t;
+        for (int i = 0; i < MAX_ROCKS; i++) {
+            if (!_rocks[i].active) continue;
+            const float r = _rocks[i].radius + 1.0f;
+            const float ry = _rocks[i].y + _rocks[i].vy * ft + 0.06f * ft * (ft + 1.0f) * 0.5f;
+            const float cx = max(px, min(_rocks[i].x, pRight)), cy = max(py, min(ry, pBottom));
+            const float dx = _rocks[i].x - cx, dy = ry - cy;
+            if (dx * dx + dy * dy < r * r) return true;
+        }
+        return false;
+    }
+
     // loopIndex rotates the ship's color each time the tier cycle wraps
     // (see PlatformManager::getLoop), so a repeat trip through the tiers
     // reads as visually distinct rather than identical to the last one.

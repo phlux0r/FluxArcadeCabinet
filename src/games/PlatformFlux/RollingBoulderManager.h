@@ -116,6 +116,26 @@ public:
         }
     }
 
+    // Would a boulder touch this player box `t` frames from now? The box is
+    // in screen space; the ground has scrolled t * scrollSpeed by then. For
+    // the attract demo's autopilot, with a pixel of margin.
+    bool wouldHit(int t, float scrollSpeed, float px, float pRight, float py, float pBottom,
+                  const PlatformManager &platforms) const {
+        const float roll = scrollSpeed * ArcadeConfig::BOULDER_SPEED_BONUS;
+        const float shift = scrollSpeed * (float)t;
+        for (int i = 0; i < MAX_BOULDERS; i++) {
+            if (!_boulders[i].active) continue;
+            float bx = _boulders[i].x - roll * (float)t;
+            float r = _boulders[i].radius + 1.0f;
+            int groundY = platforms.surfaceYNear(bx - r + shift, bx + r + shift);
+            float cy = groundY - _boulders[i].radius;
+            float cx = max(px, min(bx, pRight)), cyy = max(py, min(cy, pBottom));
+            float dx = bx - cx, dy = cy - cyy;
+            if (dx * dx + dy * dy < r * r) return true;
+        }
+        return false;
+    }
+
     // loopIndex rotates the boulder's color each time the tier cycle wraps
     // (see PlatformManager::getLoop).
     void render(GFXcanvas16 &canvas, const PlatformManager &platforms, int loopIndex = 0) {

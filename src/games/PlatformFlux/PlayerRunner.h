@@ -64,10 +64,13 @@ public:
     // callers can gate a jump sound to real jumps rather than every press.
     // Also allowed for RUNNER_COYOTE_MS after running off an edge (falling,
     // not already jumped): a jump pressed a hair late still counts.
-    bool jump() {
+    bool canJump() const {
         bool coyote = !_onGround && !_levitating && !_jumpedSinceGround && _vy >= 0.0f &&
                       millis() - _groundedAt <= ArcadeConfig::RUNNER_COYOTE_MS;
-        if (!_onGround && !coyote) return false;
+        return _onGround || coyote;
+    }
+    bool jump() {
+        if (!canJump()) return false;
         _vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
         _onGround = false;
         _jumpedSinceGround = true;
@@ -149,6 +152,10 @@ public:
     bool  isOnGround() const { return _onGround; }
     bool  isInvincible() const { return _invincible; }
     bool  isFalling() const { return _vy > 0.0f; }
+    float getVy() const { return _vy; }
+    unsigned long levitationLeftMs() const {
+        return (_levitating && _levitationEndTime > millis()) ? _levitationEndTime - millis() : 0;
+    }
 
     void render(GFXcanvas16 &canvas) {
         // Levitation running out: distinct from invincibility on purpose —

@@ -12,10 +12,13 @@
 
 struct AudioEngine {
     int tones = 0, melodies = 0, wavs = 0;
+    int silencedCalls = 0;   // sounds asked for while silenced (a demo)
+    bool silenced = false;
 
-    void playTone(int, int) { ++tones; }
-    void playMelody(const int*, const int*, int) { ++melodies; }
-    void playWAV(const char*) { ++wavs; }
+    void setSilenced(bool on) { silenced = on; }
+    void playTone(int, int) { if (silenced) ++silencedCalls; else ++tones; }
+    void playMelody(const int*, const int*, int) { if (silenced) ++silencedCalls; else ++melodies; }
+    void playWAV(const char*) { if (silenced) ++silencedCalls; else ++wavs; }
     void loopWAV(const char*) {}
     void stopLoop() {}
     void mute() {}
