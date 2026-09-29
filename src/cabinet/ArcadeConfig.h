@@ -205,6 +205,20 @@ struct ArcadeConfig {
     static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
     static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
     static const int   RUNNER_INVINCIBLE_MS       = 6000;
+    // Lives and stages: each tier of each loop is a numbered stage, and a
+    // death restarts the stage you were on (score kept). Clearing a stage
+    // scores STAGE_BONUS, doubled if you didn't die in it; finishing a whole
+    // loop of stages gives an extra life, up to MAX_LIVES.
+    static const int   RUNNER_LIVES               = 3;
+    static const int   RUNNER_MAX_LIVES           = 5;
+    static const int   RUNNER_STAGE_BONUS         = 50;
+    static const unsigned long RUNNER_RESPAWN_SHIELD_MS = 2000;
+    static const unsigned long RUNNER_BANNER_MS   = 1600;
+    // Jump forgiveness: a jump pressed up to BUFFER before landing still
+    // happens on landing, and one pressed up to COYOTE after running off an
+    // edge still takes off.
+    static const unsigned long RUNNER_COYOTE_MS      = 80;
+    static const unsigned long RUNNER_JUMP_BUFFER_MS = 120;
 
     // Joystick-controlled horizontal drift around the runner's base X.
     // Rotation-1 games read joyY for on-screen horizontal, same swap

@@ -326,17 +326,54 @@ public:
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
-    void initGame() {
-        _scrollSpeed        = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED;
-        _tier               = 0;
-        _distance           = 0;
-        _introPlatformsLeft = ArcadeConfig::PLATFORM_INTRO_COUNT;
+    // Stages: each tier (0-7) of each loop is one, numbered from 1, so a
+    // loop is TIERS_PER_LOOP stages. A death restarts the stage it happened
+    // in (see PlatformFluxGame).
+    static const int TIERS_PER_LOOP = 8;
+
+    int stageNumber() const { return _loop * TIERS_PER_LOOP + _tier + 1; }
+    int loopsCompleted() const { return _loop; }
+
+    // Where a stage starts, in the same distance frames advanceDifficulty() counts.
+    unsigned long stageStartDistance(int stage) const {
+        int s = stage - 1;
+        int loop = s / TIERS_PER_LOOP, tier = s % TIERS_PER_LOOP;
+        unsigned long t[7];
+        computeThresholds(t);
+        return (unsigned long)loop * cycleLength() + (tier == 0 ? 0 : t[tier - 1]);
+    }
+
+    // 0..1 through the current stage, for the HUD's progress line.
+    float stageProgress() const {
+        unsigned long t[7];
+        computeThresholds(t);
+        unsigned long start = _tier == 0 ? 0 : t[_tier - 1];
+        unsigned long end   = _tier < 7 ? t[_tier] : cycleLength();
+        if (_cycleDistance <= start) return 0.0f;
+        float p = (float)(_cycleDistance - start) / (float)(end - start);
+        return p > 1.0f ? 1.0f : p;
+    }
+
+    // A fresh run from `stage` (1 = the very start): its hazards, its speed,
+    // a safe starting ledge, and a short flat run-in (the full intro only
+    // for stage 1).
+    void initGame(int stage = 1) {
+        _distance           = stageStartDistance(stage);
+        const unsigned long cycleLen = cycleLength();
+        _loop               = (int)(_distance / cycleLen);
+        _cycleDistance      = _distance % cycleLen;
+        _tier               = tierForDistance(_cycleDistance);
+        // The speed advanceDifficulty() would have reached: each loop starts
+        // 0.25 faster, and every tier change adds a step (from loop 1 on,
+        // the wrap into tier 0 is one too).
+        _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + 0.25f * _loop;
+        _scrollSpeed        = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * _loop +
+                              ArcadeConfig::RUNNER_SPEED_STEP * (float)(_tier + (_loop > 0 ? 1 : 0));
+        if (_scrollSpeed > _scrollSpeedCap) _scrollSpeed = _scrollSpeedCap;
+        _introPlatformsLeft = stage <= 1 ? ArcadeConfig::PLATFORM_INTRO_COUNT : 1;
         _lastGroundY        = groundLevel();
         _firePitsPlaced     = 0;
         _distanceSinceLastSpike = 9999.0f;
-        _loop               = 0;
-        _cycleDistance      = 0;
-        _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
