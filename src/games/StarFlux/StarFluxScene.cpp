@@ -174,13 +174,13 @@ Renderer::Object* StarFluxGame::buildBossHull() {
     o->addTriangle(B, L, D, &_bossDarkMat);
     for (float s : { -1.0f, 1.0f }) {
         // Wing: a front plate you see head on, and a top that shows from above.
-        uint16_t a = addPoint(o, s * 200, 60, -120), b = addPoint(o, s * 660, 20, -60);
-        uint16_t c = addPoint(o, s * 660, -50, -60), d = addPoint(o, s * 200, -60, -120);
+        uint16_t a = addPoint(o, s * 200, 60, -120), b = addPoint(o, s * 450, 20, -60);
+        uint16_t c = addPoint(o, s * 450, -50, -60), d = addPoint(o, s * 200, -60, -120);
         o->addFace(a, b, c, d, &_bossSideMat);
-        uint16_t e = addPoint(o, s * 660, 20, 200), f = addPoint(o, s * 200, 60, 300);
+        uint16_t e = addPoint(o, s * 450, 20, 200), f = addPoint(o, s * 200, 60, 300);
         o->addFace(a, f, e, b, &_bossTopMat);
-        uint16_t l0 = addPoint(o, s * 220, 22, -126), l1 = addPoint(o, s * 640, 2, -66);
-        uint16_t l2 = addPoint(o, s * 640, -14, -66), l3 = addPoint(o, s * 220, 2, -126);
+        uint16_t l0 = addPoint(o, s * 220, 22, -126), l1 = addPoint(o, s * 430, 2, -66);
+        uint16_t l2 = addPoint(o, s * 430, -14, -66), l3 = addPoint(o, s * 220, 2, -126);
         o->addFace(l0, l1, l2, l3, &_bossLightMat);
         // Horn and mandible.
         uint16_t h0 = addPoint(o, s * 90, 160, -40), h1 = addPoint(o, s * 190, 110, -40);
@@ -269,9 +269,17 @@ bool StarFluxGame::project(float x, float y, float z, float &sx, float &sy) cons
     return true;
 }
 
+void StarFluxGame::drawBackdrop(GFXcanvas16 &canvas) {
+    switch (_stageNum) {
+        case STAGE_PLANET: drawPlanet(canvas); break;
+        case STAGE_TRENCH: drawTrench(canvas); break;
+        default:           drawSpace(canvas); break;
+    }
+}
+
 // Sky gradient and the distant planet. The planet is so far off it only
 // shifts a little with the camera, and turns with its roll.
-void StarFluxGame::drawBackdrop(GFXcanvas16 &canvas) {
+void StarFluxGame::drawSpace(GFXcanvas16 &canvas) {
     const int w = canvas.width(), h = canvas.height();
     uint16_t* buf = canvas.getBuffer();
     for (int y = 0; y < h; ++y) {
@@ -306,6 +314,7 @@ void StarFluxGame::drawStars(GFXcanvas16 &canvas) {
             s.x = (float)random(-2400, 2401) + _camX;
             s.y = (float)random(-1800, 1801) + _camY;
         }
+        if (!starVisible(s.x, s.y)) continue;
         float x0, y0, x1, y1;
         if (!project(s.x, s.y, s.z, x1, y1)) continue;
         if (!project(s.x, s.y, s.z + FLY_SPEED * 3.0f, x0, y0)) continue;
@@ -440,6 +449,9 @@ void StarFluxGame::releaseScene() {
     for (auto &f : _fighters) { f.obj = nullptr; f.active = false; }
     for (auto &r : _rocks) { r.obj = nullptr; r.active = false; }
     _bossHull = _coreObj = _shieldObj = nullptr;
+    for (auto*& h : _bossHulls) h = nullptr;
+    for (auto &b : _boxes) { b.obj = nullptr; b.active = false; }
+    for (auto &t : _turrets) { t.obj = nullptr; t.active = false; }
     _cannonObj[0] = _cannonObj[1] = nullptr;
     _bossActive = false;
     _phase = PHASE_ATTRACT;   // nothing may touch the (now missing) objects before a new game
@@ -464,6 +476,7 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     for (Renderer::Material* m : { &_fHullMat, &_fDarkMat, &_fBladeMat, &_fTipMat, &_fEngineMat, &_flashMat,
                                    &_bossTopMat, &_bossSideMat, &_bossDarkMat, &_bossFinMat, &_bossLightMat,
                                    &_cannonMat, &_cannonMat2, &_coreMat, &_coreMat2, &_shieldMat,
+                                   &_boxLightMat, &_turretMat, &_turretMat2,
                                    &_shipMat[0], &_shipMat[1], &_shipMat[2] }) {
         m->shadingMode = Renderer::ShadingMode::UNLIT;
     }
@@ -477,6 +490,16 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _rockMat[0].color = rgb(150, 128, 110);
     _rockMat[1].color = rgb(120, 126, 145);
     for (auto &m : _rockMat) m.shadingMode = Renderer::ShadingMode::FLAT;
+    for (Renderer::Material* m : { &_boxMat, &_crawlerMat, &_crawlerDarkMat, &_reactorMat, &_reactorDarkMat }) {
+        m->shadingMode = Renderer::ShadingMode::FLAT;
+    }
+    _crawlerMat.color     = rgb(120, 110, 84);
+    _crawlerDarkMat.color = rgb(60, 56, 50);
+    _reactorMat.color     = rgb(120, 128, 152);
+    _reactorDarkMat.color = rgb(48, 52, 70);
+    _boxLightMat.color    = rgb(255, 70, 70);
+    applyStagePalette();
+    buildMountains();
     _bossTopMat.color   = rgb(120, 126, 150);
     _bossSideMat.color  = rgb(78, 80, 104);
     _bossDarkMat.color  = rgb(40, 40, 58);
@@ -498,8 +521,19 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
         r.obj = buildRock(i + 1, r.r, &_rockMat[i & 1]);
         _scene->addObject(r.obj);
     }
-    _bossHull = buildBossHull();
-    _scene->addObject(_bossHull);
+    _bossHulls[STAGE_BELT] = buildBossHull();
+    _bossHulls[STAGE_PLANET] = buildCrawler();
+    _bossHulls[STAGE_TRENCH] = buildReactor();
+    for (auto* h : _bossHulls) _scene->addObject(h);
+    _bossHull = _bossHulls[STAGE_BELT];
+    for (auto &b : _boxes) {
+        b.obj = buildObstacleBox();
+        _scene->addObject(b.obj);
+    }
+    for (auto &t : _turrets) {
+        t.obj = buildTurret();
+        _scene->addObject(t.obj);
+    }
     for (auto*& c : _cannonObj) {
         c = buildGem(CANNON_R, &_cannonMat, &_cannonMat2);
         _scene->addObject(c);

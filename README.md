@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
-| Star Flux | Star | Landscape | 3D on-rails space shooter: fighter waves, rock fields, a boss (see below) |
+| Star Flux | Star | Landscape | 3D on-rails space shooter: three stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
@@ -39,21 +39,37 @@ Left alone, its attract screen cycles the title, a how-to-play slide and a
 silent 30-45 second demo, the autopilot playing a random tier (sometimes
 into a bonus round).
 
-In Star Flux you fly on rails through space, the camera behind your ship,
-steering it round the screen while the stage comes at you. Stage 1, Aurora
-Belt, runs about 90 seconds: a fly-in with the stage name, six waves of
-red fighters in formations (V dives, sweeping columns, head-on pairs, a
-wing overtaking from behind, a weaving snake) that swoop, fire and break
-away, rock fields between them (big rocks take three hits and split), and
-silver rings that restore 40 shield. Then the dreadnought: two wing cannons
-firing aimed shots; lose one and it adds ring bursts that close round where
-you were (stay put); lose both and its core opens, firing spreads and
-faster bursts. Destroy the core for the results screen (fighters downed,
-rocks, rings, and a bonus for the shield you kept), then the stage loops,
-its fire faster each time. A shield bar and 3 lives: an empty shield costs
-a life and restarts the wave (or rock field) you were in; a boss keeps the
-damage you'd done. Two sights show your line of fire, red when a target is
-on it. Shooting down a whole wave scores a 500 bonus.
+In Star Flux you fly on rails, the camera behind your ship, steering it
+round the screen while the stage comes at you: a fly-in with the stage
+name, waves of red fighters in formations (V dives, sweeping columns,
+head-on pairs, a wing overtaking from behind, a weaving snake) that swoop,
+fire and break away, hazard fields between them, silver rings that restore
+40 shield, and a boss. Each stage runs 70-100 seconds and ends with a
+results screen (fighters downed, targets, rings, and a bonus for the
+shield you kept); after the third, the game loops back to the first with
+faster fire and tougher bosses.
+
+1. **Aurora Belt** (space): rock fields (big rocks take three hits and
+   split). The dreadnought: two wing cannons firing aimed shots; lose one
+   and it adds ring bursts that close round where you were (stay put); lose
+   both and its core opens, firing spreads and faster bursts.
+2. **Ember Reach** (a planet's surface at dusk): pillars to go round or hop
+   over, arches to fly under, turret towers that shoot back (shoot the
+   turret on top). The crawler, a tracked fortress: two missile pods; lose
+   one and it launches homing missiles (shoot them down, or dodge late:
+   they stop steering close in); lose both and its dome fires five-way
+   spreads between missiles.
+3. **Trench Run** (a space station): barriers across the trench with a slot
+   to fly through (upright, level or a window), laser gates that blink on
+   and off (fly over or under while they're on), turret towers. The
+   reactor at the trench's end: two emitters; then spiral streams; then a
+   rotating shield fan over its core, which only shots through the gap
+   reach.
+
+A shield bar and 3 lives: an empty shield costs a life and restarts the
+wave (or field) you were in; a boss keeps the damage you'd done. Two sights
+show your line of fire, red when a target is on it. Shooting down a whole
+wave scores a 500 bonus.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, then a silent 30-40 second demo played by an autopilot, and
@@ -67,7 +83,7 @@ a demo (score, high score) is kept.
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
-| Star | a random point in the stage, sometimes the boss; dodges by where shots and rocks will cross its path, leads its targets, bombs packs |
+| Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
 
 ## Build
 
@@ -204,9 +220,11 @@ FluxArcadeCabinet/
         │   ├── StarFluxGame.h      # Class declaration
         │   ├── StarFluxConfig.h    # All tuning: camera, ship box, weapons, enemies, boss
         │   ├── StarFluxGame.cpp    # Lifecycle, phases, per-frame update loop
-        │   ├── StarFluxScene.cpp   # Meshes, backdrop, starfield, 2D shots/rings/reticle
-        │   ├── StarFluxPlay.cpp    # Stage script, ship, lasers, bombs, rocks, rings
-        │   ├── StarFluxEnemies.cpp # Fighter flight paths, enemy fire, the boss
+        │   ├── StarFluxScene.cpp   # Meshes, space backdrop, starfield, 2D shots/rings/reticle
+        │   ├── StarFluxWorld.cpp   # Planet and trench backdrops, obstacles, gates, turrets
+        │   ├── StarFluxPlay.cpp    # Stage scripts, ship, lasers, bombs, rocks, rings
+        │   ├── StarFluxEnemies.cpp # Fighter flight paths, enemy shots and missiles
+        │   ├── StarFluxBoss.cpp    # The three bosses
         │   ├── StarFluxDemo.cpp    # Attract demo, and the autopilot (also the harness's bot)
         │   ├── StarFluxHud.cpp     # HUD, overlays, results and menu screens
         │   ├── StarShipSprite.h    # GENERATED ship sprite (tools/star_ship_sprite.py)
@@ -319,7 +337,24 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | `jump.wav`, `death.wav` | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
-| `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `powerup.wav` (ring), `explosion.wav` | Star Flux |
+| `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
+
+Star Flux's optional sounds: each is used if it's on the card, else what
+the last column says. Mono 16-bit 44.1kHz, short (they're cached).
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `star_pop.wav` | a fighter, rock, turret or missile destroyed | ~0.3s | `explosion.wav` |
+| `star_hit.wav` | a laser hits a boss weak point or a turret | ~80ms | a tone |
+| `star_armor.wav` | a laser hits boss armour or the reactor's fan | ~60ms | a tone |
+| `star_boss_warn.wav` | a boss arrives | ~1.5s | three beeps |
+| `star_boss_fire.wav` | a boss fires | ~0.25s | a tone |
+| `star_burst.wav` | ring burst, missile launch, spiral stream | ~0.4s | a tone |
+| `star_part_down.wav` | a cannon, pod or emitter destroyed | ~0.8s | `explosion.wav` |
+| `star_core_open.wav` | a boss's core exposed | ~0.6s | a tone |
+| `star_boss_die.wav` | a boss destroyed | ~2.5s | `explosion.wav` |
+| `star_bomb.wav` | a smart bomb goes off | ~1s | `explosion.wav` |
+| `star_ring.wav` | a shield ring collected | ~0.4s | `powerup.wav` |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,

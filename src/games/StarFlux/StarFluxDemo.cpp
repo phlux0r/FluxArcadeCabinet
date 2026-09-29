@@ -38,6 +38,22 @@ float StarFluxGame::threatAt(float x, float y) const {
         const float r = FIGHTER_R + SHIP_HIT_R + 30.0f;
         threat += expf(-d2 / (2.0f * r * r * 0.5f));
     }
+    // Obstacles, and gates that'll be on as they pass: by how far (x, y)
+    // is outside the block's face; inside it is the worst.
+    for (const auto &b : _boxes) {
+        if (!b.active || b.hit || b.z + b.depth * 0.5f < SHIP_Z) continue;
+        float t = (b.z - b.depth * 0.5f - SHIP_Z) / FLY_SPEED;
+        if (t > 70.0f) continue;
+        if (b.gate) {
+            unsigned long at = millis() + (unsigned long)((t > 0 ? t : 0) * (float)REFERENCE_FRAME_MS);
+            unsigned long out = millis() + (unsigned long)((t + b.depth / FLY_SPEED + 3.0f) * (float)REFERENCE_FRAME_MS);
+            if (!gateOn(b, at) && !gateOn(b, out)) continue;
+        }
+        const float pad = SHIP_HIT_R * 0.7f + 25.0f;
+        float dx = x < b.x0 - pad ? b.x0 - pad - x : x > b.x1 + pad ? x - b.x1 - pad : 0.0f;
+        float dy = y < b.y0 - pad ? b.y0 - pad - y : y > b.y1 + pad ? y - b.y1 - pad : 0.0f;
+        threat += 3.0f * expf(-(dx * dx + dy * dy) / (2.0f * 50.0f * 50.0f)) * (1.0f + (70.0f - t) / 70.0f);
+    }
     return threat;
 }
 
@@ -53,6 +69,12 @@ bool StarFluxGame::targetOnLine(float x, float y) const {
     }
     for (const auto &k : _rocks) {
         if (k.active && k.z > SHIP_Z + 150.0f && k.z < SHIP_Z + SHOT_RANGE && on(k.x, k.y, k.r)) return true;
+    }
+    for (const auto &t : _turrets) {
+        if (t.active && t.z > SHIP_Z + 150.0f && t.z < SHIP_Z + SHOT_RANGE && on(t.x, t.y, TURRET_R)) return true;
+    }
+    for (const auto &e : _eshots) {
+        if (e.active && e.homing && e.z > SHIP_Z + 150.0f && on(e.x, e.y, MISSILE_R)) return true;
     }
     if (_bossActive && _stage == STAGE_RUN) {
         for (int p = 0; p < 3; ++p) {
@@ -83,14 +105,36 @@ bool StarFluxGame::pickAim(float &x, float &y) const {
         found = true;
     }
     if (found) return true;
+    for (const auto &t : _turrets) {
+        if (!t.active || t.z < SHIP_Z + 900.0f || t.z > SHIP_Z + 5000.0f || t.z >= best) continue;
+        best = t.z;
+        x = t.x; y = t.y;
+        found = true;
+    }
+    if (found) return true;
     if (_bossActive && _stage == STAGE_RUN && millis() - _bossAt > BOSS_ENTER_MS) {
+        // Focus fire: the weakest part standing that's in reach (else the
+        // nearest), led by the boss's sideways drift.
+        float bestHp = 1e9f;
         for (int p = 0; p < 3; ++p) {
             if (!bossPartAlive(p)) continue;
             float px, py, pz;
             bossPartPos(p, px, py, pz);
-            // The nearer cannon to where you are, or the core.
-            float d = fabsf(px - _shipX);
-            if (d < best) { best = d; x = px; y = py; found = true; }
+            const bool reach = fabsf(px) < BOX_X + CANNON_R;
+            float hp = (float)(p < 2 ? _cannonHp[p] : _coreHp) + fabsf(px - _shipX) * 0.001f + (reach ? 0.0f : 1000.0f);
+            if (hp >= bestHp) continue;
+            bestHp = hp;
+            const float frames = (pz - SHIP_Z) / SHOT_SPEED;
+            x = px + _bossVX * frames;
+            y = py;
+            // The reactor's fan: through the middle of the gap, where
+            // it'll be when the shot gets there.
+            if (p == 2 && _bossKind == STAGE_TRENCH) {
+                float a = radians(_fanAngle + FAN_SPIN * frames + FAN_GAP_DEG * 0.5f);
+                x += cosf(a) * CORE_R * 0.8f;
+                y += sinf(a) * CORE_R * 0.8f;
+            }
+            found = true;
         }
         if (found) return true;
     }
@@ -184,10 +228,12 @@ float StarFluxGame::planPilot() {
     return bestThreat;
 }
 
-// A fresh run started part way through the stage (or at the boss now and
-// then), with a few seconds' grace.
+// A fresh run started part way through a random stage (or at its boss now
+// and then), with a few seconds' grace.
 void StarFluxGame::startDemo() {
     resetRun();
+    _stageNum = (int)random(0, STAGE_COUNT);
+    startStage();
     int seg = (int)random(0, segmentCount());
     _stage = STAGE_RUN;
     _stageAt = millis();

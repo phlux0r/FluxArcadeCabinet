@@ -1,6 +1,6 @@
 #include "StarFluxGame.h"
 
-// Fighters and their flight paths, enemy shots, and the boss.
+// Fighters and their flight paths, and enemy shots and missiles.
 
 namespace starflux {
 
@@ -71,6 +71,12 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
     x = catmull(k0.x, k1.x, k2.x, k3.x, t) * (float)f.mirror + f.ox;
     y = catmull(k0.y, k1.y, k2.y, k3.y, t) + f.oy;
     z = catmull(k0.z, k1.z, k2.z, k3.z, t);
+    // In the trench, paths are squeezed between the walls and kept off
+    // the floor; they still dive in from above it.
+    if (_stageNum == STAGE_TRENCH) {
+        x *= 0.55f;
+        y = y * 0.7f + 60.0f;
+    }
 }
 
 // The whole wave at once, each fighter waiting its turn (startAt). V
@@ -171,7 +177,7 @@ void StarFluxGame::destroyFighter(Fighter &f, bool byPlayer, AudioEngine &audio)
     f.obj->enabled = false;
     addBlast(f.x, f.y, f.z, 170.0f, ArcadeConfig::COLOR_ORANGE);
     _particles.emitSparks(Renderer::Vec3f{ f.x, f.y, f.z }, Renderer::Vec3f{ 0, 0, -1 }, 600.0f, 12);
-    sfxWAV(audio, "/audio/explosion.wav");
+    sfx(audio, SFX_POP);
     if (byPlayer) {
         _score += FIGHTER_POINTS;
         ++_fightersDowned;
@@ -193,24 +199,49 @@ void StarFluxGame::fighterGone(Fighter &f, bool downed, AudioEngine &audio) {
 }
 
 // A shot from (x, y, z) at where (tx, ty) is on the ship's plane now.
-void StarFluxGame::fireAt(float x, float y, float z, float tx, float ty, float speedMul) {
+StarFluxGame::EShot* StarFluxGame::fireAt(float x, float y, float z, float tx, float ty, float speedMul) {
     for (auto &e : _eshots) {
         if (e.active) continue;
         float dx = tx - x, dy = ty - y, dz = SHIP_Z - z;
         float len = sqrtf(dx * dx + dy * dy + dz * dz);
-        if (len < 1.0f) return;
+        if (len < 1.0f) return nullptr;
         float k = eshotSpeed() * speedMul / len;
         e.active = true;
+        e.homing = false;
         e.x = x; e.y = y; e.z = z;
         e.vx = dx * k; e.vy = dy * k; e.vz = dz * k;
-        return;
+        return &e;
     }
+    return nullptr;
+}
+
+// A missile: slower than a shot, launched upward, then steering at you
+// until MISSILE_STOP_Z, after which it flies straight and can be dodged.
+void StarFluxGame::fireMissile(float x, float y, float z) {
+    EShot* e = fireAt(x, y, z, _shipX, _shipY);
+    if (!e) return;
+    e->homing = true;
+    float len = sqrtf(e->vx * e->vx + e->vy * e->vy + e->vz * e->vz);
+    float k = MISSILE_SPEED / (len > 0 ? len : 1.0f);
+    e->vx *= k; e->vz *= k;
+    e->vy = e->vy * k + 12.0f;   // up and over first
 }
 
 void StarFluxGame::updateEShots(AudioEngine &audio) {
     const float fs = _frameScale;
     for (auto &e : _eshots) {
         if (!e.active) continue;
+        if (e.homing && e.z > MISSILE_STOP_Z) {
+            float dx = _shipX - e.x, dy = _shipY - e.y, dz = SHIP_Z - e.z;
+            float len = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (len > 1.0f) {
+                float k = MISSILE_SPEED / len, turn = MISSILE_TURN * fs;
+                if (turn > 1.0f) turn = 1.0f;
+                e.vx += (dx * k - e.vx) * turn;
+                e.vy += (dy * k - e.vy) * turn;
+                e.vz += (dz * k - e.vz) * turn;
+            }
+        }
         float pz = e.z;
         e.x += e.vx * fs; e.y += e.vy * fs; e.z += e.vz * fs;
         // Crossing the ship's plane: where, exactly?
@@ -220,191 +251,14 @@ void StarFluxGame::updateEShots(AudioEngine &audio) {
             float dx = cx - _shipX, dy = cy - _shipY;
             if (_stage == STAGE_RUN && dx * dx + dy * dy < SHIP_HIT_R * SHIP_HIT_R && !before(_invulnUntil)) {
                 e.active = false;
-                damageShip(SHOT_DAMAGE, audio);
+                if (e.homing) addBlast(cx, cy, SHIP_Z, 140.0f, ArcadeConfig::COLOR_YELLOW);
+                damageShip(e.homing ? SHOT_DAMAGE + 6 : SHOT_DAMAGE, audio);
                 continue;
             }
         }
-        if (e.z < CAMERA_NEAR + 5 || e.z > CAMERA_FAR) e.active = false;
+        // Shots hitting the ground or the trench floor go out.
+        if (e.z < CAMERA_NEAR + 5 || e.z > CAMERA_FAR || e.y < floorY()) e.active = false;
     }
-}
-
-// --- Boss --------------------------------------------------------------------
-// The dreadnought: two wing cannons and a core behind a shield plate. The
-// cannons fire aimed shots; lose one and it adds ring bursts (stay put:
-// the ring closes round where you were, not on it); lose both and the
-// core opens, firing spreads and faster bursts. Destroy the core to win.
-
-void StarFluxGame::startBoss() {
-    _bossActive = true;
-    _bossAt = millis();
-    _bossZ = BOSS_ENTER_Z;
-    _bossAlarms = 0;
-    if (!_retrying || (_cannonHp[0] <= 0 && _cannonHp[1] <= 0 && _coreHp <= 0)) {
-        float k = 1.0f + 0.25f * (float)(_loop - 1);
-        _cannonHp[0] = _cannonHp[1] = (int)(CANNON_HP * k);
-        _coreHp = (int)(CORE_HP * k);
-        _bossMaxHp = bossHp();
-    }
-    unsigned long start = millis() + BOSS_ENTER_MS;
-    _cannonFireAt = start + 600;
-    _burstAt = start + 1500;
-    _coreFireAt = start + 900;
-    _cannonFlash[0] = _cannonFlash[1] = _coreFlash = 0;
-    setBanner("WARNING", ArcadeConfig::COLOR_RED, BOSS_ENTER_MS);
-    placeBoss();
-}
-
-void StarFluxGame::bossPartPos(int part, float &x, float &y, float &z) const {
-    if (part < 2) {
-        x = _bossX + (part == 0 ? -CANNON_X : CANNON_X);
-        y = _bossY - 15.0f;
-        z = _bossZ - 70.0f;
-    } else {
-        x = _bossX;
-        y = _bossY;
-        z = _bossZ - 480.0f;
-    }
-}
-
-bool StarFluxGame::bossPartAlive(int part) const {
-    if (part < 2) return _cannonHp[part] > 0;
-    return coreOpen() && _coreHp > 0;
-}
-
-void StarFluxGame::placeBoss() {
-    if (!_bossHull) return;
-    const unsigned long now = millis();
-    float sway = sinf((float)(now - _bossAt) * 0.0011f);
-    _bossHull->enabled = true;
-    _bossHull->setPosition((int32_t)_bossX, (int32_t)_bossY, (int32_t)_bossZ);
-    _bossHull->setRotation(0, 0, (int32_t)(ROLL_SIGN * sway * 8.0f));
-    int spin = (int)((now / 12) % 360);
-    for (int p = 0; p < 2; ++p) {
-        Renderer::Object* c = _cannonObj[p];
-        c->enabled = _cannonHp[p] > 0;
-        float x, y, z;
-        bossPartPos(p, x, y, z);
-        c->setPosition((int32_t)x, (int32_t)y, (int32_t)z);
-        c->setRotation(0, spin, 0);
-        bool flash = before(_cannonFlash[p]);
-        if (flash != (c->triangles[0].material == &_flashMat)) setFlash(c, flash, &_cannonMat, &_cannonMat2);
-    }
-    float x, y, z;
-    bossPartPos(2, x, y, z);
-    _coreObj->enabled = _coreHp > 0;
-    _coreObj->setPosition((int32_t)x, (int32_t)y, (int32_t)z);
-    _coreObj->setRotation(spin, spin * 2, 0);
-    bool flash = before(_coreFlash);
-    if (flash != (_coreObj->triangles[0].material == &_flashMat)) setFlash(_coreObj, flash, &_coreMat, &_coreMat2);
-    _shieldObj->enabled = !coreOpen();
-    _shieldObj->setPosition((int32_t)x, (int32_t)y, (int32_t)(z - 100.0f));
-}
-
-void StarFluxGame::hideBoss() {
-    _bossActive = false;
-    if (_bossHull) _bossHull->enabled = false;
-    for (auto* c : _cannonObj) if (c) c->enabled = false;
-    if (_coreObj) _coreObj->enabled = false;
-    if (_shieldObj) _shieldObj->enabled = false;
-}
-
-// BURST_SHOTS shots aimed at a ring BURST_RADIUS round where you are now.
-void StarFluxGame::ringBurst(float x, float y, float z) {
-    for (int i = 0; i < BURST_SHOTS; ++i) {
-        float a = (float)i * (2.0f * PI / (float)BURST_SHOTS);
-        fireAt(x, y, z, _shipX + cosf(a) * BURST_RADIUS, _shipY + sinf(a) * BURST_RADIUS, 0.9f);
-    }
-}
-
-void StarFluxGame::updateBoss(AudioEngine &audio) {
-    if (!_bossActive) return;
-    const unsigned long t = millis() - _bossAt;
-    if (t < BOSS_ENTER_MS) {
-        float k = (float)t / (float)BOSS_ENTER_MS;
-        k = k * k * (3.0f - 2.0f * k);
-        _bossZ = BOSS_ENTER_Z + (BOSS_Z - BOSS_ENTER_Z) * k;
-        if (_bossAlarms < 3 && t >= (unsigned long)_bossAlarms * 450) {
-            ++_bossAlarms;
-            sfxTone(audio, 880, 160);
-        }
-    } else if (_stage == STAGE_BOSS_DEATH) {
-        _bossZ += 6.0f * _frameScale;   // sinking away as it breaks up
-        _bossY -= 3.0f * _frameScale;
-    } else {
-        _bossZ = BOSS_Z;
-    }
-    if (_stage != STAGE_BOSS_DEATH) {
-        const float pace = coreOpen() ? 1.6f : 1.0f;
-        _bossX = BOSS_SWAY_X * sinf((float)t * 0.00055f * pace);
-        _bossY = BOSS_BASE_Y + BOSS_SWAY_Y * sinf((float)t * 0.0009f * pace);
-    }
-    placeBoss();
-    if (t < BOSS_ENTER_MS || _stage != STAGE_RUN) return;
-
-    const bool oneLost = _cannonHp[0] <= 0 || _cannonHp[1] <= 0;
-    if (!coreOpen() && reached(_cannonFireAt)) {
-        int p = _cannonTurn ^= 1;
-        if (_cannonHp[p] <= 0) p ^= 1;
-        float x, y, z;
-        bossPartPos(p, x, y, z);
-        fireAt(x, y, z, _shipX, _shipY, 1.1f);
-        sfxTone(audio, 300, 40);
-        _cannonFireAt = millis() + (oneLost ? CANNON_FIRE_MS * 3 / 4 : CANNON_FIRE_MS);
-    }
-    if (oneLost && reached(_burstAt)) {
-        float x, y, z;
-        bossPartPos(2, x, y, z);
-        ringBurst(x, y, z);
-        sfxTone(audio, 200, 120);
-        _burstAt = millis() + (coreOpen() ? CORE_BURST_MS : RING_BURST_MS);
-    }
-    if (coreOpen() && reached(_coreFireAt)) {
-        float x, y, z;
-        bossPartPos(2, x, y, z);
-        for (int i = -1; i <= 1; ++i) fireAt(x, y, z, _shipX + (float)i * 130.0f, _shipY, 1.15f);
-        sfxTone(audio, 420, 50);
-        _coreFireAt = millis() + CORE_FIRE_MS;
-    }
-}
-
-void StarFluxGame::hitBossPart(int part, int damage, AudioEngine &audio) {
-    float x, y, z;
-    bossPartPos(part, x, y, z);
-    _particles.emitSparks(Renderer::Vec3f{ x, y, z - 60.0f }, Renderer::Vec3f{ 0, 0, -1 }, 300.0f, 4);
-    if (part < 2) {
-        _cannonHp[part] -= damage;
-        _cannonFlash[part] = millis() + 80;
-        sfxTone(audio, 700, 25);
-        if (_cannonHp[part] > 0) return;
-        _cannonHp[part] = 0;
-        _score += CANNON_POINTS;
-        addBlast(x, y, z, 420.0f, ArcadeConfig::COLOR_YELLOW);
-        _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 0, -1 }, 800.0f, 24);
-        sfxWAV(audio, "/audio/explosion.wav");
-        if (coreOpen()) {
-            setBanner("CORE EXPOSED", ArcadeConfig::COLOR_MAGENTA, 1800);
-            _coreFireAt = millis() + 900;
-            _burstAt = millis() + 1600;
-            addBlast(_bossX, _bossY, _bossZ - 520.0f, 260.0f, ArcadeConfig::COLOR_WHITE);
-        } else {
-            setBanner("CANNON DOWN", ArcadeConfig::COLOR_YELLOW, 1400);
-            _burstAt = millis() + 1200;
-        }
-        return;
-    }
-    _coreHp -= damage;
-    _coreFlash = millis() + 80;
-    sfxTone(audio, 950, 25);
-    if (_coreHp > 0) return;
-    _coreHp = 0;
-    _score += CORE_POINTS;
-    for (auto &e : _eshots) e.active = false;
-    _stage = STAGE_BOSS_DEATH;
-    _stageAt = millis();
-    _nextBossBlastAt = 0;
-    _invulnUntil = millis() + BOSS_DEATH_MS + 500;
-    setBanner("DREADNOUGHT DESTROYED", ArcadeConfig::COLOR_CYAN, BOSS_DEATH_MS);
-    sfxWAV(audio, "/audio/explosion.wav");
 }
 
 }  // namespace starflux

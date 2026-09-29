@@ -125,15 +125,48 @@ inline constexpr float RING_R          = 170.0f;
 inline constexpr float RING_CATCH_R    = 150.0f;    // centre within this: collected
 inline constexpr int   RING_POINTS     = 200;
 
+// --- Stage 2: the planet --------------------------------------------------------
+inline constexpr float GROUND_Y        = -430.0f;   // world height of the ground
+inline constexpr float GROUND_CELL     = 420.0f;    // checkerboard square
+inline constexpr float TOWER_TOP       = -150.0f;   // turret towers: low enough to fly over
+inline constexpr unsigned long PLANET_FIELD_MS = 850;   // a hazard this often in a field
+
+// --- Stage 3: the trench ----------------------------------------------------------
+inline constexpr float TRENCH_HALF_W   = 560.0f;    // walls at +-
+inline constexpr float TRENCH_FLOOR    = -380.0f;
+inline constexpr float TRENCH_TOP      = 440.0f;    // top of the walls
+inline constexpr unsigned long TRENCH_FIELD_MS = 1400;
+inline constexpr float BARRIER_GAP     = 300.0f;    // the way through a barrier
+inline constexpr unsigned long GATE_MS = 1100;      // laser gates: on this long, then off as long
+
+// --- Obstacles and turrets ----------------------------------------------------------
+inline constexpr int   BOX_POOL        = 14;
+inline constexpr int   BOX_DAMAGE      = 25;
+inline constexpr float BOX_SPAWN_Z     = 7600.0f;
+inline constexpr int   TURRET_POOL     = 6;
+inline constexpr int   TURRET_HP       = 2;
+inline constexpr float TURRET_R        = 90.0f;
+inline constexpr int   TURRET_POINTS   = 150;
+inline constexpr unsigned long TURRET_FIRE_MS = 1500;
+inline constexpr float TURRET_FIRE_NEAR = 1800.0f;  // fires while this far ahead...
+inline constexpr float TURRET_FIRE_FAR  = 6000.0f;  // ...and no further
+
+// --- Missiles (the crawler's) ----------------------------------------------------------
+inline constexpr float MISSILE_SPEED   = 26.0f;     // per frame
+inline constexpr float MISSILE_TURN    = 0.07f;     // share of the way to "at you" it turns per frame
+inline constexpr float MISSILE_R       = 45.0f;     // shootable radius
+inline constexpr float MISSILE_STOP_Z  = SHIP_Z + 900.0f;   // stops homing here: dodgeable
+inline constexpr int   MISSILE_POINTS  = 50;
+
 // --- Boss ---------------------------------------------------------------------
-inline constexpr float BOSS_Z          = 2000.0f;
+inline constexpr float BOSS_Z          = 2000.0f;    // the dreadnought; see bossZ() for the others
 inline constexpr float BOSS_ENTER_Z    = 8500.0f;
 inline constexpr unsigned long BOSS_ENTER_MS = 3200;
-inline constexpr float BOSS_SWAY_X     = 380.0f;
+inline constexpr float BOSS_SWAY_X     = 260.0f;
 inline constexpr float BOSS_SWAY_Y     = 140.0f;
 inline constexpr float BOSS_BASE_Y     = 90.0f;
 inline constexpr float BOSS_HULL_R     = 330.0f;    // shots here are absorbed
-inline constexpr float CANNON_X        = 700.0f;    // from the hull centre
+inline constexpr float CANNON_X        = 480.0f;    // from the hull centre: within reach at every sway
 inline constexpr float CANNON_R        = 110.0f;
 inline constexpr float CORE_R          = 110.0f;
 inline constexpr int   CANNON_HP       = 12;
@@ -147,10 +180,13 @@ inline constexpr unsigned long CORE_BURST_MS  = 2500;
 inline constexpr int   BURST_SHOTS     = 8;
 inline constexpr float BURST_RADIUS    = 170.0f;    // ring size where it reaches you
 inline constexpr unsigned long BOSS_DEATH_MS = 2400;
+// The reactor's shield fan: turn rate (degrees per frame) and the gap.
+inline constexpr float FAN_SPIN    = 1.7f;
+inline constexpr float FAN_GAP_DEG = 120.0f;
 
 // --- Stage --------------------------------------------------------------------
 inline constexpr unsigned long INTRO_MS   = 3000;   // fly-in with the stage name
-inline constexpr unsigned long ROCK_SPAWN_MS = 380;
+inline constexpr unsigned long ROCK_SPAWN_MS = 380;   // stage 1 fields
 inline constexpr unsigned long RESULTS_MIN_MS = 2500;
 inline constexpr unsigned long RESULTS_MAX_MS = 9000;
 inline constexpr int   SHIELD_BONUS_PER_POINT = 20;

@@ -47,10 +47,49 @@ void StarFluxGame::init(AudioEngine &audio) {
     static const int n[] = { 523, 784, 1047, 1568 };
     static const int d[] = {  70,  70,  90,  220 };
     audio.playMelody(n, d, 4);
-    // Decoded into the mixer's cache now, so the first play isn't late.
-    static const char* const sfx[] = { "/audio/tube_shot.wav", "/audio/explosion.wav",
-                                       "/audio/tube_bump.wav", "/audio/powerup.wav" };
-    for (const char* f : sfx) audio.preload(f);
+    findSounds(audio);
+}
+
+namespace {
+// The optional sounds, by Sfx, and what plays when one isn't on the card.
+struct SfxDef { const char* path; const char* fallback; int hz, ms; };
+const SfxDef SFX[] = {
+    { "/audio/star_pop.wav",       "/audio/explosion.wav", 0, 0 },     // SFX_POP
+    { "/audio/star_hit.wav",       nullptr, 950, 25 },                 // SFX_HIT
+    { "/audio/star_armor.wav",     nullptr, 1900, 12 },                // SFX_ARMOR
+    { "/audio/star_boss_warn.wav", nullptr, 880, 160 },                // SFX_BOSS_WARN
+    { "/audio/star_boss_fire.wav", nullptr, 300, 40 },                 // SFX_BOSS_FIRE
+    { "/audio/star_burst.wav",     nullptr, 200, 120 },                // SFX_BURST
+    { "/audio/star_part_down.wav", "/audio/explosion.wav", 0, 0 },     // SFX_PART_DOWN
+    { "/audio/star_core_open.wav", nullptr, 600, 180 },                // SFX_CORE_OPEN
+    { "/audio/star_boss_die.wav",  "/audio/explosion.wav", 0, 0 },     // SFX_BOSS_DIE
+    { "/audio/star_bomb.wav",      "/audio/explosion.wav", 0, 0 },     // SFX_BOMB
+    { "/audio/star_ring.wav",      "/audio/powerup.wav", 0, 0 },       // SFX_RING
+};
+static_assert(sizeof(SFX) / sizeof(SFX[0]) == 11, "one SfxDef per Sfx");
+}  // namespace
+
+// Which optional sounds are on the card, checked once: a missing file
+// would otherwise cost an SD open every time it's asked for. What will
+// play is decoded into the mixer's cache now, so the first play isn't late.
+void StarFluxGame::findSounds(AudioEngine &audio) {
+    static const char* const always[] = { "/audio/tube_shot.wav", "/audio/tube_bump.wav" };
+    for (const char* f : always) audio.preload(f);
+    for (int i = 0; i < SFX_COUNT; ++i) {
+        _sfxOnCard[i] = audio.exists(SFX[i].path);
+        // The loader skips a preload of what's already cached, so a
+        // fallback shared by several sounds is only read once.
+        if (_sfxOnCard[i]) audio.preload(SFX[i].path);
+        else if (SFX[i].fallback) audio.preload(SFX[i].fallback);
+    }
+}
+
+void StarFluxGame::sfx(AudioEngine &audio, Sfx s) {
+    if (_silent) return;
+    const SfxDef &d = SFX[s];
+    if (_sfxOnCard[s]) audio.playWAV(d.path);
+    else if (d.fallback) audio.playWAV(d.fallback);
+    else audio.playTone(d.hz, d.ms);
 }
 
 void StarFluxGame::startNewGame(AudioEngine &audio) {
@@ -65,19 +104,22 @@ void StarFluxGame::startNewGame(AudioEngine &audio) {
 // Everything a run starts from, shared by a real game and the attract demo.
 void StarFluxGame::resetRun() {
     _loop = 1;
+    _stageNum = STAGE_BELT;
     _lives = LIVES;
     _score = 0;
     _newHighScore = false;
     startStage();
 }
 
-// The stage from the top: the fly-in, then segment 0.
+// The stage (_stageNum) from the top: the fly-in, then segment 0.
 void StarFluxGame::startStage() {
     clearField();
+    applyStagePalette();
+    _groundScroll = 0;
     _shield = SHIELD_MAX;
     if (_bombs < BOMBS_START) _bombs = BOMBS_START;
     _shipX = 0; _shipY = BOX_Y_MIN; _shipVX = _shipVY = 0; _bank = 0;
-    _fightersSeen = _fightersDowned = _rocksDowned = _ringsCaught = 0;
+    _fightersSeen = _fightersDowned = _targetsDowned = _ringsCaught = 0;
     _stageStartScore = _score;
     _shieldBonus = 0;
     _stage = STAGE_INTRO;
@@ -98,6 +140,7 @@ void StarFluxGame::clearField() {
     for (auto &b : _blasts) b.active = false;
     for (auto &p : _particles.pool) p.active = false;
     _bombActive = false;
+    hideWorld();
     hideBoss();
 }
 
@@ -177,6 +220,7 @@ bool StarFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
         case SLIDE_INFO:
             // Empty space flying past behind the text.
             _shipX *= 0.95f; _shipY *= 0.95f; _bank *= 0.9f;
+            _groundScroll = fmodf(_groundScroll + FLY_SPEED * _frameScale, 100000.0f);
             renderWorld(canvas);
             renderAttractInfo(canvas);
             break;
@@ -193,8 +237,11 @@ bool StarFluxGame::updateResults(GFXcanvas16 &canvas, const InputState &input, A
     renderResults(canvas);
     unsigned long elapsed = millis() - _phaseEnteredMs;
     if ((elapsed > RESULTS_MIN_MS && input.btnAPressed) || elapsed > RESULTS_MAX_MS) {
-        // Round again, harder.
-        ++_loop;
+        // The next stage; after the last, round again, harder.
+        if (++_stageNum >= STAGE_COUNT) {
+            _stageNum = STAGE_BELT;
+            ++_loop;
+        }
         startStage();
         _phase = PHASE_PLAYING;
         _prevA = true;
@@ -224,6 +271,7 @@ bool StarFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 
 // One frame of a run: the same for a real game and the demo.
 void StarFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
+    _groundScroll = fmodf(_groundScroll + FLY_SPEED * _frameScale, 100000.0f);
     updateShip(input);
     if (shipControllable()) {
         tryFire(input, audio);
@@ -237,6 +285,8 @@ void StarFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
     updateBoss(audio);
     updateEShots(audio);
     updateRocks(audio);
+    updateBoxes(audio);
+    updateTurrets(audio);
     updateRings(audio);
 }
 
@@ -248,19 +298,23 @@ void StarFluxGame::renderRun(GFXcanvas16 &canvas) {
     drawQuitHint(canvas);
 }
 
-// Backdrop and stars (drawn directly), rings, Jet's pass for the fighters,
-// rocks and boss, particles, then the 2D lasers, shots, blasts and the
+// Backdrop, the ship's shadow and stars (drawn directly), rings, Jet's
+// pass for the fighters, rocks, obstacles, turrets and boss, particles,
+// then the 2D gates, the reactor's fan, lasers, shots, blasts and the
 // reticle. Jet draws the ship sprite at the end of render(), so it sits
 // over the meshes; what's drawn after is over the ship too, which suits
 // lasers and flashes.
 void StarFluxGame::renderWorld(GFXcanvas16 &canvas) {
     placeCamera();
     drawBackdrop(canvas);
+    drawShadow(canvas);
     drawStars(canvas);
     drawRings(canvas);
     _scene->render();
     _particles.update((1.0f / 60.0f) * _frameScale);
     _particles.render(_scene, &_camera, canvas.width(), canvas.height());
+    drawGates(canvas);
+    drawFan(canvas);
     drawShots(canvas);
     drawBlasts(canvas);
     if (_phase == PHASE_PLAYING && _stage == STAGE_RUN) drawReticle(canvas);

@@ -38,10 +38,10 @@ Scenarios (every game has the first four):
 | Mode | Tank Flux | Tube Flux | Star Flux |
 |---|---|---|---|
 | `play` | Normal run: the bot dies and restarts, so game over is covered | Same; the bot looks only a short way ahead, so it gets caught | The autopilot with slow reactions and no bombs, so it takes hits and loses lives; prints each stage's results |
-| `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier | Shield pinned: loop after loop of the stage and boss |
-| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout | Attract exit, a B tap (one bomb), hold-B quit, last life lost, game over |
-| `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier | `god`, plus render cost by stage segment |
-| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, the boss, the title |
+| `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier | Shield pinned: every stage and boss, into the next loop |
+| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout | Attract exit, a B tap (one bomb), hold-B quit, a life lost (the segment must restart: PASS/FAIL), last life lost, game over |
+| `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier | `god`, plus render cost by stage and segment |
+| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, each stage's hazards, the three bosses, the title |
 | `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent | Same |
 | `demoexit` | | Presses A mid-demo: the real game must start clean. Prints PASS/FAIL and fails the build script | Same |
 

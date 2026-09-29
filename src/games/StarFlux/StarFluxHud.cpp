@@ -80,13 +80,14 @@ void StarFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     if (_stage == STAGE_INTRO && _phase == PHASE_PLAYING) {
         unsigned long t = millis() - _stageAt;
         if (t > 300) {
-            char buf[24];
-            if (_loop > 1) snprintf(buf, sizeof(buf), "STAGE 1-%d", _loop);
-            else snprintf(buf, sizeof(buf), "STAGE 1");
+            char buf[32];
+            if (_loop > 1) snprintf(buf, sizeof(buf), "STAGE %d-%d", _stageNum + 1, _loop);
+            else snprintf(buf, sizeof(buf), "STAGE %d", _stageNum + 1);
             drawCentred(canvas, buf, 34, ArcadeConfig::COLOR_WHITE, 2);
         }
-        if (t > 900) drawCentred(canvas, "AURORA BELT", 56, ArcadeConfig::COLOR_CYAN);
-        if (t > 1800 && ((millis() / 200) & 1)) drawCentred(canvas, "ALL WINGS, ENGAGE!", 68, ArcadeConfig::COLOR_YELLOW);
+        if (t > 900) drawCentred(canvas, stageName(), 56, ArcadeConfig::COLOR_CYAN);
+        static const char* const calls[STAGE_COUNT] = { "ALL WINGS, ENGAGE!", "MIND THE TOWERS!", "THREAD THE NEEDLE!" };
+        if (t > 1800 && ((millis() / 200) & 1)) drawCentred(canvas, calls[_stageNum], 68, ArcadeConfig::COLOR_YELLOW);
     }
     if (before(_bannerUntil) && ((millis() / 200) & 1)) {
         drawCentred(canvas, _banner, 15, _bannerColour);
@@ -156,7 +157,7 @@ void StarFluxGame::renderResults(GFXcanvas16 &canvas) {
         drawCentred(canvas, buf, 44, ArcadeConfig::COLOR_WHITE);
     }
     if (t > 800) {
-        snprintf(buf, sizeof(buf), "ROCKS %d  RINGS %d", _rocksDowned, _ringsCaught);
+        snprintf(buf, sizeof(buf), "TARGETS %d  RINGS %d", _targetsDowned, _ringsCaught);
         drawCentred(canvas, buf, 54, ArcadeConfig::COLOR_GREY);
     }
     if (t > 1200) {
@@ -168,7 +169,7 @@ void StarFluxGame::renderResults(GFXcanvas16 &canvas) {
         drawCentred(canvas, buf, 76, ArcadeConfig::COLOR_YELLOW);
         if (_newHighScore && ((millis() / 300) & 1)) drawCentred(canvas, "NEW HIGH SCORE!", 86, ArcadeConfig::COLOR_MAGENTA);
     }
-    if (t > RESULTS_MIN_MS && ((millis() / 400) & 1)) drawCentred(canvas, "A: NEXT LOOP", 99, ArcadeConfig::COLOR_WHITE);
+    if (t > RESULTS_MIN_MS && ((millis() / 400) & 1)) drawCentred(canvas, _stageNum + 1 < STAGE_COUNT ? "A: NEXT STAGE" : "A: NEXT LOOP", 99, ArcadeConfig::COLOR_WHITE);
     drawQuitHint(canvas);
 }
 

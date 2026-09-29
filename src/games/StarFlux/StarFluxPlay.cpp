@@ -1,44 +1,71 @@
 #include "StarFluxGame.h"
 
-// The ship, its lasers and bombs, rocks and rings, and the stage script
-// that runs it all.
+// The ship, its lasers and bombs, rocks and rings, and the stage scripts
+// that run it all.
 
 namespace starflux {
 
 namespace {
 
-constexpr int STAGE_SEGMENTS = 10;
+constexpr int SEGMENTS = 10;   // every stage's script has this many
 
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 }  // namespace
 
-// Stage 1, "Aurora Belt": six fighter waves between rock fields, three
-// shield rings, then the dreadnought. Around 90 seconds.
+// Each stage around 90 seconds: fighter waves between hazard fields, three
+// shield rings, then the boss.
 const StarFluxGame::Segment& StarFluxGame::segment() const {
-    static const Segment script[STAGE_SEGMENTS] = {
-        //  type       pattern     count mirror  ms    ring
-        { SEG_WAVE,  PAT_VDIVE,   5,  1,     0,    false },
-        { SEG_ROCKS, PAT_VDIVE,   0,  0,  6000,    true  },
-        { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
-        { SEG_WAVE,  PAT_HEADON,  6,  1,     0,    false },
-        { SEG_ROCKS, PAT_VDIVE,   0,  0,  7000,    false },
-        { SEG_WAVE,  PAT_LOOP,    6,  1,     0,    true  },
-        { SEG_WAVE,  PAT_WEAVE,   6, -1,     0,    false },
-        { SEG_ROCKS, PAT_VDIVE,   0,  0,  8000,    true  },
-        { SEG_WAVE,  PAT_VDIVE,   7, -1,     0,    false },
-        { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+    static const Segment scripts[STAGE_COUNT][SEGMENTS] = {
+        {   // 1, Aurora Belt: rock fields in space; the dreadnought.
+            //  type       pattern     count mirror  ms    ring
+            { SEG_WAVE,  PAT_VDIVE,   5,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  6000,    true  },
+            { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
+            { SEG_WAVE,  PAT_HEADON,  6,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    false },
+            { SEG_WAVE,  PAT_LOOP,    6,  1,     0,    true  },
+            { SEG_WAVE,  PAT_WEAVE,   6, -1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    true  },
+            { SEG_WAVE,  PAT_VDIVE,   7, -1,     0,    false },
+            { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+        },
+        {   // 2, Ember Reach: pillars and turret towers on the ground; the crawler.
+            { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_VDIVE,   7,  1,     0,    false },
+            { SEG_WAVE,  PAT_HEADON,  6,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    false },
+            { SEG_WAVE,  PAT_WEAVE,   6,  1,     0,    true  },
+            { SEG_WAVE,  PAT_LOOP,    6, -1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
+            { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+        },
+        {   // 3, Trench Run: barriers, laser gates and turrets; the reactor.
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  6000,    false },
+            { SEG_WAVE,  PAT_VDIVE,   6,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_HEADON,  6,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    false },
+            { SEG_WAVE,  PAT_WEAVE,   6, -1,     0,    true  },
+            { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  6000,    true  },
+            { SEG_WAVE,  PAT_LOOP,    6,  1,     0,    false },
+            { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+        },
     };
-    return script[_seg];
+    return scripts[_stageNum][_seg];
 }
 
-int StarFluxGame::segmentCount() const { return STAGE_SEGMENTS; }
+int StarFluxGame::segmentCount() const { return SEGMENTS; }
 
 void StarFluxGame::startSegment(int index) {
     _seg = index;
     _segAt = millis();
     _segSpawned = 0;
-    _nextRockAt = millis() + 600;
+    _nextFieldAt = millis() + 600;
+    _fieldCount = 0;
     _segRingDone = !segment().ring;
     switch (segment().type) {
         case SEG_WAVE:  spawnWaveFighters(); break;
@@ -58,11 +85,35 @@ bool StarFluxGame::segmentDone() const {
             return millis() - _segAt > 400UL + patternStagger(s.pattern) * (unsigned long)(s.count - 1) +
                                        patternLength(s.pattern) * 3 / 4;
         }
-        case SEG_ROCKS:
-            return millis() - _segAt >= (unsigned long)s.lengthMs + 1500UL;   // the last rocks are still coming
+        case SEG_FIELD:
+            return millis() - _segAt >= (unsigned long)s.lengthMs + 1500UL;   // the last hazards are still coming
         default:
-            return false;   // the boss ends the stage itself (StarFluxEnemies.cpp)
+            return false;   // the boss ends the stage itself (StarFluxBoss.cpp)
     }
+}
+
+// A field's next hazard, when it's due: rocks in space, pillars and turret
+// towers on the planet, barriers, gates and turrets in the trench. Denser
+// each loop.
+void StarFluxGame::spawnField(AudioEngine &audio) {
+    const Segment &s = segment();
+    if (s.type != SEG_FIELD || millis() - _segAt >= s.lengthMs || !reached(_nextFieldAt)) return;
+    const unsigned long quicker = (unsigned long)min(250, 40 * (_loop - 1));
+    switch (_stageNum) {
+        case STAGE_BELT:
+            spawnRock(random(0, 100) < ROCK_AIMED_PCT);
+            _nextFieldAt = millis() + ROCK_SPAWN_MS - min(quicker, 200UL);
+            break;
+        case STAGE_PLANET:
+            spawnPlanetHazard();
+            _nextFieldAt = millis() + PLANET_FIELD_MS - quicker;
+            break;
+        default:
+            spawnTrenchHazard();
+            _nextFieldAt = millis() + TRENCH_FIELD_MS - quicker;
+            break;
+    }
+    ++_fieldCount;
 }
 
 void StarFluxGame::updateStage(AudioEngine &audio) {
@@ -75,21 +126,14 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
             }
             break;
 
-        case STAGE_RUN: {
-            const Segment &s = segment();
-            if (s.type == SEG_ROCKS && millis() - _segAt < s.lengthMs && reached(_nextRockAt)) {
-                spawnRock(random(0, 100) < ROCK_AIMED_PCT);
-                // Denser each loop.
-                unsigned long gap = ROCK_SPAWN_MS - (unsigned long)min(200, 40 * (_loop - 1));
-                _nextRockAt = millis() + gap;
-            }
+        case STAGE_RUN:
+            spawnField(audio);
             if (!_segRingDone && millis() - _segAt > 1200) {
                 spawnRing();
                 _segRingDone = true;
             }
             if (segmentDone() && _seg + 1 < segmentCount()) startSegment(_seg + 1);
             break;
-        }
 
         case STAGE_DOWN:
             if (millis() - _stageAt >= DOWN_MS) {
@@ -102,19 +146,21 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
             }
             break;
 
-        case STAGE_BOSS_DEATH:
+        case STAGE_BOSS_DEATH: {
             // A string of explosions across the hull, then the results.
+            float hx, hy, hz, hr;
+            bossHullSphere(hx, hy, hz, hr);
             if (reached(_nextBossBlastAt)) {
                 _nextBossBlastAt = millis() + 140;
-                float x = _bossX + (float)random(-600, 601), y = _bossY + (float)random(-150, 151);
-                float z = _bossZ + (float)random(-300, 301);
+                float x = hx + (float)random(-(long)hr, (long)hr + 1) * 1.4f, y = hy + (float)random(-(long)hr, (long)hr + 1) * 0.4f;
+                float z = hz + (float)random(-300, 301);
                 addBlast(x, y, z, (float)random(180, 360), random(0, 2) ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_YELLOW);
                 _particles.emitSparks(Renderer::Vec3f{ x, y, z }, Renderer::Vec3f{ 0, 0, -1 }, 600.0f, 10);
                 sfxTone(audio, (int)random(90, 260), 60);
             }
             if (millis() - _stageAt >= BOSS_DEATH_MS) {
-                addBlast(_bossX, _bossY, _bossZ, 1100.0f, ArcadeConfig::COLOR_WHITE);
-                sfxWAV(audio, "/audio/explosion.wav");
+                addBlast(hx, hy, hz, 1100.0f, ArcadeConfig::COLOR_WHITE);
+                sfx(audio, SFX_BOSS_DIE);
                 hideBoss();
                 if (inDemo()) {
                     _demoUntil = millis();   // updateDemo() ends it
@@ -124,6 +170,7 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
                 }
             }
             break;
+        }
     }
 }
 
@@ -135,6 +182,7 @@ void StarFluxGame::retrySegment() {
     for (auto &f : _fighters) { f.active = false; if (f.obj) f.obj->enabled = false; }
     for (auto &r : _rocks) { r.active = false; if (r.obj) r.obj->enabled = false; }
     for (auto &r : _rings) r.active = false;
+    hideWorld();
     _bombActive = false;
     _shield = SHIELD_MAX;
     if (_bombs < BOMBS_START) _bombs = BOMBS_START;
@@ -231,7 +279,12 @@ void StarFluxGame::updateBomb(AudioEngine &audio) {
     };
     for (const auto &f : _fighters) if (!contact && f.active && reached(f.startAt) && near(f.x, f.y, f.z, FIGHTER_R + 60)) contact = true;
     for (const auto &r : _rocks) if (!contact && r.active && near(r.x, r.y, r.z, r.r + 60)) contact = true;
-    if (!contact && _bossActive && near(_bossX, _bossY, _bossZ, BOSS_HULL_R + 200)) contact = true;
+    for (const auto &t : _turrets) if (!contact && t.active && near(t.x, t.y, t.z, TURRET_R + 60)) contact = true;
+    if (!contact && _bossActive) {
+        float hx, hy, hz, hr;
+        bossHullSphere(hx, hy, hz, hr);
+        if (near(hx, hy, hz, hr + 200)) contact = true;
+    }
     if (contact) detonateBomb(audio);
 }
 
@@ -241,7 +294,7 @@ void StarFluxGame::detonateBomb(AudioEngine &audio) {
     _bombActive = false;
     addBlast(_bombX, _bombY, _bombZ, BOMB_RADIUS, ArcadeConfig::COLOR_CYAN);
     _particles.emitSparks(Renderer::Vec3f{ _bombX, _bombY, _bombZ }, Renderer::Vec3f{ 0, 0, -1 }, 900.0f, 30);
-    sfxWAV(audio, "/audio/explosion.wav");
+    sfx(audio, SFX_BOMB);
     const float r2 = BOMB_RADIUS * BOMB_RADIUS;
     auto inRange = [&](float x, float y, float z, float extra) {
         float dx = x - _bombX, dy = y - _bombY, dz = z - _bombZ, r = BOMB_RADIUS + extra;
@@ -252,6 +305,9 @@ void StarFluxGame::detonateBomb(AudioEngine &audio) {
     }
     for (auto &r : _rocks) {
         if (r.active && inRange(r.x, r.y, r.z, r.r)) destroyRock(r, true, audio);
+    }
+    for (auto &t : _turrets) {
+        if (t.active && inRange(t.x, t.y, t.z, TURRET_R)) destroyTurret(t, true, audio);
     }
     for (auto &e : _eshots) e.active = false;
     if (_bossActive && _stage == STAGE_RUN) {
@@ -294,18 +350,68 @@ void StarFluxGame::updateShots(AudioEngine &audio) {
             }
             break;
         }
-        if (!s.active || !_bossActive || _stage != STAGE_RUN) continue;
+        if (!s.active) continue;
+        for (auto &t : _turrets) {
+            if (!t.active || !shotHits(s, t.x, t.y, t.z, TURRET_R)) continue;
+            s.active = false;
+            if (--t.hp <= 0) {
+                destroyTurret(t, true, audio);
+            } else {
+                t.flashUntil = millis() + 90;
+                sfx(audio, SFX_HIT);
+            }
+            break;
+        }
+        if (!s.active) continue;
+        // Missiles can be shot down.
+        for (auto &e : _eshots) {
+            if (!e.active || !e.homing) continue;
+            if (!shotHits(s, e.x, e.y, e.z, MISSILE_R)) continue;
+            e.active = false;
+            s.active = false;
+            _score += MISSILE_POINTS;
+            addBlast(e.x, e.y, e.z, 110.0f, ArcadeConfig::COLOR_YELLOW);
+            sfx(audio, SFX_POP);
+            break;
+        }
+        if (!s.active) continue;
+        // Solid obstacles stop lasers.
+        if (shotBlocked(s)) {
+            s.active = false;
+            _particles.emitSparks(Renderer::Vec3f{ s.x, s.y, s.z }, Renderer::Vec3f{ 0, 0, -1 }, 150.0f, 2);
+            continue;
+        }
+        if (!_bossActive || _stage != STAGE_RUN) continue;
         for (int p = 0; p < 3 && s.active; ++p) {
             if (!bossPartAlive(p)) continue;
             float x, y, z;
             bossPartPos(p, x, y, z);
-            if (shotHits(s, x, y, z, p == 2 ? CORE_R : CANNON_R)) { hitBossPart(p, 1, audio); s.active = false; }
+            if (!shotHits(s, x, y, z, p == 2 ? CORE_R : CANNON_R)) continue;
+            s.active = false;
+            // The reactor's core: only through the gap in its shield fan.
+            if (p == 2 && fanBlocks(s.x, s.y)) {
+                _particles.emitSparks(Renderer::Vec3f{ s.x, s.y, z - 80.0f }, Renderer::Vec3f{ 0, 0, -1 }, 200.0f, 3);
+                sfx(audio, SFX_ARMOR);
+            } else {
+                hitBossPart(p, 1, audio);
+            }
         }
-        // The armoured hull (and the shield plate) soaks up the rest.
-        if (s.active && shotHits(s, _bossX, _bossY, _bossZ, BOSS_HULL_R)) {
+        // The armoured hull (and the shield plate) soaks up the rest, but
+        // not a shot lined up on a weak point: those may sit behind the
+        // hull's front (the crawler's pods do).
+        bool lined = false;
+        for (int p = 0; p < 3 && !lined; ++p) {
+            if (!bossPartAlive(p)) continue;
+            float x, y, z, r = p == 2 ? CORE_R : CANNON_R;
+            bossPartPos(p, x, y, z);
+            lined = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y) < (r + SHOT_HIT_PAD) * (r + SHOT_HIT_PAD);
+        }
+        float hx, hy, hz, hr;
+        bossHullSphere(hx, hy, hz, hr);
+        if (s.active && !lined && shotHits(s, hx, hy, hz, hr)) {
             s.active = false;
             _particles.emitSparks(Renderer::Vec3f{ s.x, s.y, s.z }, Renderer::Vec3f{ 0, 0, -1 }, 200.0f, 3);
-            sfxTone(audio, 1900, 12);
+            sfx(audio, SFX_ARMOR);
         }
     }
 }
@@ -372,10 +478,10 @@ void StarFluxGame::destroyRock(Rock &r, bool byPlayer, AudioEngine &audio) {
     setFlash(r.obj, false, &_rockMat[(&r - _rocks) & 1], &_rockMat[(&r - _rocks) & 1]);
     addBlast(r.x, r.y, r.z, r.r * 1.3f, ArcadeConfig::COLOR_AMBER);
     _particles.emitSparks(Renderer::Vec3f{ r.x, r.y, r.z }, Renderer::Vec3f{ 0, 0, -1 }, 500.0f, big ? 16 : 8);
-    sfxWAV(audio, "/audio/explosion.wav");
+    sfx(audio, SFX_POP);
     if (!byPlayer) return;
     _score += big ? ROCK_BIG_POINTS : ROCK_SMALL_POINTS;
-    ++_rocksDowned;
+    ++_targetsDowned;
     if (!big) return;
     int made = 0;
     for (int i = ROCK_BIG_SLOTS; i < ROCK_POOL && made < 2; ++i) {
@@ -421,7 +527,7 @@ void StarFluxGame::updateRings(AudioEngine &audio) {
                 _score += RING_POINTS;
                 ++_ringsCaught;
                 setBanner("SHIELD UP", ArcadeConfig::COLOR_GREEN, 1200);
-                sfxWAV(audio, "/audio/powerup.wav");
+                sfx(audio, SFX_RING);
             }
         }
     }

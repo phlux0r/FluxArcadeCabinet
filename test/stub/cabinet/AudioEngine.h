@@ -31,6 +31,7 @@ struct AudioEngine {
     void playTankStartSound() {}
     void playLaunchMelody() { playMelody(nullptr, nullptr, 0); }
     void preload(const char*) {}
+    bool exists(const char*) const { return false; }   // no card: games take their fallbacks
     void setVolume(float) {}
     void setMusicEnabled(bool) {}
     void setFxEnabled(bool) {}
