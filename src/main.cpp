@@ -32,6 +32,7 @@
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
+#include "games/StarFlux/StarFluxGame.h"
 #include "games/TankFlux/TankFluxGame.h"
 #include "games/TubeFlux/TubeFluxGame.h"
 
@@ -82,6 +83,7 @@ const GameEntry gameRegistry[] = {
     { "Lander",    makeGame<LanderFluxGame>   },
     { "Maze",      makeGame<MazeFluxGame>     },
     { "Runner",    makeGame<PlatformFluxGame> },
+    { "Star",      makeGame<StarFluxGame>     },
     { "Tank",      makeGame<TankFluxGame>     },
     { "Tube",      makeGame<TubeFluxGame>     },
     // Add future games here: { "New Game", makeGame<NewGame> },

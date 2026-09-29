@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: six games behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: seven games behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -9,10 +9,11 @@ the cabinet's display, audio, input and particle subsystems.
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
+| Star Flux | Star | Landscape | 3D on-rails space shooter: fighter waves, rock fields, a boss (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
-Tank Flux and Tube Flux are rendered with
+Tank Flux, Tube Flux and Star Flux are rendered with
 [Jet](https://github.com/CubeCoders/Jet), a dependency-free fixed-function
 rasteriser. In Tank Flux you drive an arena of hills, rocks, trees and a
 river, fighting tanks that flank and fire back, with a boss every 15 kills
@@ -38,6 +39,22 @@ Left alone, its attract screen cycles the title, a how-to-play slide and a
 silent 30-45 second demo, the autopilot playing a random tier (sometimes
 into a bonus round).
 
+In Star Flux you fly on rails through space, the camera behind your ship,
+steering it round the screen while the stage comes at you. Stage 1, Aurora
+Belt, runs about 90 seconds: a fly-in with the stage name, six waves of
+red fighters in formations (V dives, sweeping columns, head-on pairs, a
+wing overtaking from behind, a weaving snake) that swoop, fire and break
+away, rock fields between them (big rocks take three hits and split), and
+silver rings that restore 40 shield. Then the dreadnought: two wing cannons
+firing aimed shots; lose one and it adds ring bursts that close round where
+you were (stay put); lose both and its core opens, firing spreads and
+faster bursts. Destroy the core for the results screen (fighters downed,
+rocks, rings, and a bonus for the shield you kept), then the stage loops,
+its fire faster each time. A shield bar and 3 lives: an empty shield costs
+a life and restarts the wave (or rock field) you were in; a boss keeps the
+damage you'd done. Two sights show your line of fire, red when a target is
+on it. Shooting down a whole wave scores a 500 bonus.
+
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, then a silent 30-40 second demo played by an autopilot, and
 back to the title. A starts a real game straight from a demo; nothing from
@@ -50,6 +67,7 @@ a demo (score, high score) is kept.
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
+| Star | a random point in the stage, sometimes the boss; dodges by where shots and rocks will cross its path, leads its targets, bombs packs |
 
 ## Build
 
@@ -120,6 +138,13 @@ Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
 picked up the gun. Hold B to quit.
 
+Star Flux: the joystick flies the ship round the screen. A fires twin
+lasers, once per press as fast as you tap, or steadily while held. Tap B
+for a smart bomb (3, topped back up to 3 when you lose a life): it flies
+ahead and blows everything near it apart, clears every enemy shot in the
+air, and hurts the boss. Hold B to quit; a bomb needs B released within
+0.4s, so a hold never drops one.
+
 The launcher's "[JOY] MOVE / [BTN A] GO / [BTN B] SETUP" hint sits below the
 background art's menu box, leaving the box for the game list: six rows fit,
 and a seventh would need a tighter row pitch. The hint uses the 5px TomThumb
@@ -136,7 +161,7 @@ buttons still being mashed when a game ends can't restart it or quit.
 
 ## Project Structure
 
-Everything is header-only except Tank Flux, Tube Flux and `main.cpp`, so PlatformIO
+Everything is header-only except the 3D games (Tank, Tube and Star Flux) and `main.cpp`, so PlatformIO
 compiles one translation unit per `.cpp` and pulls the rest in by include.
 
 ```
@@ -175,6 +200,17 @@ FluxArcadeCabinet/
         │                       # renderer, player, collectibles, sprites + assets/
         ├── PlatformFlux/       # PlatformFluxGame.h + platform/boulder/enemy/
         │                       # power-up managers, PlayerRunner.h + assets/
+        ├── StarFlux/           # On-rails space shooter, rendered via Jet:
+        │   ├── StarFluxGame.h      # Class declaration
+        │   ├── StarFluxConfig.h    # All tuning: camera, ship box, weapons, enemies, boss
+        │   ├── StarFluxGame.cpp    # Lifecycle, phases, per-frame update loop
+        │   ├── StarFluxScene.cpp   # Meshes, backdrop, starfield, 2D shots/rings/reticle
+        │   ├── StarFluxPlay.cpp    # Stage script, ship, lasers, bombs, rocks, rings
+        │   ├── StarFluxEnemies.cpp # Fighter flight paths, enemy fire, the boss
+        │   ├── StarFluxDemo.cpp    # Attract demo, and the autopilot (also the harness's bot)
+        │   ├── StarFluxHud.cpp     # HUD, overlays, results and menu screens
+        │   ├── StarShipSprite.h    # GENERATED ship sprite (tools/star_ship_sprite.py)
+        │   └── assets/             # GENERATED title screen (tools/star_title_screen.py)
         ├── TankFlux/           # First-person 3D battle, rendered via Jet:
         │   ├── TankFluxGame.h      # Class declaration (state + method groups)
         │   ├── TankFluxConfig.h    # All tuning constants + per-tank-type TankSpec
@@ -208,6 +244,9 @@ and Profiling). `pio run` ignores it, so it never reaches a firmware build.
 `tools/` holds asset generators. Tube Flux's ship sprite is edited as text
 art in `tools/tube_ship_sprite.py`, and its title screen is rendered by
 `tools/tube_title_screen.py` (needs numpy and Pillow); each writes its header.
+Star Flux's ship is a small 3D model in `tools/star_ship_model.py`, which
+`tools/star_ship_sprite.py` renders into the sprite's three bank frames and
+`tools/star_title_screen.py` puts on the title screen, so the two match.
 
 ## Audio
 
@@ -280,10 +319,11 @@ PROGMEM samples or generated melodies. WAV files live in a single flat
 | `jump.wav`, `death.wav` | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
+| `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `powerup.wav` (ring), `explosion.wav` | Star Flux |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
-`flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
+`flux-star.wav`, `flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
 attract/title screen), carries on through lost lives and between-level
 screens, and stops at game over. A missing track just means no music.
 Mono 16-bit 44.1kHz is the best fit: it streams from SD while the game
@@ -297,7 +337,7 @@ sounds share the SPI bus with the display, so keep them modest.
 
 ## Testing and Profiling
 
-`test/` runs the 3D games' real game logic (Tank Flux and Tube Flux) and the
+`test/` runs the 3D games' real game logic (Tank, Tube and Star Flux) and the
 real Jet rasteriser on a desktop against a fake clock and a seeded RNG,
 hashing game state and the framebuffer each frame. The same trace before and after a change means
 behaviour was preserved — which is how the Tank Flux file split was verified,
@@ -308,6 +348,7 @@ AddressSanitizer). It is not `pio test` and does not need the board.
 test/build.sh                # build, run every scenario, print summaries
 test/build.sh god 30000      # one Tank Flux scenario, full trace
 test/build.sh tube god 30000 # one Tube Flux scenario
+test/build.sh star god 12000 # one Star Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```
@@ -339,7 +380,7 @@ slow frame:
   leaves Jet only the blocks and the sprite: about the cost of a typical Tank
   Flux frame.
 
-Tank Flux and Tube Flux scale their movement by measured frame time
+The 3D games scale their movement by measured frame time
 (`REFERENCE_FRAME_MS` in their config headers), so they play at the same
 speed whether running at 40 or 22fps. The other games do not; their speed
 still follows the frame rate.
@@ -365,7 +406,7 @@ The launcher list shows six games at a time and scrolls, with an arrow above
 or below when there are more that way, and keeps its place when you return
 from a game.
 
-## 3D Rendering (Tank Flux, Tube Flux)
+## 3D Rendering (Tank Flux, Tube Flux, Star Flux)
 
 Jet is pulled in via `platformio.ini`'s `lib_deps` as a git dependency — it
 isn't on the PlatformIO registry — pinned to a commit, so every machine builds

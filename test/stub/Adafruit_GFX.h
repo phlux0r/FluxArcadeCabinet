@@ -1,11 +1,12 @@
 #pragma once
 // Host stub of GFXcanvas16. Keeps a real RGB565 framebuffer so Jet renders
 // into it exactly as on hardware and the harness can hash the result.
-// The 2D drawing calls only need to be pixel-accurate where they'd change
-// that hash: shapes the HUD draws over the 3D scene are no-ops here, and
-// getTextBounds() returns the built-in font's fixed 6x8 cell so layout
-// arithmetic matches.
+// The 2D shapes are drawn (near enough to Adafruit's), so frame dumps show
+// them; text isn't, and getTextBounds() returns the built-in font's fixed
+// 6x8 cell so layout arithmetic matches.
 #include <Arduino.h>
+#include <algorithm>
+#include <cstdlib>
 
 struct GFXfont;
 
@@ -38,11 +39,57 @@ public:
         drawFastVLine(x, y, h, c);
         drawFastVLine(x + w - 1, y, h, c);
     }
-    void drawLine(int16_t, int16_t, int16_t, int16_t, uint16_t) {}
-    void drawCircle(int16_t, int16_t, int16_t, uint16_t) {}
-    void fillCircle(int16_t, int16_t, int16_t, uint16_t) {}
-    void fillTriangle(int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, uint16_t) {}
-    void drawTriangle(int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, uint16_t) {}
+    // Lines, circles and triangles as Adafruit_GFX draws them (Bresenham,
+    // midpoint circle, scanline fill), near enough for frame dumps.
+    void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) {
+        int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        for (int n = 0; n < 4096; ++n) {
+            drawPixel(x0, y0, c);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+    void drawCircle(int16_t x0, int16_t y0, int16_t r, uint16_t c) {
+        int f = 1 - r, ddx = 1, ddy = -2 * r, x = 0, y = r;
+        drawPixel(x0, y0 + r, c); drawPixel(x0, y0 - r, c);
+        drawPixel(x0 + r, y0, c); drawPixel(x0 - r, y0, c);
+        while (x < y) {
+            if (f >= 0) { --y; ddy += 2; f += ddy; }
+            ++x; ddx += 2; f += ddx;
+            drawPixel(x0 + x, y0 + y, c); drawPixel(x0 - x, y0 + y, c);
+            drawPixel(x0 + x, y0 - y, c); drawPixel(x0 - x, y0 - y, c);
+            drawPixel(x0 + y, y0 + x, c); drawPixel(x0 - y, y0 + x, c);
+            drawPixel(x0 + y, y0 - x, c); drawPixel(x0 - y, y0 - x, c);
+        }
+    }
+    void fillCircle(int16_t x0, int16_t y0, int16_t r, uint16_t c) {
+        for (int y = -r; y <= r; ++y)
+            for (int x = -r; x <= r; ++x)
+                if (x * x + y * y <= r * r + r) drawPixel(x0 + x, y0 + y, c);
+    }
+    void fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t c) {
+        int ymin = std::min(y0, std::min(y1, y2)), ymax = std::max(y0, std::max(y1, y2));
+        const int xs[3] = { x0, x1, x2 }, ys[3] = { y0, y1, y2 };
+        for (int y = ymin; y <= ymax; ++y) {
+            int xl = 1 << 20, xr = -(1 << 20);
+            for (int i = 0; i < 3; ++i) {
+                int j = (i + 1) % 3;
+                int ya = ys[i], yb = ys[j];
+                if ((y < ya && y < yb) || (y > ya && y > yb)) continue;
+                int x = ya == yb ? xs[i] : xs[i] + (xs[j] - xs[i]) * (y - ya) / (yb - ya);
+                if (ya == yb) { xl = std::min(xl, std::min(xs[i], xs[j])); xr = std::max(xr, std::max(xs[i], xs[j])); }
+                xl = std::min(xl, x); xr = std::max(xr, x);
+            }
+            for (int x = xl; x <= xr; ++x) drawPixel(x, y, c);
+        }
+    }
+    void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t c) {
+        drawLine(x0, y0, x1, y1, c); drawLine(x1, y1, x2, y2, c); drawLine(x2, y2, x0, y0, c);
+    }
     void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t, uint16_t c) { fillRect(x, y, w, h, c); }
     void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t, uint16_t c) { drawRect(x, y, w, h, c); }
     void drawRGBBitmap(int16_t x, int16_t y, const uint16_t* b, int16_t w, int16_t h) {
