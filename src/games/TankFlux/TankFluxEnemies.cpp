@@ -212,6 +212,17 @@ void TankFluxGame::destroyEnemy(Enemy &e, AudioEngine &audio) {
         _bossesDefeated++;
         audio.playTone(1900, 300);   // kill fanfare
         regenerateArena();
+        // The regular tanks' timers ran out during the fight; stagger them
+        // so they don't all spawn the moment it ends.
+        unsigned long at = millis() + POST_BOSS_FIRST_SPAWN_MS;
+        int n = 0;
+        for (auto &t : _enemies) {
+            if (t.alive) continue;
+            t.respawnAt = at;
+            const int gaps = sizeof(POST_BOSS_SPAWN_GAPS_MS) / sizeof(POST_BOSS_SPAWN_GAPS_MS[0]);
+            at += POST_BOSS_SPAWN_GAPS_MS[n < gaps ? n : gaps - 1];
+            ++n;
+        }
         return;
     }
 

@@ -202,6 +202,11 @@ inline constexpr int   BOSS_REAR_DAMAGE  = 2;
 inline constexpr long  BOSS_TIME_BONUS_MAX     = 1000;
 inline constexpr long  BOSS_TIME_BONUS_PER_SEC = 10;
 inline constexpr unsigned long BOSS_BONUS_SHOW_MS = 3000;
+// After a boss the field refills one tank at a time, not all at once, so
+// there's a chance to collect repair kits: the first this long after the
+// kill, each later one the next gap after the one before.
+inline constexpr unsigned long POST_BOSS_FIRST_SPAWN_MS = 3000;
+inline constexpr unsigned long POST_BOSS_SPAWN_GAPS_MS[] = { 15000, 10000 };
 
 // --- Tank models + per-type tuning -------------------------------------------
 // Regular tanks and the boss share all AI, collision and placement code;
