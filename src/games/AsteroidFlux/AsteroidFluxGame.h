@@ -42,7 +42,15 @@ private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_HIT, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
+    // Title, how-to-play, then the autopilot demo (a game with _demo set).
     enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO };
+    bool _demo = false;
+    unsigned long _demoUntil = 0;
+    float _demoTargetX = 0.0f, _demoTargetY = 0.0f;
+    static const int DEMO_HORIZON = 45;        // frames the autopilot predicts
+    static const unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
+    float _demoXs[DEMO_HORIZON * ArcadeConfig::MAX_ASTEROIDS];
+    float _demoYs[DEMO_HORIZON * ArcadeConfig::MAX_ASTEROIDS];
     AttractSlide  _attractSlide      = SLIDE_SPLASH;
     unsigned long _attractSlideTimer  = 0;
 
@@ -167,6 +175,13 @@ private:
     }
 
     void startNewGame(AudioEngine &audio) {
+        resetGame();
+        // Music plays during a game only: not on the attract screen, kept
+        // through respawns, stopped at game over.
+        audio.loopWAV("/audio/flux-asteroids.wav");
+    }
+
+    void resetGame() {
         _score           = 0;
         _lives           = 3;
         _asteroidsPassed = 0;
@@ -182,11 +197,99 @@ private:
         _phaseTimer   = millis();
         _gameOverPending = false;
         _ship.activateShield(SPAWN_SHIELD_MS);
-
-        // Music plays during a game only: not on the attract screen, kept
-        // through respawns, stopped at game over.
-        audio.loopWAV("/audio/flux-asteroids.wav");
     }
+
+    // ---- Attract demo ---------------------------------------------------------
+
+    // How close the ship would come to any asteroid over the next
+    // DEMO_HORIZON frames if it steered from here to (tx, ty) at full stick:
+    // the smallest gap between the ship's box and an asteroid's hit circle.
+    float demoClearance(float tx, float ty, const float* rs) const {
+        const int N = ArcadeConfig::MAX_ASTEROIDS;
+        float xo = _shipXOffset, yo = _shipYOffset, worst = 1e9f;
+        for (int t = 0; t < DEMO_HORIZON; t++) {
+            xo += constrain((tx - xo) / SHIP_MOVE_SPEED, -1.0f, 1.0f) * SHIP_MOVE_SPEED;
+            yo += constrain((ty - yo) / SHIP_MOVE_SPEED, -1.0f, 1.0f) * SHIP_MOVE_SPEED;
+            const float sx = (float)SHIP_X_MIN + xo, sy = (float)(int)yo;
+            for (int i = 0; i < N; i++) {
+                if (rs[i] <= 0.0f) continue;
+                const float ax = _demoXs[t * N + i], ay = _demoYs[t * N + i];
+                const float cx = max(sx, min(ax, sx + ArcadeConfig::SHIP_WIDTH));
+                const float cy = max(sy, min(ay, sy + ArcadeConfig::SHIP_HEIGHT));
+                const float gap = sqrtf((ax - cx) * (ax - cx) + (ay - cy) * (ay - cy)) - rs[i];
+                if (gap < worst) worst = gap;
+            }
+        }
+        return worst;
+    }
+
+    // Steers for whichever spot keeps the ship furthest from every asteroid
+    // over the next DEMO_HORIZON frames, sticking with its current aim unless
+    // another is clearly better (so it doesn't twitch).
+    InputState demoPilot() {
+        InputState in{};
+        float rs[ArcadeConfig::MAX_ASTEROIDS];
+        _asteroids.predictPaths(DEMO_HORIZON, _demoXs, _demoYs, rs);
+        const float xSpan = (float)(SHIP_X_MAX - SHIP_X_MIN);
+        float bestX = _demoTargetX, bestY = _demoTargetY;
+        float best = demoClearance(bestX, bestY, rs) + 3.0f;   // the current aim's head start
+        for (float ty = (float)SHIP_Y_MIN; ty <= (float)SHIP_Y_MAX; ty += 6.0f) {
+            for (int k = 0; k < 3; k++) {
+                const float tx = xSpan * 0.5f * (float)k;
+                float c = demoClearance(tx, ty, rs);
+                if (c > best) { best = c; bestX = tx; bestY = ty; }
+            }
+        }
+        _demoTargetX = bestX;
+        _demoTargetY = bestY;
+        // Rotation-1 axes, as updatePlaying's input reads them.
+        in.joyX = constrain((bestY - _shipYOffset) / SHIP_MOVE_SPEED, -1.0f, 1.0f);
+        in.joyY = constrain((bestX - _shipXOffset) / SHIP_MOVE_SPEED, -1.0f, 1.0f);
+        return in;
+    }
+
+    // A game some way in: a random 3-6 asteroids at a matching speed.
+    void startDemo() {
+        resetGame();
+        _demo = true;
+        const int active = (int)random(3, ArcadeConfig::MAX_ASTEROIDS + 1);
+        _asteroids.setDemoField(active, ArcadeConfig::BASE_SPEED + ArcadeConfig::SPEED_STEP * (float)random(0, 8));
+        _nextTargetScore = 1000000;               // the field stays as it is
+        _demoTargetX = _shipXOffset;
+        _demoTargetY = _shipYOffset;
+        _demoUntil = millis() + (unsigned long)random((long)DEMO_MIN_MS, (long)DEMO_MAX_MS + 1);
+    }
+
+    // Back to the title, leaving nothing of the demo behind.
+    void endDemo() {
+        _demo = false;
+        resetGame();
+        _score = 0;
+        _phase = PHASE_ATTRACT;
+        _attractSlide = SLIDE_SPLASH;
+        _attractSlideTimer = millis();
+    }
+
+    void drawDemoOverlay(GFXcanvas16 &canvas) {
+        canvas.setFont();
+        canvas.setTextSize(1);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(4, ArcadeConfig::LANDSCAPE_HEIGHT - 10);
+        canvas.print("DEMO");
+        if ((millis() / 500) % 2 == 0) {
+            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 82, ArcadeConfig::LANDSCAPE_HEIGHT - 10);
+            canvas.print("[BTN A] START");
+        }
+    }
+
+    // While a demo runs, new sounds are dropped (lifted again whichever way
+    // update() returns).
+    struct Silence {
+        AudioEngine &a; bool on;
+        Silence(AudioEngine &a_, bool on_) : a(a_), on(on_) { if (on) a.setSilenced(true); }
+        ~Silence() { if (on) a.setSilenced(false); }
+    };
 
     // Spawn explosion particles and start non-blocking WAV stream.
     // Graphics continue normally — audio feeds through update() each frame.
@@ -211,6 +314,7 @@ public:
         _shipXOffset       = 0.0f;
         _shipYOffset       = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
         _gameOverPending   = false;
+        _demo              = false;
         // No start sound: the attract loop starts straight away.
     }
 
@@ -235,11 +339,25 @@ public:
             btnBHoldStart = 0;
         }
 
+        // ---- ATTRACT DEMO: A plays for real, B leaves, time's up ends it ----
+        if (_demo) {
+            if (input.btnAPressed) { endDemo(); startNewGame(audio); return true; }
+            if (input.btnBPressed) { endDemo(); audio.mute(); return false; }
+            if (millis() >= _demoUntil && _phase == PHASE_PLAYING) endDemo();
+        }
+        Silence silence(audio, _demo);
+        const InputState in = (_demo && _phase == PHASE_PLAYING) ? demoPilot() : input;
+
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
             if (millis() - _attractSlideTimer > 8000) {
-                _attractSlide      = (_attractSlide == SLIDE_SPLASH) ? SLIDE_INFO : SLIDE_SPLASH;
-                _attractSlideTimer = millis();
+                if (_attractSlide == SLIDE_SPLASH) {
+                    _attractSlide      = SLIDE_INFO;
+                    _attractSlideTimer = millis();
+                } else {
+                    startDemo();                 // then back to the splash
+                    return true;
+                }
             }
 
             if (_attractSlide == SLIDE_SPLASH) renderSplash(canvas);
@@ -268,19 +386,19 @@ public:
             _background.update();
             _particles.update();
 
-            _ship.updatePosition(input.joyX);  // no-op, kept for compat
+            _ship.updatePosition(in.joyX);  // no-op, kept for compat
 
             // Y-axis: velocity-based
             // (joystick X/Y swapped and Y-direction inverted for this game's
             // physical orientation)
-            _shipYOffset += input.joyX * SHIP_MOVE_SPEED;
+            _shipYOffset += in.joyX * SHIP_MOVE_SPEED;
             _shipYOffset  = constrain(_shipYOffset,
                                       (float)SHIP_Y_MIN,
                                       (float)SHIP_Y_MAX);
             _ship.setY((int)_shipYOffset);
 
             // X-axis: joystick X lets ship push into field up to 1/3 screen width
-            _shipXOffset += input.joyY * SHIP_MOVE_SPEED;
+            _shipXOffset += in.joyY * SHIP_MOVE_SPEED;
             _shipXOffset  = constrain(_shipXOffset, 0.0f,
                                       (float)(SHIP_X_MAX - SHIP_X_MIN));
             _ship.setX((float)SHIP_X_MIN + _shipXOffset);
@@ -292,6 +410,12 @@ public:
             _asteroids.update(_ship, _score, _asteroidsPassed, _nextTargetScore,
                               uiNeedsUpdate, playerHit, audio, _particles);
 
+            if (playerHit && _demo) {                // a demo hit just ends the demo
+                triggerShipExplosion(audio);
+                _phase      = PHASE_HIT;
+                _phaseTimer = millis();
+                return true;
+            }
             if (playerHit) {
                 triggerShipExplosion(audio);
                 _lives--;
@@ -338,6 +462,7 @@ public:
                 drawUI(canvas);
                 _uiDirty = false;
             }
+            if (_demo) drawDemoOverlay(canvas);
 
             flushLandscape(canvas);
             return true;
@@ -352,7 +477,13 @@ public:
                             ArcadeConfig::COLOR_BLACK);
             _particles.render(canvas, 11);
             drawUI(canvas);
+            if (_demo) drawDemoOverlay(canvas);
             flushLandscape(canvas);
+
+            if (_demo) {
+                if (millis() - _phaseTimer > 800) endDemo();
+                return true;
+            }
 
             if (millis() - _phaseTimer > 800) {
                 _particles.clearAll();

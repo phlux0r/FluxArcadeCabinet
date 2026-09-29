@@ -42,6 +42,13 @@ public:
     void drawCircle(int16_t, int16_t, int16_t, uint16_t) {}
     void fillCircle(int16_t, int16_t, int16_t, uint16_t) {}
     void fillTriangle(int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, uint16_t) {}
+    void drawTriangle(int16_t, int16_t, int16_t, int16_t, int16_t, int16_t, uint16_t) {}
+    void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t, uint16_t c) { fillRect(x, y, w, h, c); }
+    void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t, uint16_t c) { drawRect(x, y, w, h, c); }
+    void drawRGBBitmap(int16_t x, int16_t y, const uint16_t* b, int16_t w, int16_t h) {
+        for (int j = 0; j < h; ++j) for (int i = 0; i < w; ++i) drawPixel(x + i, y + j, b[j * w + i]);
+    }
+    void setTextWrap(bool) {}
 
     void setFont(const GFXfont* = nullptr) {}
     void setTextSize(uint8_t s) { _ts = s; }
