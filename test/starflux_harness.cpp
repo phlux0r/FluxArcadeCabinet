@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
     int quits = 0, gameOvers = 0, stagesCleared = 0, lastPhase = -1, lastLives = LIVES, livesLost = 0;
     int bombsUsed = 0, lastBombs = BOMBS_START, maxLoop = 1, bossesSeen = 0, demosStarted = 0;
     bool wasBoss = false, wasDemo = false;
-    int hits = 0, lastShield = SHIELD_MAX, eshotsFired = 0;
+    int hits = 0, lastShield = SHIELD_MAX, eshotsFired = 0, namesEntered = 0;
     bool eshotWas[ESHOT_POOL] = {};
     long totalDowned = 0, totalSeen = 0;
     uint32_t traceHash = 2166136261u;
@@ -258,6 +258,7 @@ int main(int argc, char** argv) {
             }
             else if (f == 900 && g._phase == StarFluxGame::PHASE_PLAYING) {        // last life lost: game over
                 g._lives = 1; g._invulnUntil = 0; g._stage = StarFluxGame::STAGE_RUN;
+                g._score = 1234;   // makes the table: the name entry must follow
                 g.damageShip(SHIELD_MAX, audio);
             }
         }
@@ -305,6 +306,7 @@ int main(int argc, char** argv) {
         if (g.inDemo() && !wasDemo) ++demosStarted;
         wasDemo = g.inDemo();
         if (g._phase == StarFluxGame::PHASE_GAMEOVER && lastPhase != StarFluxGame::PHASE_GAMEOVER) ++gameOvers;
+        if (g._phase == StarFluxGame::PHASE_NAME && lastPhase != StarFluxGame::PHASE_NAME) ++namesEntered;
         if (g._phase == StarFluxGame::PHASE_RESULTS && lastPhase != StarFluxGame::PHASE_RESULTS) {
             ++stagesCleared;
             totalDowned += g._fightersDowned; totalSeen += g._fightersSeen;
@@ -340,10 +342,19 @@ int main(int argc, char** argv) {
     printf("DONE frames=%ld stages=%d maxLoop=%d livesLost=%d gameovers=%d quits=%d bombs=%d bosses=%d "
            "demos=%d high=%ld final=%08x\n",
            frames, stagesCleared, maxLoop, livesLost, gameOvers, quits, bombsUsed, bossesSeen,
-           demosStarted, g._highScore, traceHash);
+           demosStarted, g._scores.best(), traceHash);
     printf("hits taken=%d, enemy shots fired=%d\n", hits, eshotsFired);
+    printf("table:");
+    for (const auto &e : g._scores.table().e) printf(" %s %ld", e.name, (long)e.score);
+    printf(" (names entered %d)\n", namesEntered);
     if (totalSeen) printf("fighters downed %ld/%ld (%.0f%%)\n", totalDowned, totalSeen, 100.0 * totalDowned / totalSeen);
 
+    if (menus) {
+        // The forced game over (score 1234) must have asked for a name and saved it.
+        bool ok = namesEntered == 1 && g._scores.table().e[0].score == 1234;
+        printf("name entry: %s\n", ok ? "PASS" : "FAIL");
+        if (!ok) return 1;
+    }
     if (retryFailed) return 1;
     if (profile) {
         // Relative only: host microseconds are not ESP32 microseconds.

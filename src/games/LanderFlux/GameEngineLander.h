@@ -6,6 +6,7 @@
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
 #include "../../cabinet/AudioEngine.h"
+#include "../../cabinet/HighScores.h"
 #include "CavernObstacles.h"
 #include "Ship.h"
 #include "assets/TitleScreen.h"
@@ -30,7 +31,9 @@ static const unsigned long PHYSICS_TICK_MS = 20UL;
 
 class GameEngineLander {
 private:
-    Preferences      _prefs;
+    // The cabinet's table for this game; _highScore is its top score.
+    hiscore::ScoreBoard _scores;
+    bool _naming = false;            // entering a name for the table, after the last crash
     Adafruit_ST7735* _tft = nullptr;
     CavernObstacles  _obstacles;
     ParticleManager  _particles;
@@ -51,7 +54,8 @@ private:
     bool  _isTitleScreen = true;
 
     unsigned long _attractModeTimer    = 0;
-    bool          _showInstructionPage = false;
+    bool          _showInstructionPage = _showScoresPage = false;
+    bool          _showScoresPage = false;      // after how-to-fly: the high scores
 
     float _currentGravity  = 0.025f;
     bool  _fuelTankActive  = false;
@@ -97,10 +101,10 @@ private:
     int _demoPathLen = 0;
     int _demoPathIdx = 0;               // how far along the route it's got
 
-    void saveHighScore() {
-        _prefs.begin("lander_flux", false);
-        _prefs.putInt("high_score", _highScore);
-        _prefs.end();
+    void renderScoresScreen(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+        hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 30);
+        if (millis() % 1000 < 600) hiscore::printCentred(canvas, "HIT BUTTON TO START", 130, ArcadeConfig::COLOR_WHITE);
     }
 
     void initLevel() {
@@ -189,9 +193,10 @@ private:
             ArcadeConfig::PORTRAIT_WIDTH - 12, 28, ArcadeConfig::COLOR_ION_BLUE);
         canvas.setCursor(10, 115);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.print("HIGH SCORE: ");
+        canvas.print("BEST: ");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.print(_highScore);
+        char hiBuf[24];
+        canvas.print(_scores.bestLine(hiBuf, sizeof(hiBuf), ""));
     }
 
     void renderSuccessIntermission(GFXcanvas16 &canvas) {
@@ -217,6 +222,13 @@ private:
         canvas.setCursor(19, 75);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.print("FINAL SCORE: "); canvas.print(_score);
+
+        const int rank = _scores.lastRank();
+        if (rank >= 0) {
+            char buf[24];
+            snprintf(buf, sizeof(buf), rank == 0 ? "NEW HIGH SCORE!" : "HIGH SCORE #%d", rank + 1);
+            hiscore::printCentred(canvas, buf, 92, ArcadeConfig::COLOR_YELLOW);
+        }
 
         canvas.setCursor(7, 115);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
@@ -382,7 +394,7 @@ private:
         _isGameOver = false;
         _titleAWasHeld = false;
         _attractModeTimer = millis();
-        _showInstructionPage = false;
+        _showInstructionPage = _showScoresPage = false;
     }
 
     void startGame(AudioEngine &audio) {
@@ -424,9 +436,9 @@ public:
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
 
     void init(AudioEngine &audio) {
-        _prefs.begin("lander_flux", true);
-        _highScore = _prefs.getInt("high_score", 0);
-        _prefs.end();
+        _scores.begin("lander");
+        _highScore = (int)_scores.best();
+        _naming = false;
 
         _score               = 0;
         _level               = 1;
@@ -436,7 +448,7 @@ public:
         _isGameOver          = false;
         _attractModeTimer    = millis();
         _titleAWasHeld       = true;
-        _showInstructionPage = false;
+        _showInstructionPage = _showScoresPage = false;
         _btnBWasHeld         = true;
         _demo                = false;
         initLevel();
@@ -444,18 +456,24 @@ public:
         audio.preload("/audio/pickup.wav");     // the fuel pickup; loaded now, not on the first
     }
 
+    // `input` is for the name entry (the rest of the game reads the raw values).
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
-                int joyX, int joyY, AudioEngine &audio) {
+                int joyX, int joyY, AudioEngine &audio, const InputState &input) {
 
         // Button B: require release first, then hold 2s to exit — the same
         // convention Asteroid Flux, Platform Flux and Tank Flux use. A bare
         // press exited instantly, so brushing the button lost a run.
-        if (_btnBWasHeld) {
+        if (_naming) {
+            _btnBHoldStart = 0;            // B steps back a letter there
+        } else if (_btnBWasHeld) {
             if (!btnB) _btnBWasHeld = false;
         } else if (btnB) {
             if (_btnBHoldStart == 0) _btnBHoldStart = millis();
             if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
                 _btnBHoldStart = 0;
+                // Quitting mid-game: the score still goes on the table,
+                // under the last name entered.
+                if (!_demo && !_isTitleScreen && _lander.lives > 0) _scores.record(_score);
                 audio.mute();
                 return false;
             }
@@ -475,11 +493,29 @@ public:
         }
         Silence silence(audio, _demo);
 
+        // ---- NAME ENTRY: then the game-over screen ----
+        if (_naming) {
+            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+            _scores.draw(canvas);
+            if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
+                ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+            if (_scores.update(input, 2)) {
+                _naming            = false;
+                _highScore         = (int)_scores.best();
+                _isGameOver        = true;
+                _gameOverEnteredMs = millis();
+                _endInputArmed     = false;
+                _btnBWasHeld       = true;   // B from the entry isn't the start of a quit
+            }
+            return true;
+        }
+
         // ---- ATTRACT / TITLE SCREEN ----
         if (_isTitleScreen) {
-            // Title, how-to-fly (8 seconds each), then the demo.
+            // Title, how-to-fly, high scores (8 seconds each), then the demo.
             if (millis() - _attractModeTimer > 8000UL) {
-                if (!_showInstructionPage) {
+                if (!_showScoresPage) {
+                    if (_showInstructionPage) _showScoresPage = true;
                     _showInstructionPage = true;
                     _attractModeTimer    = millis();
                 } else {
@@ -490,7 +526,8 @@ public:
 
             // Draw to canvas — single blit at bottom handles flush
             if (!_showInstructionPage) renderTitleScreen(canvas);
-            else                       renderInstructionScreen(canvas);
+            else if (!_showScoresPage) renderInstructionScreen(canvas);
+            else                       renderScoresScreen(canvas);
 
             if (_titleAWasHeld) {
                 if (!btnA) _titleAWasHeld = false;
@@ -544,7 +581,7 @@ public:
                     _isTitleScreen    = true;
                     _titleAWasHeld    = true;
                     _attractModeTimer = millis();
-                    _showInstructionPage = false;
+                    _showInstructionPage = _showScoresPage = false;
                 }
                 _isGameOver = false;
                 return true;
@@ -558,7 +595,7 @@ public:
                 _isTitleScreen       = true;
                 _isGameOver          = false;
                 _attractModeTimer    = millis();
-                _showInstructionPage = false;
+                _showInstructionPage = _showScoresPage = false;
                 audio.stopLoop();   // timed out on a between-level screen
                 audio.playLanderStartSound();
             }
@@ -592,12 +629,17 @@ public:
                 if (_lander.lives > 0) {
                     initLevel();
                 } else {
-                    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
+                    audio.stopLoop();
+                    audio.playGameOverSound(gameend_data, sizeof(gameend_data));
+                    // A name for the table first, if the score made it.
+                    _scores.forget();
+                    if (_scores.offer(_score)) {
+                        _naming = true;
+                        return true;
+                    }
                     _isGameOver        = true;
                     _gameOverEnteredMs = now;
                     _endInputArmed     = false;
-                    audio.stopLoop();
-                    audio.playGameOverSound(gameend_data, sizeof(gameend_data));
                 }
             }
         } else {
@@ -653,7 +695,6 @@ public:
                                 (int)_lander.x <= (_padX + _padWidth));
                 if (overPad && speed < SAFE_LANDING_SPEED && _lander.fuel > 0.0f) {
                     _score += (int)_lander.fuel;
-                    if (!_demo && _score > _highScore) { _highScore = _score; saveHighScore(); }
                     _level++;
                     _isGameOver        = true;
                     _gameOverEnteredMs = now;

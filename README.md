@@ -72,9 +72,10 @@ show your line of fire, red when a target is on it. Shooting down a whole
 wave scores a 500 bonus.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
-how-to-play, then a silent 30-40 second demo played by an autopilot, and
-back to the title. A starts a real game straight from a demo; nothing from
-a demo (score, high score) is kept.
+how-to-play, its high-score table, then a silent 30-40 second demo played by
+an autopilot, and back to the title (Maze cycles title, how-to-play and
+table). A starts a real game straight from a demo; nothing from a demo
+(score, high score) is kept.
 
 | Game | The demo |
 |---|---|
@@ -190,11 +191,30 @@ The launcher's "[JOY] MOVE / [BTN A] GO / [BTN B] SETUP" hint sits below the
 background art's menu box, leaving the box for the game list: six rows fit,
 and a seventh would need a tighter row pitch. The hint uses the 5px TomThumb
 font, centred, at a 9px pitch (baselines 129/138/147): the box's border is
-row 123 and the last line just touches the art's INSERT COIN at row 146.
+row 123, and the last line sits where the art's INSERT COIN used to be
+(it and CREDITS 00 are painted out: neighbouring starfield copied over the
+text).
 
 **B** in the launcher opens **SETUP**: MASTER, MUSIC and FX volume bars
-(joystick up/down to pick, left/right to set, 0 is off) and BACK (or B
-again). Every change is saved to NVS at once and applied on boot.
+(joystick up/down to pick, left/right to set, 0 is off), HIGH SCORES and
+BACK (or B again). Every change is saved to NVS at once and applied on boot.
+
+**High scores.** Every game keeps a top-5 table of three-letter names and
+scores (`src/cabinet/HighScores.h`), saved in NVS. When a game ends with a
+score that makes its table, a NEW HIGH SCORE screen asks for a name:
+joystick up/down changes the letter (A-Z, 0-9, `.`, held to run through
+them), left/right moves between the three, A confirms each (the third
+saves it), B steps back. It starts on the last name entered on the cabinet
+(`AAA` the first time), and after 20s untouched that name is saved, so a
+regular player can just press A three times, or walk away. Holding B
+doesn't quit from this screen. Quitting mid-game still puts the score on
+the table, under the last name. The game-over screen then says NEW HIGH
+SCORE or HIGH SCORE #n, and the title screens show the top score with its
+name. The tables are in each game's attract cycle, under SETUP > HIGH
+SCORES (left/right flips games), and after 30s untouched the launcher
+cycles through them on its own, a page every 5s, until a button or the
+stick brings the menu back. Before the tables, each game kept one high
+score; that carries over as its table's first entry, named `---`.
 
 Every game's game-over screen ignores A and B for its first second, then
 acts only on a fresh press (`ArcadeConfig::GAMEOVER_INPUT_DELAY_MS`), so
@@ -222,6 +242,7 @@ FluxArcadeCabinet/
 │   ├── audio/AudioMixer.h  # software mixer: voices, streams, synth (host-tested)
 │   ├── audio/AudioLoader.h # WAV parsing, effect cache, music streaming (host-tested)
     │   ├── ParticleManager.h   # Shared 2D particle system (explosions, trails)
+    │   ├── HighScores.h        # Top-5 tables with names, the name entry screen
     │   └── PowerManager.h      # Power button, checked from the menu only
     │
     ├── assets/shared/          # Assets used by more than one game
@@ -449,7 +470,10 @@ still follows the frame rate.
 
 1. Create `src/games/MyGame/MyGameGame.h` implementing `IGame`
 2. `#include` the game in `src/main.cpp`
-3. Add `{ "My Game", makeGame<MyGameGame> }` to `gameRegistry[]`
+3. Add `{ "My Game", makeGame<MyGameGame>, "mygame" }` to `gameRegistry[]`
+4. Add `mygame` to `hiscore::GAMES` in `src/cabinet/HighScores.h`, and give
+   the game a `hiscore::ScoreBoard`: `begin("mygame")` in `init()`,
+   `offer(score)` at game over (showing its `draw()`/`update()` until done)
 
 Games are built when launched and destroyed on the way back to the menu
 (`makeGame()` in `main.cpp`, in internal RAM where there's room), so only the

@@ -119,9 +119,8 @@ void TubeFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
         memcpy(canvas.getBuffer(), TITLE_SCREEN, sizeof(TITLE_SCREEN));
     }
     if (millis() % 1000 < 600) drawCentred(canvas, "[BTN A] TO PLAY", TITLE_STRIP_Y + 5, ArcadeConfig::COLOR_WHITE);
-    char buf[20];
-    snprintf(buf, sizeof(buf), "HI: %ld", _highScore);
-    drawCentred(canvas, buf, TITLE_STRIP_Y + 14, ArcadeConfig::COLOR_YELLOW);
+    char buf[24];
+    drawCentred(canvas, _scores.bestLine(buf, sizeof(buf), "HI: "), TITLE_STRIP_Y + 14, ArcadeConfig::COLOR_YELLOW);
     drawQuitHint(canvas);
 }
 
@@ -134,9 +133,17 @@ void TubeFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     drawCentred(canvas, "A: SHOOT CRYSTALS", 65, ArcadeConfig::COLOR_ORANGE);
     drawCentred(canvas, "GREEN CROSS: SHIELD", 74, ArcadeConfig::COLOR_GREEN);
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 86, ArcadeConfig::COLOR_WHITE);
-    char buf[20];
-    snprintf(buf, sizeof(buf), "HI %ld", _highScore);
-    drawCentred(canvas, buf, 96, ArcadeConfig::COLOR_GREEN);
+    char buf[24];
+    drawCentred(canvas, _scores.bestLine(buf, sizeof(buf)), 96, ArcadeConfig::COLOR_GREEN);
+    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
+    drawQuitHint(canvas);
+}
+
+// The cabinet's table for this game, over the flowing tunnel.
+void TubeFluxGame::renderAttractScores(GFXcanvas16 &canvas) {
+    canvas.fillRect(22, 18, W - 44, 88, PANEL);
+    hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 24);
+    if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 96, ArcadeConfig::COLOR_WHITE);
     drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
     drawQuitHint(canvas);
 }
@@ -149,11 +156,14 @@ void TubeFluxGame::renderGameOver(GFXcanvas16 &canvas) {
     drawCentred(canvas, buf, 52, ArcadeConfig::COLOR_YELLOW);
     snprintf(buf, sizeof(buf), "REACHED TIER %d", _tier);
     drawCentred(canvas, buf, 64, ArcadeConfig::COLOR_CYAN);
-    if (_newHighScore) {
+    const int rank = _scores.lastRank();
+    if (rank == 0) {
         if ((millis() / 300) & 1) drawCentred(canvas, "NEW HIGH SCORE!", 78, ArcadeConfig::COLOR_GREEN);
-    } else {
-        snprintf(buf, sizeof(buf), "HI %ld", _highScore);
+    } else if (rank > 0) {
+        snprintf(buf, sizeof(buf), "HIGH SCORE #%d", rank + 1);
         drawCentred(canvas, buf, 78, ArcadeConfig::COLOR_GREEN);
+    } else {
+        drawCentred(canvas, _scores.bestLine(buf, sizeof(buf)), 78, ArcadeConfig::COLOR_GREEN);
     }
     if (millis() - _phaseEnteredMs > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
         drawCentred(canvas, "A: AGAIN", 94, ArcadeConfig::COLOR_WHITE);

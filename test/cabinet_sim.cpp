@@ -96,5 +96,28 @@ int main() {
     printf("scrolling: 10 entries, window reached %d (want 4), selection always on screen -> %s\n",
            maxTop, scrollOk ? "PASS" : "FAIL");
     ok &= scrollOk;
+
+    // High scores: every game has a table; the launcher cycles them after
+    // 30s idle (pages turning), and a press returns to the menu without
+    // launching anything.
+    bool keysOk = true;
+    for (int i = 0; i < GAME_COUNT; ++i) keysOk &= gameRegistry[i].scoreKey && hiscore::info(gameRegistry[i].scoreKey);
+    printf("every game has a high-score table -> %s\n", keysOk ? "PASS" : "FAIL");
+    ok &= keysOk;
+
+    frames(60);
+    const bool notYet = !launcher._scoresOpen;
+    frames(30000 / 17 + 30);                               // ~30s untouched
+    const bool cycling = launcher._scoresOpen && launcher._scoresIdle;
+    const int firstPage = launcher._scoreGame;
+    frames(5200 / 17 + 5);
+    const bool turned = launcher._scoreGame != firstPage;
+    setPin(ArcadeConfig::BUTTON_A, true);  frames(3);
+    setPin(ArcadeConfig::BUTTON_A, false); frames(3);
+    const bool backToMenu = !launcher._scoresOpen && cabinetState == STATE_LAUNCHER_MENU && !activeGame;
+    const bool idleOk = notYet && cycling && turned && backToMenu;
+    printf("idle high-score cycle: starts %d, turns %d, a press returns (no launch) %d -> %s\n",
+           cycling, turned, backToMenu, idleOk ? "PASS" : "FAIL");
+    ok &= idleOk;
     return ok ? 0 : 1;
 }

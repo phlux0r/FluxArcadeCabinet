@@ -1,28 +1,11 @@
 #include "TubeFluxGame.h"
-#include <Preferences.h>
 
 namespace tubeflux {
 
-void TubeFluxGame::loadHighScore() {
-    Preferences prefs;
-    prefs.begin("tb_data", true);
-    _highScore = prefs.getInt("highscore", 0);
-    prefs.end();
-}
-
-void TubeFluxGame::saveHighScore() {
-    Preferences prefs;
-    prefs.begin("tb_data", false);
-    prefs.putInt("highscore", (int32_t)_highScore);
-    prefs.end();
-}
-
-void TubeFluxGame::recordHighScore() {
-    if (_score > _highScore) {
-        _highScore = _score;
-        _newHighScore = true;
-        saveHighScore();
-    }
+// Quitting mid-run: the score still goes on the table (if it makes it),
+// under the last name entered.
+void TubeFluxGame::recordQuit() {
+    _scores.record(_score);
 }
 
 // Movement is per REFERENCE_FRAME_MS, scaled by the real frame time, as in
@@ -37,7 +20,7 @@ void TubeFluxGame::updateFrameScale() {
 }
 
 void TubeFluxGame::init(AudioEngine &audio) {
-    loadHighScore();
+    _scores.begin("tube");
     enterAttract();
     _btnBWasHeld = true;
     _btnBHoldStart = 0;
@@ -74,7 +57,7 @@ void TubeFluxGame::resetRun() {
     _shield = SHIELD_MAX;
     _score = 0;
     _bonus = 0;
-    _newHighScore = false;
+    _scores.forget();
     _invulnUntil = _hitFlashUntil = _nearMissUntil = _tierBannerUntil = 0;
     _safeLane = _prevSafeLane = 0;   // start straight down the lane you're in
     _bendX = _bendY = _bendTargetX = _bendTargetY = 0.0f;
@@ -105,9 +88,9 @@ void TubeFluxGame::resetRun() {
     applyTierPalette();
 }
 
+// The shield's gone: a name for the table first, if the score made it.
 void TubeFluxGame::enterGameOver(AudioEngine &audio) {
-    recordHighScore();
-    _phase = PHASE_GAMEOVER;
+    _phase = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseEnteredMs = millis();
     _shipSprite.enabled = false;
     // Shots and the pickup would hang in mid-air while the world drifts on.
@@ -127,16 +110,18 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     ensureSceneReady(canvas);
     updateFrameScale();
 
-    // Hold B to exit, in every phase: B does nothing else in this game.
-    // After init() B must be released first, so the launcher press that
-    // started us can't count.
-    if (_btnBWasHeld) {
+    // Hold B to exit, in every phase but the name entry (where B steps back
+    // a letter). After init() B must be released first, so the launcher
+    // press that started us can't count.
+    if (_phase == PHASE_NAME) {
+        _btnBHoldStart = 0;
+    } else if (_btnBWasHeld) {
         if (!input.btnB) _btnBWasHeld = false;
     } else if (input.btnB) {
         if (_btnBHoldStart == 0) _btnBHoldStart = millis();
         if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
             _btnBHoldStart = 0;
-            if (_phase == PHASE_PLAYING) recordHighScore();
+            if (_phase == PHASE_PLAYING) recordQuit();
             audio.mute();
             return false;
         }
@@ -146,6 +131,7 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
+        case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default:             return updatePlaying(canvas, input, audio);
     }
@@ -176,16 +162,16 @@ void TubeFluxGame::enterAttract() {
 // Title image and how-to-play alternate. Behind how-to-play the tunnel
 // keeps flowing, empty, at tier 1 speed; the title is a full-screen image,
 // so the world isn't rendered at all while it shows.
-// Title, how-to-play, then a demo (TubeFluxDemo.cpp), round and round. A
-// starts a game from any of them.
+// Title, how-to-play, the high scores, then a demo (TubeFluxDemo.cpp),
+// round and round. A starts a game from any of them.
 bool TubeFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     if (input.btnAPressed) {
         startNewGame(audio);
         return updatePlaying(canvas, InputState{}, audio);
     }
     if (_attractSlide != SLIDE_DEMO && millis() - _attractSlideAt > ATTRACT_SLIDE_MS) {
-        if (_attractSlide == SLIDE_TITLE) {
-            _attractSlide = SLIDE_INFO;
+        if (_attractSlide == SLIDE_TITLE || _attractSlide == SLIDE_INFO) {
+            _attractSlide = _attractSlide == SLIDE_TITLE ? SLIDE_INFO : SLIDE_SCORES;
             _attractSlideAt = millis();
         } else {
             startDemo();
@@ -196,14 +182,33 @@ bool TubeFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
             renderAttractTitle(canvas);
             break;
         case SLIDE_INFO:
+        case SLIDE_SCORES:
             _dist += BASE_SPEED * _frameScale;
             _angle = fmodf(_angle + 0.6f * _frameScale, 360.0f);
             renderWorld(canvas);
-            renderAttractInfo(canvas);
+            if (_attractSlide == SLIDE_INFO) renderAttractInfo(canvas);
+            else renderAttractScores(canvas);
             break;
         case SLIDE_DEMO:
             updateDemo(canvas, audio);
             break;
+    }
+    return true;
+}
+
+// The tunnel drifts on behind the name entry; when it's done (or timed
+// out), the game-over screen.
+bool TubeFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    _dist += BASE_SPEED * 0.5f * _frameScale;
+    for (auto &o : _obstacles) if (o.active) placeObstacle(o);
+    for (auto &c : _crystals) if (c.active) placeObstacle(c);
+    renderWorld(canvas);
+    _scores.draw(canvas);
+    if (_scores.update(input, getRotation())) {
+        _phase = PHASE_GAMEOVER;
+        _phaseEnteredMs = millis();
+        _btnBWasHeld = input.btnB;   // a B still down from the entry isn't the start of a quit
+        audio.playTone(1047, 80);
     }
     return true;
 }

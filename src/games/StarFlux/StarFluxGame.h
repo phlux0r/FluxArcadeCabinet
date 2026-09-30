@@ -6,6 +6,7 @@
 #include <Jet.hpp>
 
 #include "StarFluxConfig.h"
+#include "../../cabinet/HighScores.h"
 
 // =============================================================================
 // STAR FLUX: an on-rails space shooter, rendered with Jet like Tank and
@@ -56,8 +57,9 @@ public:
     const char* getName()  const override { return "Star Flux"; }
 
 private:
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_RESULTS, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_DEMO };
+    // NAME: entering a name for the high-score table, after the last life.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_RESULTS, PHASE_NAME, PHASE_GAMEOVER };
+    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_SCORES, SLIDE_DEMO };
     enum SegType : uint8_t { SEG_WAVE, SEG_FIELD, SEG_BOSS };
     enum StageId : uint8_t { STAGE_BELT, STAGE_PLANET, STAGE_TRENCH, STAGE_COUNT };
     enum Pattern : uint8_t { PAT_VDIVE, PAT_SWEEP, PAT_HEADON, PAT_LOOP, PAT_WEAVE, PAT_COUNT };
@@ -137,8 +139,7 @@ private:
     bool          _silent = false;        // gameplay sounds off (the demo is silent)
     float         _frameScale = 1.0f;
     unsigned long _lastFrameMs = 0;
-    long          _highScore = 0;
-    bool          _newHighScore = false;
+    hiscore::ScoreBoard _scores;          // the cabinet's table for this game
 
     // --- Run -------------------------------------------------------------------
     int   _loop = 1;                 // times round all the stages, from 1: difficulty
@@ -250,9 +251,7 @@ private:
     Renderer::Sprite2D  _shipSprite;
 
     // --- StarFluxGame.cpp ------------------------------------------------------
-    void loadHighScore();
-    void saveHighScore();
-    void recordHighScore();
+    void recordQuit();
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     void resetRun();
@@ -269,6 +268,7 @@ private:
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateResults(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    bool updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void renderWorld(GFXcanvas16 &canvas);
 
@@ -402,6 +402,7 @@ private:
     void enterAttract();
     void renderAttractTitle(GFXcanvas16 &canvas);
     void renderAttractInfo(GFXcanvas16 &canvas);
+    void renderAttractScores(GFXcanvas16 &canvas);
     void renderResults(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
 };

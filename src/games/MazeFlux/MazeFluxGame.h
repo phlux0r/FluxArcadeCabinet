@@ -26,7 +26,8 @@ public:
             input.joyDown,
             input.joyLeft,
             input.joyRight,
-            audio
+            audio,
+            input
         );
     }
 

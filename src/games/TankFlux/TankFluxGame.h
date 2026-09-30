@@ -6,6 +6,7 @@
 #include <Jet.hpp>
 
 #include "TankFluxConfig.h"
+#include "../../cabinet/HighScores.h"
 #include "TankMath.h"
 #include "TankGeometry.h"
 #include "ArenaLayout.h"
@@ -46,8 +47,9 @@ public:
     const char* getName()  const override { return "Tank Flux"; }
 
 private:
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_GAME, SLIDE_INFO, SLIDE_DEMO };
+    // NAME: entering a name for the high-score table, after being destroyed.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    enum AttractSlide { SLIDE_GAME, SLIDE_INFO, SLIDE_SCORES, SLIDE_DEMO };
     enum EnemyClass : uint8_t { CLASS_1, CLASS_2, CLASS_3 };
 
     struct RepairKit {
@@ -109,7 +111,7 @@ private:
     float _speed = 0.0f;
     int   _health = HEALTH_MAX;
     int   _score = 0;
-    int   _highScore = 0;
+    hiscore::ScoreBoard _scores;   // the cabinet's table for this game
     int   _kills = 0;
     int   _level = 1;
     unsigned long _reloadAt = 0;
@@ -196,14 +198,13 @@ private:
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
 
     // --- TankFluxGame.cpp ------------------------------------------------------
-    void loadHighScore();
-    void saveHighScore();
-    void recordHighScore();
+    void recordQuit();
     void updateFrameScale();
     void resetGame();                       // a fresh game's world and state, silently
     void startNewGame(AudioEngine &audio);  // resetGame(), plus its start sound and music
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    bool updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
 
     // --- TankFluxDemo.cpp ------------------------------------------------------
@@ -281,6 +282,7 @@ private:
     void drawQuitHint(GFXcanvas16 &canvas);
     void renderAttractGame(GFXcanvas16 &canvas);
     void renderAttractInfo(GFXcanvas16 &canvas);
+    void renderAttractScores(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
 };
 

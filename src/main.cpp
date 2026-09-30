@@ -79,14 +79,14 @@ LauncherMenu launcher;
 
 // Game registry — order determines menu order
 const GameEntry gameRegistry[] = {
-    { "Asteroids", makeGame<AsteroidFluxGame> },
-    { "Lander",    makeGame<LanderFluxGame>   },
-    { "Maze",      makeGame<MazeFluxGame>     },
-    { "Runner",    makeGame<PlatformFluxGame> },
-    { "Star",      makeGame<StarFluxGame>     },
-    { "Tank",      makeGame<TankFluxGame>     },
-    { "Tube",      makeGame<TubeFluxGame>     },
-    // Add future games here: { "New Game", makeGame<NewGame> },
+    { "Asteroids", makeGame<AsteroidFluxGame>, "asteroids" },
+    { "Lander",    makeGame<LanderFluxGame>,   "lander" },
+    { "Maze",      makeGame<MazeFluxGame>,     "maze" },
+    { "Runner",    makeGame<PlatformFluxGame>, "runner" },
+    { "Star",      makeGame<StarFluxGame>,     "star" },
+    { "Tank",      makeGame<TankFluxGame>,     "tank" },
+    { "Tube",      makeGame<TubeFluxGame>,     "tube" },
+    // Add future games here: { "New Game", makeGame<NewGame>, "newgame" },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
 

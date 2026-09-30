@@ -335,7 +335,7 @@ int main(int argc, char** argv) {
 
     printf("DONE frames=%ld maxTier=%d hits=%d gameovers=%d quits=%d high=%ld "
            "tones=%d melodies=%d final=%08x\n",
-           frames, maxTier, hits, gameOvers, quits, g._highScore,
+           frames, maxTier, hits, gameOvers, quits, g._scores.best(),
            audio.tones, audio.melodies, traceHash);
 
     printf("weapon: first armed at f=%ld, max gun level=%d, crystals destroyed=%d, "

@@ -7,6 +7,7 @@
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/AudioEngine.h"
 #include "../../cabinet/ParticleManager.h"
+#include "../../cabinet/HighScores.h"
 #include "MazeGenerator.h"
 #include "MazeRenderer.h"
 #include "PlayerMaze.h"
@@ -18,7 +19,8 @@
 class GameEngineMaze {
 private:
     Adafruit_ST7735* _tft = nullptr;
-    Preferences      _prefs;
+    // The cabinet's table for this game; _highScore is its top score.
+    hiscore::ScoreBoard _scores;
 
     MazeGenerator   _maze;
     MazeRenderer    _renderer;
@@ -48,7 +50,8 @@ private:
     int _activeDoors     = 0;
     int _activeTeleports = 0;
 
-    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_CONFIRM_EXIT, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
+    // NAME: entering a name for the high-score table, after the last life.
+    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_CONFIRM_EXIT, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
     GameState _state = STATE_TITLE;
 
     int  _level     = 1;
@@ -71,7 +74,7 @@ private:
     // since arriving, so mashing at game over can't quit to the menu.
     bool _endInputArmed    = false;
     bool _titleBWasHeld    = true;
-    bool _showInstructions = false;
+    int  _attractPage = 0;           // title, how to play, high scores
 
     // Hold BTN B 2s during play to bring up an exit confirmation
     unsigned long _btnBHoldStart   = 0;
@@ -81,10 +84,13 @@ private:
     int _camX = 0;
     int _camY = 0;
 
-    void saveHighScore() {
-        _prefs.begin("maze_flux", false);
-        _prefs.putInt("high_score", _highScore);
-        _prefs.end();
+    // Out of lives: a name for the table first, if the score made it.
+    void endGame(AudioEngine &audio) {
+        _scores.forget();
+        _state      = _scores.offer(_score) ? STATE_NAME : STATE_GAMEOVER;
+        _gameOverMs = millis();
+        _endInputArmed = false;
+        audio.stopLoop();
     }
 
     // -------------------------------------------------------------------------
@@ -298,7 +304,6 @@ private:
 
         if (_exit.unlocked && px == _exit.x && py == _exit.y) {
             _score += _timeLeft;
-            if (_score > _highScore) { _highScore = _score; saveHighScore(); }
             _level++;
             _state = STATE_LEVEL_COMPLETE;
             _gameOverMs = millis();
@@ -368,11 +373,7 @@ private:
         if (!_player.alive) {
             _player.lives--;
             if (_player.lives <= 0) {
-                if (_score > _highScore) { _highScore = _score; saveHighScore(); }
-                _state      = STATE_GAMEOVER;
-                _gameOverMs = millis();
-                _endInputArmed = false;
-                audio.stopLoop();
+                endGame(audio);
             } else {
                 _player.reset(0, 0);
             }
@@ -548,8 +549,10 @@ private:
         canvas.setCursor(1, 86); canvas.print("> AVOID BOMBS+BULLETS");
 
         // High score box — same outline treatment as Lander Flux's info screen
-        char scoreStr[24];
-        snprintf(scoreStr, sizeof(scoreStr), "HIGH SCORE: %d", _highScore);
+        char scoreStr[32];
+        char best[20];
+        _scores.bestLine(best, sizeof(best), "");
+        snprintf(scoreStr, sizeof(scoreStr), "BEST: %s", best);
         int16_t tbx, tby; uint16_t tbw, tbh;
         canvas.getTextBounds(scoreStr, 0, 0, &tbx, &tby, &tbw, &tbh);
 
@@ -559,9 +562,15 @@ private:
 
         canvas.setCursor(boxX + (boxW - (int16_t)tbw) / 2, boxY + 9);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.print("HIGH SCORE: ");
+        canvas.print("BEST: ");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.print(_highScore);
+        canvas.print(best);
+    }
+
+    void renderScores(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+        hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 30);
+        if (millis() % 1000 < 600) hiscore::printCentred(canvas, "A TO START", 130, ArcadeConfig::COLOR_WHITE);
     }
 
     void renderConfirmExit(GFXcanvas16 &canvas) {
@@ -598,6 +607,12 @@ private:
         canvas.setTextSize(1);
         canvas.setCursor(19, 80);
         canvas.print("SCORE: "); canvas.print(_score);
+        const int rank = _scores.lastRank();
+        if (rank >= 0) {
+            char buf[24];
+            snprintf(buf, sizeof(buf), rank == 0 ? "NEW HIGH SCORE!" : "HIGH SCORE #%d", rank + 1);
+            hiscore::printCentred(canvas, buf, 95, ArcadeConfig::COLOR_YELLOW);
+        }
         canvas.setCursor(7, 115);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
         canvas.print("[BTN A] MAIN MENU");
@@ -622,9 +637,8 @@ public:
     void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
 
     void init(AudioEngine &audio) {
-        _prefs.begin("maze_flux", true);
-        _highScore = _prefs.getInt("high_score", 0);
-        _prefs.end();
+        _scores.begin("maze");
+        _highScore = (int)_scores.best();
 
         _score = 0; _level = 1; _floor = 0;
         _state        = STATE_TITLE;
@@ -636,9 +650,25 @@ public:
         _player.lives = 3;
     }
 
+    // `input` is for the name entry (the rest of the game reads the flags).
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
                 bool joyUp, bool joyDown, bool joyLeft, bool joyRight,
-                AudioEngine &audio) {
+                AudioEngine &audio, const InputState &input) {
+
+        // ---- NAME ENTRY: then the game-over screen ----
+        if (_state == STATE_NAME) {
+            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+            _scores.draw(canvas);
+            if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
+                ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+            if (_scores.update(input, 2)) {
+                _highScore  = (int)_scores.best();
+                _state      = STATE_GAMEOVER;
+                _gameOverMs = millis();
+                _endInputArmed = false;
+            }
+            return true;
+        }
 
         // ---- TITLE ----
         if (_state == STATE_TITLE) {
@@ -650,11 +680,12 @@ public:
             }
 
             if (millis() - _attractTimer > ATTRACT_INTERVAL_MS) {
-                _showInstructions = !_showInstructions;
-                _attractTimer     = millis();
+                _attractPage  = (_attractPage + 1) % 3;
+                _attractTimer = millis();
             }
-            if (!_showInstructions) renderTitle(canvas);
-            else                    renderInstructions(canvas);
+            if (_attractPage == 0)      renderTitle(canvas);
+            else if (_attractPage == 1) renderInstructions(canvas);
+            else                        renderScores(canvas);
 
             // Require BTN A to be released before it can start a new game —
             // otherwise a held press (e.g. dismissing the game-over screen)
@@ -718,6 +749,9 @@ public:
 
             if (!_confirmExitGuard) {
                 if (btnA) {
+                    // Quitting mid-game: the score still goes on the table,
+                    // under the last name entered.
+                    _scores.record(_score);
                     audio.mute();
                     return false;  // confirmed — back to launcher
                 }
@@ -749,11 +783,8 @@ public:
             if (_timeLeft <= 0) {
                 _player.lives--;
                 if (_player.lives <= 0) {
-                    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
-                    _state      = STATE_GAMEOVER;
-                    _gameOverMs = millis();
-                    _endInputArmed = false;
-                    audio.stopLoop();
+                    endGame(audio);
+                    return true;
                 } else {
                     _timeLeft = 60;
                 }
