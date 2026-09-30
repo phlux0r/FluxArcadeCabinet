@@ -112,7 +112,7 @@ file; `esptool.py flash_id` confirms which chip you have.
 | Audio | MAX98357A I2S amplifier + speaker |
 | Storage | SD card (shared SPI) |
 | Controls | X-Y joystick + 2 buttons |
-| Power | LiPo on the board's battery pads, momentary power button, amp power toggle |
+| Power | USB (battery support in firmware, not currently fitted: see Power), momentary power button |
 
 ## Pin Assignments (ArcadeConfig.h is the single source of truth)
 
@@ -135,11 +135,13 @@ file; `esptool.py flash_id` confirms which chip you have.
 
 ## Power
 
-The cabinet runs from a LiPo wired to the ESP32 board's battery pads (B+/B-).
-It stays connected all the time, so the board's charge circuit keeps
-charging it over USB even while the cabinet is "off". Nothing cuts the
-battery; off is the ESP32's deep sleep, a few µA
-(`src/cabinet/PowerManager.h`).
+The cabinet currently runs from USB. It was built to run from a LiPo wired
+to the ESP32 board's battery pads (B+/B-), left connected so the board's
+charge circuit keeps it topped up over USB even while the cabinet is "off",
+but this board's battery circuit has failed, so the battery (and an amp
+power toggle switch that went with it) has been removed. The firmware is
+unchanged either way: nothing cuts the power, and "off" is the ESP32's deep
+sleep, a few µA (`src/cabinet/PowerManager.h`).
 
 - **Power button** (momentary, GPIO 6 to GND, internal pull-up): hold it
   for 2s **in the launcher menu** to turn off: the backlight, onboard RGB
@@ -151,9 +153,6 @@ battery; off is the ESP32's deep sleep, a few µA
   which shuts the amp down, and held low through sleep (`gpio_hold`), since
   otherwise the pull-up would switch it back on the moment the ESP32 stops
   driving the pin. Driven high again on wake.
-- **Amp power toggle**: a plain toggle switch in the amplifier's supply, to
-  silence the speaker entirely. It's hardware only; the firmware doesn't
-  see it.
 
 ## Controls
 
