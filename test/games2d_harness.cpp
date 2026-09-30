@@ -31,6 +31,21 @@ void randomSeed(unsigned long s) { g_rng = (uint32_t)s; }
 
 static const unsigned long STEP_MS = 17;
 
+static GFXcanvas16* g_lastCanvas = nullptr;
+static GFXcanvas16 &g_canvasOf(PlatformFluxGame &) { return *g_lastCanvas; }
+static void writePPM(const char* name, GFXcanvas16 &c) {
+    FILE* f = fopen(name, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", c.width(), c.height());
+    const uint16_t* b = c.getBuffer();
+    for (int i = 0; i < c.width() * c.height(); ++i) {
+        uint16_t p = b[i];
+        unsigned char rgb[3] = { (unsigned char)((p >> 11) << 3), (unsigned char)(((p >> 5) & 63) << 2), (unsigned char)((p & 31) << 3) };
+        fwrite(rgb, 1, 3, f);
+    }
+    fclose(f);
+}
+
 static int highScoreOf(PlatformFluxGame &g) { return g._highScore; }
 static int highScoreOf(AsteroidFluxGame &g) { return g._highScore; }
 static int highScoreOf(LanderFluxGame &g)   { return g._engine._highScore; }
@@ -39,6 +54,7 @@ template <typename Game, typename InDemo, typename Report>
 static bool idle(const char* name, Game &g, long frames, InDemo inDemo, Report report) {
     AudioEngine audio;
     GFXcanvas16 canvas(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+    g_lastCanvas = &canvas;
     g.init(audio);
     const int hs0 = highScoreOf(g);
     int demos = 0, ended = 0;
@@ -71,16 +87,31 @@ int main(int argc, char** argv) {
 
     if (!strcmp(which, "all") || !strcmp(which, "runner")) {
         static PlatformFluxGame g;
-        int died = 0, stages = 0, lastStage = 0;
+        int died = 0, stages = 0, lastStage = 0, cleared = 0, dumped = 0;
         int prevPhase = -1;
+        const char* dump = getenv("RUNNER_DUMP");   // write a demo frame every this many
+        const long dumpEvery = dump ? atol(dump) : 0;
+        long demoFrame = 0;
         ok &= idle("runner", g, frames, [](PlatformFluxGame &g) { return g._demo; },
             [&](PlatformFluxGame &g, bool final) {
-                if (final) { printf("runner demos: %d ended by a death, %d stages cleared\n", died, stages); return; }
+                if (final) {
+                    printf("runner demos: %d ended by a death, %d stages cleared, %d hazards got past (popups)\n",
+                           died, stages, cleared);
+                    return;
+                }
+                for (auto &p : g._popups) cleared += p.active && p.at == g_fakeMillis;
+                if (dumpEvery > 0 && ++demoFrame % dumpEvery == 0 && dumped < 12) {
+                    char name[40];
+                    snprintf(name, sizeof(name), "runner_%02d.ppm", dumped++);
+                    writePPM(name, g_canvasOf(g));
+                }
                 if (g._stage > lastStage && lastStage) ++stages;
                 lastStage = g._stage;
                 if (g._phase == PlatformFluxGame::PHASE_DEATH && prevPhase == PlatformFluxGame::PHASE_PLAYING) ++died;
                 prevPhase = g._phase;
             });
+        printf("runner hazard points: %s\n", cleared > 0 ? "PASS" : "FAIL (none got past)");
+        ok &= cleared > 0;
         // A mid-demo: a real game from stage 1, lives and score fresh.
         static PlatformFluxGame h;
         AudioEngine audio;

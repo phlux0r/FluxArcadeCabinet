@@ -187,6 +187,10 @@ were on (score kept) with 2s of blinking protection. Clearing a stage
 scores 50, or 100 if you didn't die in it, and finishing a full loop of 8
 stages gives an extra life (up to 5). Jumps are forgiving: A pressed just
 before landing still jumps, and so does one just after running off an edge.
+Getting past a fire pit or spike trap scores 10, and jumping a boulder 20,
+with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
+slow stars, a far mountain range and nearer hills, their colours changing
+each loop.
 
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
@@ -275,7 +279,8 @@ FluxArcadeCabinet/
         ├── MazeFlux/           # MazeFluxGame.h + GameEngineMaze.h, generator,
         │                       # renderer, player, collectibles, sprites + assets/
         ├── PlatformFlux/       # PlatformFluxGame.h + platform/boulder/enemy/
-        │                       # power-up managers, PlayerRunner.h + assets/
+        │                       # power-up managers, PlayerRunner.h, RunnerBackdrop.h
+        │                       # (the parallax layers) + assets/
         ├── StarFlux/           # On-rails space shooter, rendered via Jet:
         │   ├── StarFluxGame.h      # Class declaration
         │   ├── StarFluxConfig.h    # All tuning: camera, ship box, weapons, enemies, boss

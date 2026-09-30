@@ -212,6 +212,11 @@ struct ArcadeConfig {
     static const int   RUNNER_LIVES               = 3;
     static const int   RUNNER_MAX_LIVES           = 5;
     static const int   RUNNER_STAGE_BONUS         = 50;
+    // Hazards got past score these, shown as a rising "+10" where they were.
+    static const int   RUNNER_PIT_POINTS          = 10;
+    static const int   RUNNER_SPIKE_POINTS        = 10;
+    static const int   RUNNER_BOULDER_POINTS      = 20;
+    static const unsigned long RUNNER_POPUP_MS    = 700;
     static const unsigned long RUNNER_RESPAWN_SHIELD_MS = 2000;
     static const unsigned long RUNNER_BANNER_MS   = 1600;
     // Jump forgiveness: a jump pressed up to BUFFER before landing still

@@ -49,6 +49,7 @@ private:
         bool  firePitBefore;   // fire pit rendered in the gap just before this platform
         float firePitGapWidth; // gap width — region [x - firePitGapWidth, x) scrolls with x
         bool       hasSpike;
+        bool       pitScored, spikeScored;  // cleared by the runner: points given
         float      spikeOffsetX; // offset from x, scrolls with the segment
         SpikePhase spikePhase;
         unsigned long spikePhaseEnd;
@@ -257,6 +258,8 @@ private:
     void spawnPlatform(int index, float startX) {
         _pool[index].firePitBefore = false;
         _pool[index].hasSpike      = false;
+        _pool[index].pitScored     = false;
+        _pool[index].spikeScored   = false;
 
         if (_introPlatformsLeft > 0) {
             // Flat, contiguous run — no gap, no height change, no hazards.
@@ -600,6 +603,29 @@ public:
             }
         }
         return false;
+    }
+
+    // A fire pit or spike trap the runner has got past (its right edge
+    // behind playerX) and hasn't been scored yet: marks it, gives where to
+    // show the points, and returns them; 0 when there's none. Call until 0.
+    int takeCleared(float playerX, float &popX, float &popY) {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            Platform &p = _pool[i];
+            if (!p.active) continue;
+            if (p.firePitBefore && !p.pitScored && p.x < playerX) {
+                p.pitScored = true;
+                popX = p.x - p.firePitGapWidth * 0.5f;
+                popY = (float)(p.y - 10);
+                return ArcadeConfig::RUNNER_PIT_POINTS;
+            }
+            if (p.hasSpike && !p.spikeScored && p.x + p.spikeOffsetX + 7.0f < playerX) {
+                p.spikeScored = true;
+                popX = p.x + p.spikeOffsetX;
+                popY = (float)(p.y - 16);
+                return ArcadeConfig::RUNNER_SPIKE_POINTS;
+            }
+        }
+        return 0;
     }
 
     float getScrollSpeed() const { return _scrollSpeed; }
