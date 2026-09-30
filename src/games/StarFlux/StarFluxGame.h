@@ -156,7 +156,9 @@ private:
     // Per wave (by segment): fighters still out, and whether any got away.
     // Waves overlap, so these can't just be the current segment's.
     uint8_t _waveLeft[12] = {};
+    uint8_t _waveToCome[12] = {};    // not launched yet: waiting for a free slot
     bool    _waveClean[12] = {};
+    unsigned long _segLaunchedAt = 0;   // waves: when a fighter was last launched
     unsigned long _pilotReplanAt = 0;
     unsigned long _nextFieldAt = 0;  // next rock, obstacle or turret in a field
     int   _fieldCount = 0;           // spawned so far this field

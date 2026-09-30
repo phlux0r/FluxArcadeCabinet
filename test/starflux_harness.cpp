@@ -164,7 +164,10 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
     const bool profile = strcmp(mode, "profile") == 0;
-    const bool god   = strcmp(mode, "god") == 0 || profile;
+    // passive: shield pinned, and the bot never fires: nothing gets shot
+    // down, so every wave has to leave on its own and the stage still move on.
+    const bool passive = strcmp(mode, "passive") == 0;
+    const bool god   = strcmp(mode, "god") == 0 || profile || passive;
     const bool menus = strcmp(mode, "menus") == 0;
     const bool idle  = strcmp(mode, "idle") == 0;
     const long frames = argc > 2 ? atol(argv[2]) : 20000;
@@ -216,6 +219,9 @@ int main(int argc, char** argv) {
     SegCost cost[3][12];
 
     bool prevB = false;
+    int stallStage = -1, stallSeg = -1;
+    unsigned long stallSince = 0, longestSeg = 0;
+    bool stalled = false;
     int retrySeg = -1, retryLives = 0;
     bool retryFailed = false;
     int quits = 0, gameOvers = 0, stagesCleared = 0, lastPhase = -1, lastLives = LIVES, livesLost = 0;
@@ -234,7 +240,8 @@ int main(int argc, char** argv) {
             if (god) g._shield = SHIELD_MAX;
             // The play bot reacts slowly and has no bombs, so it gets hit
             // and loses lives; god mode's reacts every frame.
-            in = god ? g.pilot(true, 0) : g.pilot(false, 500);
+            in = god ? g.pilot(!passive, 0) : g.pilot(false, 500);
+            if (passive) in.btnA = in.btnB = false;
             b = in.btnB;
         } else {
             in.btnA = (f % 40) == 0;
@@ -300,6 +307,20 @@ int main(int argc, char** argv) {
             eshotWas[i] = g._eshots[i].active;
         }
         lastLives = g._lives;
+        // A segment that never ends is a stall (the boss gets longer: it has
+        // to be shot, which passive mode doesn't do).
+        if (g._phase == StarFluxGame::PHASE_PLAYING && g._stage == StarFluxGame::STAGE_RUN) {
+            if (g._stageNum != stallStage || g._seg != stallSeg) {
+                stallStage = g._stageNum; stallSeg = g._seg; stallSince = g_fakeMillis;
+            } else if (g.segment().type != StarFluxGame::SEG_BOSS) {
+                unsigned long t = g_fakeMillis - stallSince;
+                if (t > longestSeg) longestSeg = t;
+                if (t > 40000 && !stalled) {
+                    stalled = true;
+                    printf("STALL f=%ld stage %d seg %d: %lus with no progress\n", f, g._stageNum + 1, g._seg, t / 1000);
+                }
+            }
+        }
         lastBombs = g._bombs;
         if (g._bossActive && !wasBoss) ++bossesSeen;
         wasBoss = g._bossActive;
@@ -355,6 +376,8 @@ int main(int argc, char** argv) {
         printf("name entry: %s\n", ok ? "PASS" : "FAIL");
         if (!ok) return 1;
     }
+    printf("longest non-boss segment %.1fs%s\n", longestSeg / 1000.0, stalled ? " STALLED" : "");
+    if (stalled) return 1;
     if (retryFailed) return 1;
     if (profile) {
         // Relative only: host microseconds are not ESP32 microseconds.

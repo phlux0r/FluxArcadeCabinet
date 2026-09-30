@@ -68,7 +68,13 @@ void StarFluxGame::startSegment(int index) {
     _fieldCount = 0;
     _segRingDone = !segment().ring;
     switch (segment().type) {
-        case SEG_WAVE:  spawnWaveFighters(); break;
+        case SEG_WAVE:
+            _waveLeft[_seg] = 0;
+            _waveToCome[_seg] = segment().count;
+            _waveClean[_seg] = true;
+            _segLaunchedAt = millis();
+            spawnWaveFighters();
+            break;
         case SEG_BOSS:  startBoss(); break;
         default: break;
     }
@@ -77,13 +83,15 @@ void StarFluxGame::startSegment(int index) {
 bool StarFluxGame::segmentDone() const {
     const Segment &s = segment();
     switch (s.type) {
-        // A wave is done once it's all gone, or when its last fighter is
-        // most of the way through its run: the next wave overlaps its exit.
+        // A wave is done once all of it has launched (or WAVE_LAUNCH_MS has
+        // gone by: fighters still out from the last wave may hold the slots
+        // it needs), and either it's all gone or its last fighter is most of
+        // the way through its run: the next wave overlaps its exit.
         case SEG_WAVE: {
-            if (_segSpawned < s.count || millis() - _segAt < 1000) return false;
+            if (millis() - _segAt < 1000) return false;
+            if (_segSpawned < s.count && millis() - _segAt < WAVE_LAUNCH_MS) return false;
             if (_waveLeft[_seg] == 0) return true;
-            return millis() - _segAt > 400UL + patternStagger(s.pattern) * (unsigned long)(s.count - 1) +
-                                       patternLength(s.pattern) * 3 / 4;
+            return millis() - _segLaunchedAt > patternStagger(s.pattern) + patternLength(s.pattern) * 3 / 4;
         }
         case SEG_FIELD:
             return millis() - _segAt >= (unsigned long)s.lengthMs + 1500UL;   // the last hazards are still coming
@@ -128,6 +136,15 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
 
         case STAGE_RUN:
             spawnField(audio);
+            // A wave launches the fighters that didn't fit as slots free up.
+            if (segment().type == SEG_WAVE && _segSpawned < segment().count) {
+                if (millis() - _segAt < WAVE_LAUNCH_MS) {
+                    spawnWaveFighters();
+                } else if (_waveToCome[_seg]) {
+                    _waveToCome[_seg] = 0;       // out of time: the rest aren't coming
+                    _waveClean[_seg] = false;    // and it's no longer a whole wave to down
+                }
+            }
             if (!_segRingDone && millis() - _segAt > 1200) {
                 spawnRing();
                 _segRingDone = true;

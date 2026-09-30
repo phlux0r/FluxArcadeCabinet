@@ -95,6 +95,8 @@ inline constexpr float FIGHTER_R       = 95.0f;     // hit radius
 inline constexpr int   FIGHTER_POINTS  = 100;
 inline constexpr int   WAVE_PERFECT_POINTS = 500;
 inline constexpr unsigned long FORMATION_STAGGER_MS = 330;
+// A wave waits this long at most for slots the last one's fighters hold.
+inline constexpr unsigned long WAVE_LAUNCH_MS = 10000;
 inline constexpr int   FIRE_PCT        = 70;        // chance a fighter takes a shot it's due, loop 1
 inline constexpr int   FIRE_PCT_PER_LOOP = 12;
 

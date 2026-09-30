@@ -79,12 +79,20 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
     }
 }
 
-// The whole wave at once, each fighter waiting its turn (startAt). V
-// formations fly as one; the rest follow each other down the path.
+// The wave's fighters, each waiting its turn (startAt): V formations fly
+// as one, the rest follow each other down the path. Waves overlap, so the
+// last one's fighters may still hold slots: launches what fits, and is
+// called again (updateStage()) to launch the rest as slots free up, on the
+// wave's own timing where it can be, else straight away.
 void StarFluxGame::spawnWaveFighters() {
     const Segment &s = segment();
     const PathDef &d = PATHS[s.pattern];
-    int n = 0;
+    int n = _segSpawned;
+    const int before = n;
+    auto when = [&](unsigned long offset) {
+        unsigned long planned = _segAt + 400 + offset, soonest = millis() + 200;
+        return (long)(planned - soonest) > 0 ? planned : soonest;
+    };
     for (auto &f : _fighters) {
         if (n >= s.count) break;
         if (f.active) continue;
@@ -93,19 +101,19 @@ void StarFluxGame::spawnWaveFighters() {
         f.nextFire = 0;
         f.wave = (uint8_t)_seg;
         f.mirror = s.mirror != 0 ? s.mirror : ((n & 1) ? -1 : 1);
-        f.startAt = millis() + 400 + (unsigned long)n * d.stagger;
+        f.startAt = when((unsigned long)n * d.stagger);
         f.ox = f.oy = 0;
         switch (s.pattern) {
             case PAT_VDIVE: {
                 int rank = (n + 1) / 2;
                 f.ox = (n & 1 ? -1.0f : 1.0f) * (float)rank * 170.0f;
                 f.oy = (float)rank * 110.0f;
-                f.startAt = millis() + 400 + (unsigned long)rank * d.stagger;
+                f.startAt = when((unsigned long)rank * d.stagger);
                 break;
             }
             case PAT_HEADON:
                 f.mirror = (n & 1) ? -1 : 1;                 // one each side
-                f.startAt = millis() + 400 + (unsigned long)(n / 2) * d.stagger;
+                f.startAt = when((unsigned long)(n / 2) * d.stagger);
                 f.oy = (float)((n / 2) % 2) * 90.0f;
                 break;
             default:
@@ -116,10 +124,12 @@ void StarFluxGame::spawnWaveFighters() {
         f.obj->enabled = false;
         ++n;
     }
+    if (n == before) return;
     _segSpawned = n;
-    _waveLeft[_seg] = (uint8_t)n;
-    _waveClean[_seg] = true;
-    _fightersSeen += n;
+    _segLaunchedAt = millis();
+    _waveLeft[_seg] += (uint8_t)(n - before);
+    _waveToCome[_seg] = (uint8_t)(s.count - n);
+    _fightersSeen += n - before;
 }
 
 // Along their paths, facing where they're going (their speed through the
@@ -191,7 +201,7 @@ void StarFluxGame::fighterGone(Fighter &f, bool downed, AudioEngine &audio) {
     uint8_t w = f.wave;
     if (!downed) _waveClean[w] = false;
     if (_waveLeft[w] == 0) return;
-    if (--_waveLeft[w] == 0 && _waveClean[w]) {
+    if (--_waveLeft[w] == 0 && _waveClean[w] && _waveToCome[w] == 0) {
         _score += WAVE_PERFECT_POINTS;
         setBanner("PERFECT WAVE +500", ArcadeConfig::COLOR_CYAN, 1600);
         sfxTone(audio, 1568, 90);
