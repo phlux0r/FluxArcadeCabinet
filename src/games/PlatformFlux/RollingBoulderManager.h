@@ -24,7 +24,9 @@ private:
         float spinSpeed;
         float xOffsets[8];
         float yOffsets[8];
+        float cy;       // last centre height, for the points popup
         bool  active;
+        bool  scored;   // jumped: points given
     };
 
     static const int MAX_BOULDERS = ArcadeConfig::BOULDER_MAX_ACTIVE;
@@ -37,6 +39,8 @@ private:
         _boulders[index].angle     = random(0, 360);
         _boulders[index].spinSpeed = random(6, 12);
         _boulders[index].active    = true;
+        _boulders[index].scored    = false;
+        _boulders[index].cy        = 0.0f;
         for (int j = 0; j < 8; j++) {
             float a = j * (PI / 4.0f);
             float r = _boulders[index].radius * (random(70, 131) / 100.0f);
@@ -96,6 +100,7 @@ public:
             int groundY = platforms.surfaceYNear(_boulders[i].x - _boulders[i].radius,
                                                   _boulders[i].x + _boulders[i].radius);
             float cy = groundY - _boulders[i].radius;
+            _boulders[i].cy = cy;
 
             if (_boulders[i].x + _boulders[i].radius < 0) {
                 _boulders[i].active = false;
@@ -114,6 +119,21 @@ public:
                 playerHit = true;
             }
         }
+    }
+
+    // A boulder the runner has got past (all of it behind playerX) and
+    // hasn't been scored: marks it, gives where to show the points, returns
+    // them; 0 when there's none.
+    int takeCleared(float playerX, float &popX, float &popY) {
+        for (int i = 0; i < MAX_BOULDERS; i++) {
+            Boulder &b = _boulders[i];
+            if (!b.active || b.scored || b.x + b.radius >= playerX) continue;
+            b.scored = true;
+            popX = b.x;
+            popY = b.cy - b.radius - 8.0f;
+            return ArcadeConfig::RUNNER_BOULDER_POINTS;
+        }
+        return 0;
     }
 
     // Would a boulder touch this player box `t` frames from now? The box is

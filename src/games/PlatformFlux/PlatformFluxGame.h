@@ -13,6 +13,7 @@
 #include "RunnerPowerUpManager.h"
 #include "LevitationPowerUpManager.h"
 #include "RollingBoulderManager.h"
+#include "RunnerBackdrop.h"
 #include "assets/TitleScreen.h"
 
 #include <Preferences.h>
@@ -26,6 +27,12 @@ private:
     LevitationPowerUpManager _levitationPowerUp;
     RollingBoulderManager _boulders;
     ParticleManager       _particles;
+    RunnerBackdrop        _backdrop;
+
+    // "+10" popups where a hazard was got past: they ride the scroll and rise.
+    struct Popup { float x, y; int points; unsigned long at; bool active; };
+    static const int POPUPS = 4;
+    Popup _popups[POPUPS] = {};
 
     Adafruit_ST7735* _tft = nullptr;
 
@@ -104,6 +111,51 @@ private:
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
         canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 54, 1);
         canvas.print("HI:"); canvas.print(_highScore);
+    }
+
+    // Points for every hazard got past this frame, each with its popup.
+    void scoreClearedHazards(AudioEngine &audio) {
+        const float px = _player.getX();
+        float x, y;
+        int pts;
+        while ((pts = _platforms.takeCleared(px, x, y)) > 0 || (pts = _boulders.takeCleared(px, x, y)) > 0) {
+            _score += pts;
+            addPopup(x, y, pts);
+            if (!_demo) audio.playSound(1500, 20);
+        }
+    }
+
+    void addPopup(float x, float y, int points) {
+        Popup* slot = &_popups[0];
+        for (auto &p : _popups) {
+            if (!p.active) { slot = &p; break; }
+            if (p.at < slot->at) slot = &p;   // all busy: the oldest goes
+        }
+        *slot = Popup{ x, y, points, millis(), true };
+    }
+
+    void updatePopups(float scrollSpeed) {
+        for (auto &p : _popups) {
+            if (!p.active) continue;
+            p.x -= scrollSpeed;
+            if (millis() - p.at >= ArcadeConfig::RUNNER_POPUP_MS) p.active = false;
+        }
+    }
+
+    void drawPopups(GFXcanvas16 &canvas) {
+        canvas.setTextSize(1);
+        for (const auto &p : _popups) {
+            if (!p.active) continue;
+            const unsigned long age = millis() - p.at;
+            if (age > ArcadeConfig::RUNNER_POPUP_MS - 200 && ((age / 60) & 1)) continue;   // blinks out
+            char buf[8];
+            snprintf(buf, sizeof(buf), "+%d", p.points);
+            const int w = (int)strlen(buf) * 6;
+            const int y = (int)p.y - (int)(age * 10 / ArcadeConfig::RUNNER_POPUP_MS);
+            canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+            canvas.setCursor((int)p.x - w / 2, max(y, ArcadeConfig::UI_MARGIN_TOP + 1));
+            canvas.print(buf);
+        }
     }
 
     void showBanner(const char* title, const char* sub, uint16_t subColor) {
@@ -223,6 +275,7 @@ private:
         _diedThisStage = false;
         _jumpPressedAt = 0;
         _particles.clearAll();
+        for (auto &p : _popups) p.active = false;
         _platforms.initGame(stage);
         _enemies.initGame();
         _boulders.initGame();
@@ -506,6 +559,8 @@ public:
 
             _particles.update();
             _platforms.update();
+            _backdrop.update(_platforms.getScrollSpeed());
+            updatePopups(_platforms.getScrollSpeed());
             _platforms.advanceDifficulty();
             checkStageProgress(audio);
 
@@ -620,16 +675,15 @@ public:
                 _phase = PHASE_DEATH;
                 _phaseTimer = millis();
 
-                canvas.fillRect(0, 11, ArcadeConfig::LANDSCAPE_WIDTH,
-                                ArcadeConfig::LANDSCAPE_HEIGHT - 11, ArcadeConfig::COLOR_BLACK);
+                _backdrop.render(canvas, 11, _platforms.getLoop());
                 _particles.render(canvas, 11);
                 drawUI(canvas);
                 flushLandscape(canvas);
                 return true;
             }
 
-            canvas.fillRect(0, 11, ArcadeConfig::LANDSCAPE_WIDTH,
-                            ArcadeConfig::LANDSCAPE_HEIGHT - 11, ArcadeConfig::COLOR_BLACK);
+            scoreClearedHazards(audio);
+            _backdrop.render(canvas, 11, _platforms.getLoop());
             _platforms.render(canvas);
             _particles.render(canvas, 11);
             _powerUp.render(canvas);
@@ -637,6 +691,7 @@ public:
             _enemies.render(canvas, _platforms.getLoop());
             _boulders.render(canvas, _platforms, _platforms.getLoop());
             _player.render(canvas);
+            drawPopups(canvas);
             drawBanner(canvas);
             if (_demo) drawDemoOverlay(canvas);
 
@@ -653,8 +708,7 @@ public:
         // ---- PHASE: DEATH — let the disintegration play out ----
         if (_phase == PHASE_DEATH) {
             _particles.update();
-            canvas.fillRect(0, 11, ArcadeConfig::LANDSCAPE_WIDTH,
-                            ArcadeConfig::LANDSCAPE_HEIGHT - 11, ArcadeConfig::COLOR_BLACK);
+            _backdrop.render(canvas, 11, _platforms.getLoop());
             _particles.render(canvas, 11);
             drawUI(canvas);
             if (_demo) drawDemoOverlay(canvas);
