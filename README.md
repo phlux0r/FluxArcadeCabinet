@@ -192,7 +192,8 @@ background art's menu box, leaving the box for the game list: six rows fit,
 and a seventh would need a tighter row pitch. The hint uses the 5px TomThumb
 font, centred, at a 9px pitch (baselines 129/138/147): the box's border is
 row 123, and the last line sits where the art's INSERT COIN used to be
-(painted out: the starfield below it copied up over the text).
+(it and CREDITS 00 are painted out: neighbouring starfield copied over the
+text).
 
 **B** in the launcher opens **SETUP**: MASTER, MUSIC and FX volume bars
 (joystick up/down to pick, left/right to set, 0 is off), HIGH SCORES and
