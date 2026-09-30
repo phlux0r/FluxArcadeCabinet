@@ -112,6 +112,7 @@ file; `esptool.py flash_id` confirms which chip you have.
 | Audio | MAX98357A I2S amplifier + speaker |
 | Storage | SD card (shared SPI) |
 | Controls | X-Y joystick + 2 buttons |
+| Power | LiPo on the board's battery pads, momentary power button, amp power toggle |
 
 ## Pin Assignments (ArcadeConfig.h is the single source of truth)
 
@@ -129,6 +130,30 @@ file; `esptool.py flash_id` confirms which chip you have.
 | JOY Y | 17 |
 | BTN A | 4 |
 | BTN B | 21 |
+| Power button | 6 |
+| Amp SD_MODE | 5 |
+
+## Power
+
+The cabinet runs from a LiPo wired to the ESP32 board's battery pads (B+/B-).
+It stays connected all the time, so the board's charge circuit keeps
+charging it over USB even while the cabinet is "off". Nothing cuts the
+battery; off is the ESP32's deep sleep, a few µA
+(`src/cabinet/PowerManager.h`).
+
+- **Power button** (momentary, GPIO 6 to GND, internal pull-up): hold it
+  for 2s **in the launcher menu** to turn off: the backlight, onboard RGB
+  LED and amplifier go off and the ESP32 sleeps. It's only checked in the
+  menu, so a hold mid-game can't switch the cabinet off. Press it again to
+  turn on: waking is a reset, so the cabinet boots as if from cold.
+- **Amplifier shutdown** (GPIO 5 to the MAX98357A's SD_MODE, with a ~100k
+  pull-up to VDD so the amp is on by default): driven low before sleep,
+  which shuts the amp down, and held low through sleep (`gpio_hold`), since
+  otherwise the pull-up would switch it back on the moment the ESP32 stops
+  driving the pin. Driven high again on wake.
+- **Amp power toggle**: a plain toggle switch in the amplifier's supply, to
+  silence the speaker entirely. It's hardware only; the firmware doesn't
+  see it.
 
 ## Controls
 
@@ -137,6 +162,7 @@ file; `esptool.py flash_id` confirms which chip you have.
 | Joystick | Move / steer |
 | Button A | Fire / thrust / confirm |
 | Button B (hold 2s) | Return to launcher |
+| Power button (hold 2s, in the menu) | Turn off; press to turn on (see Power) |
 
 Tank Flux differs: **hold B** strafes while driving, so quitting mid-game is
 **hold A+B** for 2s instead (a progress bar appears once you've held them long
