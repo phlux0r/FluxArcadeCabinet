@@ -392,12 +392,14 @@ void StarFluxGame::drawTrench(GFXcanvas16 &canvas) {
 }
 
 // The ship's shadow on the ground or the trench floor: the pixels under it
-// halved in brightness.
+// at a quarter brightness, with a dotted drop line up to the ship, so how
+// high you are over the ground (and short pillars and towers) reads at a
+// glance.
 void StarFluxGame::drawShadow(GFXcanvas16 &canvas) {
     if (_stageNum == STAGE_BELT || !_shipSprite.enabled) return;
-    float sx, sy;
+    float sx, sy, tx, ty;
     if (!project(_shipX, floorY(), SHIP_Z, sx, sy)) return;
-    const float half = 95.0f * pixelsPerUnit(SHIP_Z);
+    const float half = 110.0f * pixelsPerUnit(SHIP_Z);
     const int w = canvas.width(), h = canvas.height();
     uint16_t* buf = canvas.getBuffer();
     for (int dy = -2; dy <= 2; ++dy) {
@@ -407,8 +409,17 @@ void StarFluxGame::drawShadow(GFXcanvas16 &canvas) {
         for (int x = (int)sx - span; x <= (int)sx + span; ++x) {
             if (x < 0 || x >= w) continue;
             uint16_t &p = buf[y * w + x];
-            p = (p >> 1) & 0x7BEF;
+            p = (p >> 2) & 0x39E7;
         }
+    }
+    if (!project(_shipX, _shipY, SHIP_Z, tx, ty)) return;
+    const int steps = (int)fabsf(sy - ty);
+    for (int i = 3; i < steps; i += 3) {
+        float t = (float)i / (float)steps;
+        int x = (int)(sx + (tx - sx) * t), y = (int)(sy + (ty - sy) * t);
+        if (x < 0 || x >= w || y < 0 || y >= h) continue;
+        uint16_t &p = buf[y * w + x];
+        p = (p >> 2) & 0x39E7;
     }
 }
 
@@ -591,6 +602,74 @@ bool StarFluxGame::shotBlocked(const Shot &s) const {
         if (s.x >= b.x0 && s.x <= b.x1 && s.y >= b.y0 && s.y <= b.y1) return true;
     }
     return false;
+}
+
+// The nearest obstacle not yet passed, within AID_RANGE: the z of its
+// front face. A barrier's boxes all share it.
+bool StarFluxGame::nextObstacle(float &front) const {
+    bool found = false;
+    for (const auto &b : _boxes) {
+        if (!b.active || b.z + b.depth * 0.5f < SHIP_Z) continue;
+        const float f = b.z - b.depth * 0.5f;
+        if (f - SHIP_Z > AID_RANGE) continue;
+        if (!found || f < front) { front = f; found = true; }
+    }
+    return found;
+}
+
+// Would the ship, where it is now, get through the obstacle at this front?
+// The same test updateBoxes() makes, against every box of it; a gate
+// counts if it will be on when it gets here.
+bool StarFluxGame::passClear(float front) const {
+    const float r = SHIP_HIT_R * 0.7f;
+    for (const auto &b : _boxes) {
+        if (!b.active || fabsf(b.z - b.depth * 0.5f - front) > 60.0f) continue;
+        if (b.gate) {
+            const float ms = (b.z - SHIP_Z) / FLY_SPEED * (float)REFERENCE_FRAME_MS;
+            if (!gateOn(b, millis() + (unsigned long)max(0.0f, ms))) continue;
+        }
+        float nx = clampf(_shipX, b.x0, b.x1), ny = clampf(_shipY, b.y0, b.y1);
+        float dx = _shipX - nx, dy = _shipY - ny;
+        if (dx * dx + dy * dy < r * r) return false;
+    }
+    return true;
+}
+
+// Flight aids for the next obstacle: its front face outlined, so the gaps
+// stand out, and a diamond on it where the ship will pass. Yellow and green
+// while that's clear; the outline and diamond blink red on a collision
+// course.
+void StarFluxGame::drawFlightAids(GFXcanvas16 &canvas) {
+    if (_phase != PHASE_PLAYING || _stage != STAGE_RUN) return;
+    float front;
+    if (!nextObstacle(front)) return;
+    const float z = max(front, SHIP_Z + 30.0f);
+    const bool clear = passClear(front);
+    const bool blink = (millis() / 120) & 1;
+    const uint16_t edge = clear ? rgb(255, 214, 80) : blink ? rgb(150, 20, 20) : rgb(255, 50, 50);
+    for (const auto &b : _boxes) {
+        if (!b.active || b.gate || fabsf(b.z - b.depth * 0.5f - front) > 60.0f) continue;
+        float xa, ya, xb, yb, xc, yc, xd, yd;
+        if (!project(b.x0, b.y0, z, xa, ya) || !project(b.x1, b.y0, z, xb, yb) ||
+            !project(b.x1, b.y1, z, xc, yc) || !project(b.x0, b.y1, z, xd, yd)) continue;
+        canvas.drawLine((int)xa, (int)ya, (int)xb, (int)yb, edge);
+        canvas.drawLine((int)xb, (int)yb, (int)xc, (int)yc, edge);
+        canvas.drawLine((int)xc, (int)yc, (int)xd, (int)yd, edge);
+        canvas.drawLine((int)xd, (int)yd, (int)xa, (int)ya, edge);
+    }
+    float sx, sy;
+    if (!project(_shipX, _shipY, z, sx, sy)) return;
+    if (!clear && blink) return;
+    const uint16_t col = clear ? rgb(90, 255, 120) : rgb(255, 60, 60);
+    int s = (int)(SHIP_HIT_R * 0.7f * pixelsPerUnit(z) + 0.5f);
+    if (s < 3) s = 3;
+    const int x = (int)sx, y = (int)sy;
+    for (int k = s; k <= s + 1; ++k) {   // two pixels thick
+        canvas.drawLine(x - k, y, x, y - k, col);
+        canvas.drawLine(x, y - k, x + k, y, col);
+        canvas.drawLine(x + k, y, x, y + k, col);
+        canvas.drawLine(x, y + k, x - k, y, col);
+    }
 }
 
 // Turrets ride their towers towards you, spinning, and fire while they're

@@ -80,7 +80,7 @@ private:
     // Optional sounds (see the list in README.md): each is played if it's on
     // the card, else its fallback (another WAV, or a tone).
     enum Sfx : uint8_t { SFX_POP, SFX_HIT, SFX_ARMOR, SFX_BOSS_WARN, SFX_BOSS_FIRE, SFX_BURST,
-                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_COUNT };
+                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_POWER, SFX_COUNT };
 
     struct Fighter {
         Renderer::Object* obj = nullptr;
@@ -188,6 +188,9 @@ private:
     Fighter  _fighters[FIGHTER_POOL];
     Rock     _rocks[ROCK_POOL];
     Ring     _rings[RING_POOL];
+    Ring     _pod;                   // the rapid-fire pod (a ring's worth of state)
+    bool     _rapid = false;         // got it: double fire rate until a life is lost
+    bool     _segPodDone = false;
     Blast    _blasts[8];
     Box      _boxes[BOX_POOL];
     Turret   _turrets[TURRET_POOL];
@@ -295,6 +298,8 @@ private:
     void drawSpace(GFXcanvas16 &canvas);
     void drawStars(GFXcanvas16 &canvas);
     void drawRings(GFXcanvas16 &canvas);
+    void drawPod(GFXcanvas16 &canvas);
+    void drawFlightAids(GFXcanvas16 &canvas);
     void drawShots(GFXcanvas16 &canvas);
     void drawBlasts(GFXcanvas16 &canvas);
     void drawReticle(GFXcanvas16 &canvas);
@@ -321,6 +326,10 @@ private:
     void  destroyRock(Rock &r, bool byPlayer, AudioEngine &audio);
     void  spawnRing();
     void  updateRings(AudioEngine &audio);
+    void  spawnPod();
+    void  updatePod(AudioEngine &audio);
+    bool  nextObstacle(float &front) const;
+    bool  passClear(float front) const;
     void  damageShip(int amount, AudioEngine &audio);
     void  shipDown(AudioEngine &audio);
     void  retrySegment();

@@ -61,7 +61,8 @@ faster fire and tougher bosses.
    spreads between missiles.
 3. **Trench Run** (a space station): barriers across the trench with a slot
    to fly through (upright, level or a window), laser gates that blink on
-   and off (fly over or under while they're on), turret towers. The
+   and off (they can't be shot: fly over or under, or through while
+   they're off, when a faint line shows where they'll be), turret towers. The
    reactor at the trench's end: two emitters; then spiral streams; then a
    rotating shield fan over its core, which only shots through the gap
    reach.
@@ -70,6 +71,17 @@ A shield bar and 3 lives: an empty shield costs a life and restarts the
 wave (or field) you were in; a boss keeps the damage you'd done. Two sights
 show your line of fire, red when a target is on it. Shooting down a whole
 wave scores a 500 bonus.
+
+Flight aids on stages 2 and 3: the next pillar, arch, tower or barrier has
+its front face outlined, and a diamond on it marks where the ship will pass
+if you hold your line. Yellow outline and green diamond: clear. Both blink
+red: you'll hit it, so steer until they turn back. A laser gate counts only
+if it will be on when you reach it. The ship's shadow on the ground, with a
+dotted line up to the ship, shows your height over short pillars and towers.
+
+From the second loop, a spinning gold rapid-fire pod flies in twice a stage
+while you haven't got it. Fly into it for double the fire rate (tapping and
+held) and 500 points, shown as "2X" under the score, until you lose a life.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -410,6 +422,7 @@ the last column says. Mono 16-bit 44.1kHz, short (they're cached).
 | `star_boss_die.wav` | a boss destroyed | ~2.5s | `explosion.wav` |
 | `star_bomb.wav` | a smart bomb goes off | ~1s | `explosion.wav` |
 | `star_ring.wav` | a shield ring collected | ~0.4s | `powerup.wav` |
+| `star_power.wav` | the rapid-fire pod collected | ~0.5s | `powerup.wav` |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,

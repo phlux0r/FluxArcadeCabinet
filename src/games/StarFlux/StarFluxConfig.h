@@ -66,7 +66,7 @@ inline constexpr unsigned long SPAWN_INVULN_MS = 2200;
 inline constexpr unsigned long DOWN_MS        = 1800;  // ship destroyed: pause before the retry
 
 // --- Lasers -------------------------------------------------------------------
-inline constexpr int   SHOT_POOL       = 10;
+inline constexpr int   SHOT_POOL       = 24;    // room for rapid fire
 inline constexpr float SHOT_SPEED      = 150.0f;    // per frame
 inline constexpr float SHOT_RANGE      = 6500.0f;
 inline constexpr float SHOT_LEN        = 380.0f;    // drawn length
@@ -74,6 +74,8 @@ inline constexpr float LASER_SPREAD    = 48.0f;     // the twin beams, +- x
 inline constexpr float SHOT_HIT_PAD    = 40.0f;     // added to a target's radius
 inline constexpr unsigned long FIRE_TAP_MS  = 110;  // fastest tapping
 inline constexpr unsigned long FIRE_HOLD_MS = 190;  // held: steady fire
+inline constexpr unsigned long RAPID_TAP_MS  = FIRE_TAP_MS / 2;    // with the rapid-fire pod
+inline constexpr unsigned long RAPID_HOLD_MS = FIRE_HOLD_MS / 2;
 inline constexpr float RETICLE_NEAR_Z  = SHIP_Z + 1300.0f;
 inline constexpr float RETICLE_FAR_Z   = SHIP_Z + 3000.0f;
 
@@ -126,6 +128,22 @@ inline constexpr int   RING_POOL       = 2;
 inline constexpr float RING_R          = 170.0f;
 inline constexpr float RING_CATCH_R    = 150.0f;    // centre within this: collected
 inline constexpr int   RING_POINTS     = 200;
+
+// --- Rapid-fire pod -----------------------------------------------------------------
+// From the second loop, one flies in during segments POD_SEG_A and POD_SEG_B
+// of each stage while you haven't got it. Doubles the fire rate until you
+// lose a life.
+inline constexpr int   POD_SEG_A       = 2;
+inline constexpr int   POD_SEG_B       = 6;
+inline constexpr unsigned long POD_AFTER_MS = 2500; // into the segment
+inline constexpr float POD_R           = 80.0f;
+inline constexpr float POD_CATCH_R     = 140.0f;
+inline constexpr int   POD_POINTS      = 500;
+
+// --- Flight aids ------------------------------------------------------------------
+// The next obstacle ahead gets its front face outlined, and a marker on it
+// where the ship will pass: green clear, red a hit.
+inline constexpr float AID_RANGE       = 4200.0f;   // shown this far ahead of the ship
 
 // --- Stage 2: the planet --------------------------------------------------------
 inline constexpr float GROUND_Y        = -430.0f;   // world height of the ground
