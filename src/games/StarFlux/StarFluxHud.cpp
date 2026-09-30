@@ -61,6 +61,13 @@ void StarFluxGame::drawHUD(GFXcanvas16 &canvas) {
     canvas.setCursor(lx + 11, 1);
     canvas.print(_lives > 0 ? _lives : 0);
 
+    // Rapid fire: "2X" under the score.
+    if (_rapid) {
+        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        canvas.setCursor(2, 11);
+        canvas.print("2X");
+    }
+
     if (_bossActive && _stage != STAGE_BOSS_DEATH) {
         int16_t hw = (int16_t)(100L * bossHp() / (_bossMaxHp > 0 ? _bossMaxHp : 1));
         canvas.fillRect(30, 11, 100, 2, rgb(70, 0, 50));

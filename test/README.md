@@ -41,9 +41,11 @@ Scenarios (every game has the first four):
 | `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier | Shield pinned: every stage and boss, into the next loop |
 | `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout | Attract exit, a B tap (one bomb), hold-B quit, a life lost (the segment must restart: PASS/FAIL), last life lost, game over |
 | `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier | `god`, plus render cost by stage and segment |
-| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, each stage's hazards, the three bosses, the title |
+| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, each stage's hazards (with the flight aids and the rapid-fire pod), the three bosses, the title |
 | `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent | Same |
 | `demoexit` | | Presses A mid-demo: the real game must start clean. Prints PASS/FAIL and fails the build script | Same |
+| `passive` | | | Shield pinned and the bot never fires: waves must still end on their own. Any non-boss segment over 40s prints STALL and fails |
+| `rapid` | | | No pod in loop 1; in loop 2 the pod comes, catching it doubles the fire rate, a lost life takes it away; the flight-aid marker against a barrier and a gate. PASS/FAIL |
 
 `profile` reports Jet's per-frame triangle counts and host render time,
 bucketed by how many tanks were on screen, plus the scene's total object and

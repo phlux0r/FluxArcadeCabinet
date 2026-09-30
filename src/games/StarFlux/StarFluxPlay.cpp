@@ -67,6 +67,7 @@ void StarFluxGame::startSegment(int index) {
     _nextFieldAt = millis() + 600;
     _fieldCount = 0;
     _segRingDone = !segment().ring;
+    _segPodDone = false;
     switch (segment().type) {
         case SEG_WAVE:
             _waveLeft[_seg] = 0;
@@ -149,6 +150,10 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
                 spawnRing();
                 _segRingDone = true;
             }
+            if (!_segPodDone && millis() - _segAt > POD_AFTER_MS) {
+                _segPodDone = true;
+                if (_loop > 1 && !_rapid && (_seg == POD_SEG_A || _seg == POD_SEG_B)) spawnPod();
+            }
             if (segmentDone() && _seg + 1 < segmentCount()) startSegment(_seg + 1);
             break;
 
@@ -199,6 +204,7 @@ void StarFluxGame::retrySegment() {
     for (auto &f : _fighters) { f.active = false; if (f.obj) f.obj->enabled = false; }
     for (auto &r : _rocks) { r.active = false; if (r.obj) r.obj->enabled = false; }
     for (auto &r : _rings) r.active = false;
+    _pod.active = false;
     hideWorld();
     _bombActive = false;
     _shield = SHIELD_MAX;
@@ -245,13 +251,16 @@ void StarFluxGame::updateShip(const InputState &input) {
     _bank += (target - _bank) * clampf(0.25f * fs, 0.0f, 1.0f);
 }
 
-// A: a shot per press, as fast as you can tap; held, steady fire.
+// A: a shot per press, as fast as you can tap; held, steady fire. Twice
+// as fast with the rapid-fire pod.
 void StarFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
     const bool pressed = input.btnA && !_prevA;
     _prevA = input.btnA;
     if (!input.btnA) return;
     unsigned long since = millis() - _lastShotAt;
-    if (since < (pressed ? FIRE_TAP_MS : FIRE_HOLD_MS)) return;
+    const unsigned long gap = _rapid ? (pressed ? RAPID_TAP_MS : RAPID_HOLD_MS)
+                                     : (pressed ? FIRE_TAP_MS : FIRE_HOLD_MS);
+    if (since < gap) return;
     for (auto &s : _shots) {
         if (s.active) continue;
         s.active = true;
@@ -550,6 +559,31 @@ void StarFluxGame::updateRings(AudioEngine &audio) {
     }
 }
 
+// The rapid-fire pod, somewhere you can reach, far ahead.
+void StarFluxGame::spawnPod() {
+    _pod.active = true;
+    _pod.resolved = false;
+    _pod.x = (float)random(-(long)(BOX_X - 90), (long)(BOX_X - 90) + 1);
+    _pod.y = (float)random((long)(BOX_Y_MIN + 90), (long)(BOX_Y_MAX - 90) + 1);
+    _pod.z = ROCK_SPAWN_Z;
+}
+
+void StarFluxGame::updatePod(AudioEngine &audio) {
+    if (!_pod.active) return;
+    _pod.z -= FLY_SPEED * _frameScale;
+    if (_pod.z < CAMERA_NEAR + 10) { _pod.active = false; return; }
+    if (_pod.resolved || _pod.z > SHIP_Z) return;
+    _pod.resolved = true;
+    float dx = _pod.x - _shipX, dy = _pod.y - _shipY;
+    if (_stage == STAGE_RUN && dx * dx + dy * dy < POD_CATCH_R * POD_CATCH_R) {
+        _pod.active = false;
+        _rapid = true;
+        _score += POD_POINTS;
+        setBanner("RAPID FIRE", ArcadeConfig::COLOR_YELLOW, 1500);
+        sfx(audio, SFX_POWER);
+    }
+}
+
 void StarFluxGame::damageShip(int amount, AudioEngine &audio) {
     if (_stage != STAGE_RUN || before(_invulnUntil)) return;
     _shield -= amount;
@@ -568,6 +602,7 @@ void StarFluxGame::damageShip(int amount, AudioEngine &audio) {
 // updateStage() retries the segment or ends the game.
 void StarFluxGame::shipDown(AudioEngine &audio) {
     --_lives;
+    _rapid = false;
     _stage = STAGE_DOWN;
     _stageAt = millis();
     _bombActive = false;

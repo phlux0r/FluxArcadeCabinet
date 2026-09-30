@@ -129,7 +129,20 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
             g.spawnTower(-200, 4500, true);
         }
         for (auto &t : g._turrets) if (t.active) { t.obj->setPosition((int32_t)t.x, (int32_t)t.y, (int32_t)t.z); }
+        if (st == 1) {   // the rapid-fire pod, and its HUD mark
+            g._rapid = true;
+            g._pod.active = true; g._pod.x = -80; g._pod.y = 120; g._pod.z = 2200;
+        }
         frame(st == 1 ? "pose_planet" : "pose_trench");
+        g._rapid = false; g._pod.active = false;
+        if (st == 2) {   // the barrier nearest: outlined, the marker red, then green in the gap
+            for (auto &b : g._boxes) if (b.gate) b.active = false;
+            g._shipX = 280;
+            g_fakeMillis = (g_fakeMillis / 240) * 240;   // the red marker's blink: on
+            frame("pose_trench_hit");
+            g._shipX = 50; g._shipY = 0;
+            frame("pose_trench_clear");
+        }
         g.hideWorld();
         g._shipX = 0; g._shipY = 0; g._bank = 0;
         g.startBoss();
@@ -161,6 +174,7 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
 //   idle     no input at all: the attract cycle (title, how-to-play, demo)
 //   demoexit press A mid-demo: the real game must start clean (prints PASS/FAIL)
+//   rapid    the rapid-fire pod (loop 2 on) and the flight-aid marker (PASS/FAIL)
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
     const bool profile = strcmp(mode, "profile") == 0;
@@ -212,6 +226,84 @@ int main(int argc, char** argv) {
                (int)g._phase, (int)g._stage, g._seg, g._score, g._lives, g._shield, (int)g._silent,
                visible, live, ok ? "PASS" : "FAIL");
         g.onExit();
+        return ok ? 0 : 1;
+    }
+
+    if (strcmp(mode, "rapid") == 0) {
+        // The rapid-fire pod and the flight aids.
+        bool ok = true;
+        auto check = [&](bool c, const char* what) { printf("%-52s %s\n", what, c ? "PASS" : "FAIL"); ok = ok && c; };
+        auto step = [&](const InputState &in) { g.update(canvas, in, audio); g_fakeMillis += 33; };
+        InputState none{};
+        for (long f = 0; f < 3000 && g._phase != StarFluxGame::PHASE_PLAYING; ++f) {
+            InputState in{}; in.btnA = in.btnAPressed = (f & 1); step(in);
+        }
+        // Loop 1: no pod, even through the segments that bring one.
+        bool podSeen = false;
+        for (long f = 0; f < 6000 && !(g._stage == StarFluxGame::STAGE_RUN && g._seg > POD_SEG_A); ++f) {
+            g._shield = SHIELD_MAX; step(none); podSeen |= g._pod.active;
+        }
+        check(!podSeen && g._seg > POD_SEG_A, "loop 1: no pod");
+        // Loop 2, from the pod's segment: it comes, and flying into it gives rapid fire.
+        g._loop = 2;
+        g.startSegment(POD_SEG_A);
+        long f = 0;
+        for (; f < 400 && !g._pod.active; ++f) { g._shield = SHIELD_MAX; step(none); }
+        check(g._pod.active, "loop 2: pod flies in");
+        const long score0 = g._score;
+        for (f = 0; f < 400 && g._pod.active && !g._rapid; ++f) {
+            g._shield = SHIELD_MAX; g._shipX = g._pod.x; g._shipY = g._pod.y; step(none);
+        }
+        check(g._rapid && g._score >= score0 + POD_POINTS, "caught: rapid fire and points");
+        // Held fire for 1.5s, with and without: about twice the shots.
+        auto shotsIn = [&](bool rapid) {
+            g._rapid = rapid;
+            for (auto &s : g._shots) s.active = false;
+            int n = 0; bool was[SHOT_POOL] = {};
+            for (int i = 0; i < 45; ++i) {
+                g._shield = SHIELD_MAX;
+                InputState in{}; in.btnA = true; in.btnAPressed = i == 0; step(in);
+                for (int k = 0; k < SHOT_POOL; ++k) { if (g._shots[k].active && !was[k]) ++n; was[k] = g._shots[k].active; }
+            }
+            step(none); step(none);
+            return n;
+        };
+        const int slow = shotsIn(false), fast = shotsIn(true);
+        printf("held fire, 1.5s: %d shots normal, %d rapid\n", slow, fast);
+        check(fast >= slow * 2 - 2 && fast <= slow * 2 + 2, "rapid fire doubles the rate");
+        // Losing a life loses it.
+        g._stage = StarFluxGame::STAGE_RUN; g._invulnUntil = 0;
+        g.damageShip(SHIELD_MAX * 2, audio);
+        check(!g._rapid, "a life lost: rapid fire gone");
+        // Flight aids: a barrier with a gap at x=0, the ship in and out of it.
+        for (int i = 0; i < 80; ++i) step(none);   // the retry
+        for (auto &b : g._boxes) { b.active = false; if (b.obj) b.obj->enabled = false; }
+        const float z = SHIP_Z + 2000.0f;
+        g.spawnBox(-TRENCH_HALF_W, -150.0f, TRENCH_FLOOR, TRENCH_TOP, z, 160.0f);
+        g.spawnBox(150.0f, TRENCH_HALF_W, TRENCH_FLOOR, TRENCH_TOP, z, 160.0f);
+        float front = 0;
+        check(g.nextObstacle(front) && fabsf(front - (z - 80.0f)) < 1.0f, "next obstacle found");
+        g._shipX = 0; g._shipY = 0;
+        const bool inGap = g.passClear(front);
+        g._shipX = 200.0f;
+        const bool onWall = g.passClear(front);
+        g._shipX = 150.0f - SHIP_HIT_R * 0.7f - 2.0f;
+        const bool edge = g.passClear(front);
+        check(inGap && !onWall && edge, "marker: clear in the gap, a hit on the wall");
+        // A gate that will be off when it gets here is clear; on, a hit.
+        for (auto &b : g._boxes) b.active = false;
+        StarFluxGame::Box* gate = g.spawnGate(-100.0f, 100.0f, z);
+        g._shipX = 0; g._shipY = 0;
+        g.nextObstacle(front);
+        const unsigned long arrive = g_fakeMillis + (unsigned long)((z - SHIP_Z) / FLY_SPEED * REFERENCE_FRAME_MS);
+        gate->phase = 0;
+        while (!g.gateOn(*gate, arrive)) ++gate->phase;
+        const bool gateOn = g.passClear(front);
+        while (g.gateOn(*gate, arrive)) ++gate->phase;
+        const bool gateOff = g.passClear(front);
+        check(!gateOn && gateOff, "marker: a gate counts only if on when you get there");
+        g.onExit();
+        printf("%s\n", ok ? "PASS" : "FAIL");
         return ok ? 0 : 1;
     }
 

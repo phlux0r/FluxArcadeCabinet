@@ -347,6 +347,27 @@ void StarFluxGame::drawRings(GFXcanvas16 &canvas) {
     }
 }
 
+// The rapid-fire pod: a spinning gold diamond with a white core.
+void StarFluxGame::drawPod(GFXcanvas16 &canvas) {
+    if (!_pod.active) return;
+    float sx, sy;
+    if (!project(_pod.x, _pod.y, _pod.z, sx, sy)) return;
+    const float r = POD_R * pixelsPerUnit(_pod.z);
+    if (r < 1.5f) { canvas.drawPixel((int)sx, (int)sy, rgb(255, 220, 60)); return; }
+    const float spin = (float)(millis() % 900) * (2.0f * PI / 900.0f);
+    const int x = (int)sx, y = (int)sy, h = (int)(r + 0.5f);
+    const int hw = (int)(r * fabsf(cosf(spin)) + 0.5f);   // turning: the width comes and goes
+    const bool front = cosf(spin) >= 0;
+    const uint16_t face = front ? rgb(255, 200, 40) : rgb(200, 130, 20);
+    if (hw > 0) {
+        canvas.fillTriangle(x - hw, y, x, y - h, x + hw, y, face);
+        canvas.fillTriangle(x - hw, y, x, y + h, x + hw, y, lerp565(face, 0, 0.3f));
+    }
+    canvas.drawLine(x, y - h, x, y + h, rgb(255, 250, 200));
+    if (h > 4) canvas.fillCircle(x, y, h / 4, rgb(255, 255, 255));
+    if (h > 3 && ((millis() / 100) & 1)) canvas.drawCircle(x, y, h + 2, rgb(255, 230, 120));
+}
+
 // Twin green lasers, enemy shots (hot orange balls), and the bomb.
 void StarFluxGame::drawShots(GFXcanvas16 &canvas) {
     const uint16_t beam = rgb(70, 255, 110), core = rgb(220, 255, 220);

@@ -46,8 +46,9 @@ const SfxDef SFX[] = {
     { "/audio/star_boss_die.wav",  "/audio/explosion.wav", 0, 0 },     // SFX_BOSS_DIE
     { "/audio/star_bomb.wav",      "/audio/explosion.wav", 0, 0 },     // SFX_BOMB
     { "/audio/star_ring.wav",      "/audio/powerup.wav", 0, 0 },       // SFX_RING
+    { "/audio/star_power.wav",     "/audio/powerup.wav", 0, 0 },       // SFX_POWER
 };
-static_assert(sizeof(SFX) / sizeof(SFX[0]) == 11, "one SfxDef per Sfx");
+static_assert(sizeof(SFX) / sizeof(SFX[0]) == 12, "one SfxDef per Sfx");
 }  // namespace
 
 // Which optional sounds are on the card, checked once: a missing file
@@ -85,6 +86,7 @@ void StarFluxGame::startNewGame(AudioEngine &audio) {
 // Everything a run starts from, shared by a real game and the attract demo.
 void StarFluxGame::resetRun() {
     _loop = 1;
+    _rapid = false;
     _stageNum = STAGE_BELT;
     _lives = LIVES;
     _score = 0;
@@ -118,6 +120,7 @@ void StarFluxGame::clearField() {
     for (auto &f : _fighters) { f.active = false; if (f.obj) f.obj->enabled = false; }
     for (auto &r : _rocks) { r.active = false; if (r.obj) r.obj->enabled = false; }
     for (auto &r : _rings) r.active = false;
+    _pod.active = false;
     for (auto &b : _blasts) b.active = false;
     for (auto &p : _particles.pool) p.active = false;
     _bombActive = false;
@@ -288,6 +291,7 @@ void StarFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
     updateBoxes(audio);
     updateTurrets(audio);
     updateRings(audio);
+    updatePod(audio);
 }
 
 void StarFluxGame::renderRun(GFXcanvas16 &canvas) {
@@ -310,10 +314,12 @@ void StarFluxGame::renderWorld(GFXcanvas16 &canvas) {
     drawShadow(canvas);
     drawStars(canvas);
     drawRings(canvas);
+    drawPod(canvas);
     _scene->render();
     _particles.update((1.0f / 60.0f) * _frameScale);
     _particles.render(_scene, &_camera, canvas.width(), canvas.height());
     drawGates(canvas);
+    drawFlightAids(canvas);
     drawFan(canvas);
     drawShots(canvas);
     drawBlasts(canvas);
