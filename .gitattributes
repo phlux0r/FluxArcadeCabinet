@@ -1,0 +1,2 @@
+# SD card audio is large binary data: keep it in Git LFS
+*.wav filter=lfs diff=lfs merge=lfs -text

@@ -231,6 +231,8 @@ FluxArcadeCabinet/
 ├── include/
 │   └── JetConfig.hpp           # Jet's per-frontend render config (see Jet's own README)
 │
+├── sd/audio/                  # SD card contents (WAVs, in Git LFS) — copy to the card's /audio/
+│
 └── src/                        # PlatformIO source root
     ├── main.cpp                # State machine: launcher <-> games, frame timing
     │
@@ -373,7 +375,14 @@ failures, and every 2s while anything is happening a line like
 
 Optional — without a card (or without a given file) the cabinet falls back to
 PROGMEM samples or generated melodies. WAV files live in a single flat
-`/audio/` folder on the card:
+`/audio/` folder on the card. The repo's `sd/` folder mirrors the card:
+copy `sd/audio/` onto the card's root as `/audio/`.
+
+The WAVs are stored with [Git LFS](https://git-lfs.com/) (see
+`.gitattributes`). Run `git lfs install` once before cloning, otherwise
+`sd/audio/` holds small pointer files instead of audio; `git lfs pull`
+fetches the real files into an existing clone.
+
 
 | File | Used by |
 |---|---|
