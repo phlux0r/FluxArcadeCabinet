@@ -20,6 +20,7 @@ typedef uint8_t byte;
 #define LOW 0
 #define INPUT 0
 #define INPUT_PULLUP 2
+#define OUTPUT 1
 #define constrain(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
 
 inline uint16_t pgm_read_word(const void* p) { uint16_t v; memcpy(&v, p, 2); return v; }
@@ -55,6 +56,18 @@ inline HardwareSerialStub Serial;
 
 inline float radians(float d) { return d * (float)PI / 180.0f; }
 inline float degrees(float r) { return r * 180.0f / (float)PI; }
-inline int  analogRead(int) { return 2048; }
-inline int  digitalRead(int) { return HIGH; }
+// Pin levels a test can set (buttons are active LOW; the joystick rests at
+// mid-scale); nothing sets them otherwise.
+inline int g_pinLevel[64] = {
+    HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH,
+    HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH,
+    HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH,
+    HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH };
+inline int g_analogLevel[64] = {
+    2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048,
+    2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048,
+    2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048,
+    2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048 };
+inline int  analogRead(int pin) { return (pin >= 0 && pin < 64) ? g_analogLevel[pin] : 2048; }
+inline int  digitalRead(int pin) { return (pin >= 0 && pin < 64) ? g_pinLevel[pin] : HIGH; }
 inline void pinMode(int, int) {}

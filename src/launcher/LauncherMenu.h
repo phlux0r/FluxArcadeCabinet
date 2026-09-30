@@ -10,14 +10,19 @@
 #include "cabinet/AudioEngine.h"
 #include "../assets/shared/ArcadeScreen.h"
 
+class IGame;
+
+// A menu entry: its name, and how to build the game when it's launched
+// (see makeGame() in main.cpp; `mem` gets the block to free on exit).
 struct GameEntry {
-    const char*  name;
-    CabinetState state;
+    const char* name;
+    IGame* (*create)(void*& mem);
 };
 
 class LauncherMenu {
 private:
     int  _selection     = 0;
+    int  _top           = 0;      // first game shown: the list scrolls
     bool _joyWasNeutral = true;
     bool _joyXWasNeutral = true;
 
@@ -42,6 +47,21 @@ private:
     bool _aArmed   = false;
 
     enum { SET_MASTER, SET_MUSIC, SET_FX, SET_BACK, SET_COUNT };
+
+    // The game list: VISIBLE_ROWS at a 12px pitch from LIST_Y, inside the
+    // background art's menu box (border rows 34 and 123, columns 24 and
+    // 104), with room above and below for the scroll arrows.
+    static const int VISIBLE_ROWS = 6;
+    static const int LIST_Y       = 44;
+    static const int ROW_PITCH    = 12;
+
+    void scrollToSelection() {
+        if (_selection < _top) _top = _selection;
+        if (_selection >= _top + VISIBLE_ROWS) _top = _selection - VISIBLE_ROWS + 1;
+        int maxTop = _gameCount > VISIBLE_ROWS ? _gameCount - VISIBLE_ROWS : 0;
+        if (_top > maxTop) _top = maxTop;
+        if (_top < 0) _top = 0;
+    }
 
     static const int VOL_STEPS = 10;
     static constexpr float VOL_STEP_SIZE = 1.0f / VOL_STEPS;
@@ -111,14 +131,23 @@ private:
     void renderMenu(GFXcanvas16 &canvas) {
         drawBackground(canvas);
 
-        // Game list — rows packed tighter (12px pitch, 10px tall highlight,
-        // was 15/12) so a 5th entry still lands inside the background
-        // art's baked-in menu rectangle instead of spilling past it.
-        for (int i = 0; i < _gameCount; i++) {
-            int yPos = 38 + (i * 12);
+        // Game list: the VISIBLE_ROWS from _top, with an arrow above or
+        // below when there are more games that way.
+        const int shown = _gameCount < VISIBLE_ROWS ? _gameCount : VISIBLE_ROWS;
+        for (int r = 0; r < shown; r++) {
+            const int i = _top + r;
+            const int yPos = LIST_Y + r * ROW_PITCH;
             drawRow(canvas, yPos, i == _selection);
             canvas.setCursor(38, yPos);
             canvas.print(_games[i].name);
+        }
+        const int cx = 64;
+        if (_top > 0) {
+            canvas.fillTriangle(cx - 3, 40, cx + 3, 40, cx, 37, ArcadeConfig::COLOR_AMBER);
+        }
+        if (_top + VISIBLE_ROWS < _gameCount) {
+            const int y = LIST_Y + VISIBLE_ROWS * ROW_PITCH;
+            canvas.fillTriangle(cx - 3, y, cx + 3, y, cx, y + 3, ArcadeConfig::COLOR_AMBER);
         }
 
         drawHint(canvas, "[JOY] MOVE", "[BTN A] GO", "[BTN B] SETUP");
@@ -221,11 +250,12 @@ public:
         _games     = games;
         _gameCount = count;
         _selection = 0;
+        _top       = 0;
         loadSettings();
     }
 
+    // Back from a game, the list stays where it was: on the game just played.
     void onEnter(AudioEngine &audio) {
-        _selection      = 0;
         _joyWasNeutral  = true;
         _joyXWasNeutral = true;
         _blinkTimer     = millis();
@@ -237,15 +267,16 @@ public:
         audio.playTone(523, 80);
     }
 
-    CabinetState update(GFXcanvas16 &canvas,
-                        const InputState &input,
-                        AudioEngine &audio) {
+    // Returns the index of the game to launch, or -1 to stay in the menu.
+    int update(GFXcanvas16 &canvas,
+               const InputState &input,
+               AudioEngine &audio) {
         if (_games == nullptr || _gameCount == 0) {
             canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
             canvas.setTextColor(ArcadeConfig::COLOR_RED);
             canvas.setCursor(10, 70);
             canvas.print("NO GAMES FOUND");
-            return STATE_LAUNCHER_MENU;
+            return -1;
         }
 
         // --- Blink ---
@@ -268,13 +299,13 @@ public:
             else      updateSetup(input, aTap, audio);
             if (_inSetup) renderSetup(canvas);
             else          renderMenu(canvas);
-            return STATE_LAUNCHER_MENU;
+            return -1;
         }
 
         if (bTap) {
             openSetup(audio);
             renderSetup(canvas);
-            return STATE_LAUNCHER_MENU;
+            return -1;
         }
 
         // --- Y axis: menu navigation ---
@@ -286,10 +317,12 @@ public:
             if (input.joyDown) {
                 _selection--;
                 if (_selection < 0) _selection = _gameCount - 1;
+                scrollToSelection();
                 audio.playTone(660, 40);
             } else if (input.joyUp) {
                 _selection++;
                 if (_selection >= _gameCount) _selection = 0;
+                scrollToSelection();
                 audio.playTone(660, 40);
             }
         }
@@ -298,11 +331,11 @@ public:
         if (aTap && _gameCount > 0) {
             Serial.printf("[LAUNCHER] Launching: %s\n", _games[_selection].name);
             audio.playLaunchMelody();
-            return _games[_selection].state;
+            return _selection;
         }
 
         renderMenu(canvas);
-        return STATE_LAUNCHER_MENU;
+        return -1;
     }
 };
 

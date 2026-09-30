@@ -1,4 +1,4 @@
-# Host harnesses (Tank Flux, Tube Flux)
+# Host harnesses (Tank Flux, Tube Flux, Star Flux)
 
 Run the 3D games' real game logic and the real Jet rasteriser on a desktop,
 so a change can be checked without flashing the board. The point is regression
@@ -17,11 +17,13 @@ test/build.sh                  # build, run every game's scenarios, print summar
 test/build.sh god 30000        # one Tank Flux scenario, full trace
 test/build.sh god 30000 45     # ...at a 45ms frame time (~22fps)
 test/build.sh tube god 30000   # the same for Tube Flux (tank is the default)
+test/build.sh star god 12000   # and Star Flux
 test/build.sh audio            # the audio mixer/loader tests, full output
 test/build.sh --build-only
 ```
 
-The third argument is milliseconds of fake clock per frame, default 16. The
+The third argument is milliseconds of fake clock per frame, default 16 (33
+for Star Flux). The
 game reads it as its own frame time, so it sets the frame rate being
 simulated — useful now that movement scales with frame time (see
 REFERENCE_FRAME_MS). At 33 the scale is exactly 1.0, so a trace there should
@@ -31,17 +33,17 @@ Needs a host `g++` with C++17. Jet is picked up from `.pio/libdeps/` once
 `pio run` has fetched it, or from `JET_SRC=/path/to/Jet/src`. Build artifacts
 land in `test/.build/` (gitignored); delete it to force a rebuild.
 
-Scenarios (both games have the first four):
+Scenarios (every game has the first four):
 
-| Mode | Tank Flux | Tube Flux |
-|---|---|---|
-| `play` | Normal run: the bot dies and restarts, so game over is covered | Same; the bot looks only a short way ahead, so it gets caught |
-| `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier |
-| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout |
-| `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier |
-| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) |
-| `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent |
-| `demoexit` | | Presses A mid-demo: the real game must start clean. Prints PASS/FAIL and fails the build script |
+| Mode | Tank Flux | Tube Flux | Star Flux |
+|---|---|---|---|
+| `play` | Normal run: the bot dies and restarts, so game over is covered | Same; the bot looks only a short way ahead, so it gets caught | The autopilot with slow reactions and no bombs, so it takes hits and loses lives; prints each stage's results |
+| `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier | Shield pinned: every stage and boss, into the next loop |
+| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout | Attract exit, a B tap (one bomb), hold-B quit, a life lost (the segment must restart: PASS/FAIL), last life lost, game over |
+| `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier | `god`, plus render cost by stage and segment |
+| `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, each stage's hazards, the three bosses, the title |
+| `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent | Same |
+| `demoexit` | | Presses A mid-demo: the real game must start clean. Prints PASS/FAIL and fails the build script | Same |
 
 `profile` reports Jet's per-frame triangle counts and host render time,
 bucketed by how many tanks were on screen, plus the scene's total object and
@@ -58,7 +60,8 @@ DUMP_AT=500,4000 test/build.sh tube play 5000   # tube_000500.ppm, tube_004000.p
 ```
 
 Files land in `test/.build/`. The stub draws no text, so HUD text is absent;
-everything Jet or the game draws directly is there. For Tube Flux,
+everything Jet or the game draws directly is there, lines and circles
+included. For Tube Flux,
 `DUMP_STATE=1` also prints the angle, distance and camera rotation for each
 dumped frame, and `DEBUG_HITS=1` prints the situation (angle, roll speed,
 blocks nearby) every time the ship is hit.
@@ -67,7 +70,10 @@ Tube Flux's `pose` mode renders set-ups chosen to check conventions by eye:
 a block in lane 2 must be on the right wall, and on the floor once the ship
 rolls to 90 degrees. That is how Jet's roll and object-rotation directions
 were confirmed (`CAMERA_ROLL_SIGN`, `OBSTACLE_ROLL_SIGN`), and how the
-hand-drawn tunnel was checked against Jet's own projection.
+hand-drawn tunnel was checked against Jet's own projection. Star Flux's does
+the same for its camera roll and the fighters' yaw, pitch and roll
+(`CAMERA_ROLL_SIGN`, `YAW_SIGN`, `PITCH_SIGN`, `ROLL_SIGN`), and marks where
+its own `project()` puts each rock, which must be the rock's centre.
 
 ## Checking a change
 
@@ -101,8 +107,7 @@ being freed on exit to the launcher).
 - **Real timing.** The clock is fake and advanced a fixed step per frame, so
   nothing here reflects the frame rate on hardware. `profile` compares
   relative cost only.
-- **Most of the 2D games, and `main.cpp`.** Beyond Tank Flux and Tube
-  Flux, only the Runner and Asteroid attract demos are covered
+- **Most of the 2D games.** Beyond the 3D games, only the Runner and Asteroid attract demos are covered
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay.
 
@@ -113,12 +118,14 @@ good to ship". Hardware still decides that.
 
 ```
 test/
-├── build.sh                    # finds Jet, builds both harnesses + audio_test, runs
+├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner and Asteroid attract demos: idle + demoexit
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
+├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
 ├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
+├── starflux_harness.cpp        # Star Flux: the autopilot, scenarios, profile, poses
 └── stub/                       # shadows the hardware headers (-I'd first)
     ├── Arduino.h               # millis()/random()/math, no hardware
     ├── Adafruit_GFX.h          # GFXcanvas16 with a real RGB565 buffer
@@ -130,4 +137,5 @@ test/
 
 Tube Flux's bot is the game's own autopilot (`TubeFluxGame::pilot()`, in
 `TubeFluxDemo.cpp`), the same code that plays the attract demo, so the demo's
-player is the one these scenarios exercise.
+player is the one these scenarios exercise. Star Flux's is too
+(`StarFluxGame::pilot()`, in `StarFluxDemo.cpp`).

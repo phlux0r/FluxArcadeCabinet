@@ -4,10 +4,9 @@
 //
 // To add a new game (see also src/games/IGame.h):
 //   1. #include its header below
-//   2. Instantiate it in the "Game instances" section
-//   3. Add it to the gameRegistry[] array
-//   4. Add a CabinetState for it in ArcadeConfig.h
-//   5. Add a case to the switch in loop()
+//   2. Add it to the gameRegistry[] array: its menu name and makeGame<Type>
+// Games are built when launched and destroyed on exit, so only the game
+// being played takes RAM, however many there are; the menu scrolls.
 // =============================================================================
 
 #include <Arduino.h>
@@ -15,6 +14,8 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 #include <SD.h>
+#include <new>
+#include <esp_heap_caps.h>
 
 // Cabinet subsystems
 #include "cabinet/ArcadeConfig.h"
@@ -31,6 +32,7 @@
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
+#include "games/StarFlux/StarFluxGame.h"
 #include "games/TankFlux/TankFluxGame.h"
 #include "games/TubeFlux/TubeFluxGame.h"
 
@@ -55,14 +57,20 @@ AudioEngine  audio;
 PowerManager powerMgr;
 
 // =============================================================================
-// GAME INSTANCES
+// GAMES, BUILT ON DEMAND
+// A game object lives only while it's being played: built on launch, in
+// internal RAM where there's room (it's the game's hot state; PSRAM is the
+// fallback), and destroyed on the way back to the menu.
 // =============================================================================
-AsteroidFluxGame asteroidGame;
-LanderFluxGame   landerGame;
-MazeFluxGame     mazeGame;
-PlatformFluxGame platformGame;
-TankFluxGame     tankGame;
-TubeFluxGame     tubeGame;
+template <typename T>
+IGame* makeGame(void*& mem) {
+    const size_t size = sizeof(T) + alignof(T);
+    mem = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!mem) mem = heap_caps_malloc(size, MALLOC_CAP_8BIT);
+    if (!mem) return nullptr;
+    uintptr_t at = ((uintptr_t)mem + alignof(T) - 1) & ~(uintptr_t)(alignof(T) - 1);
+    return new ((void*)at) T();
+}
 
 // =============================================================================
 // LAUNCHER
@@ -71,13 +79,14 @@ LauncherMenu launcher;
 
 // Game registry — order determines menu order
 const GameEntry gameRegistry[] = {
-    { "Asteroids",  STATE_ASTEROID_FLUX },
-    { "Lander",    STATE_LANDER_FLUX   },
-    { "Maze", STATE_MAZE_FLUX },
-    { "Runner",  STATE_PLATFORM_FLUX },
-    { "Tank",  STATE_TANK_FLUX },
-    { "Tube",  STATE_TUBE_FLUX },
-    // Add future games here: { "New Game", STATE_NEW_GAME },
+    { "Asteroids", makeGame<AsteroidFluxGame> },
+    { "Lander",    makeGame<LanderFluxGame>   },
+    { "Maze",      makeGame<MazeFluxGame>     },
+    { "Runner",    makeGame<PlatformFluxGame> },
+    { "Star",      makeGame<StarFluxGame>     },
+    { "Tank",      makeGame<TankFluxGame>     },
+    { "Tube",      makeGame<TubeFluxGame>     },
+    // Add future games here: { "New Game", makeGame<NewGame> },
 };
 const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
 
@@ -86,14 +95,27 @@ const int GAME_COUNT = sizeof(gameRegistry) / sizeof(gameRegistry[0]);
 // =============================================================================
 CabinetState cabinetState = STATE_LAUNCHER_MENU;
 IGame*       activeGame   = nullptr;
+void*        activeGameMem = nullptr;   // the block makeGame() allocated
 
 // =============================================================================
 // HELPERS
 // =============================================================================
 
-// Switch to a game: set rotation, resize canvas pointer, init game
-void launchGame(IGame* game) {
+void returnToLauncher();
+
+// Build the chosen game and switch to it: rotation, display, init.
+void launchGame(int index) {
+    Serial.printf("[CABINET] Free internal heap before launch: %u bytes\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    IGame* game = gameRegistry[index].create(activeGameMem);
+    if (!game) {
+        Serial.printf("[CABINET] Out of memory building %s.\n", gameRegistry[index].name);
+        returnToLauncher();
+        return;
+    }
     activeGame = game;
+    cabinetState = STATE_IN_GAME;
+    game->setTFT(tft);
     uint8_t rotation = game->getRotation();
     tft.setRotation(rotation);
     input.waitForButtonARelease();  // Prevent launch-press bleeding into game
@@ -105,8 +127,15 @@ void launchGame(IGame* game) {
 }
 
 void returnToLauncher() {
-    if (activeGame) activeGame->onExit();
-    activeGame = nullptr;
+    if (activeGame) {
+        activeGame->onExit();
+        activeGame->~IGame();
+        activeGame = nullptr;
+    }
+    if (activeGameMem) {
+        heap_caps_free(activeGameMem);
+        activeGameMem = nullptr;
+    }
     tft.setRotation(2);  // Portrait for menu
     launcher.onEnter(audio);
     cabinetState = STATE_LAUNCHER_MENU;
@@ -263,89 +292,24 @@ void loop() {
 
         case STATE_LAUNCHER_MENU: {
             powerMgr.update(audio);  // power button only checked from the menu
-            CabinetState next = launcher.update(canvasPortrait, state, audio);
+            int pick = launcher.update(canvasPortrait, state, audio);
             tft.drawRGBBitmap(0, 0, canvasPortrait.getBuffer(),
                               ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+            if (pick >= 0) launchGame(pick);
+            break;
+        }
 
-            if (next != STATE_LAUNCHER_MENU) {
-                cabinetState = next;
-                // Map state to game instance and launch
-                switch (next) {
-                    case STATE_ASTEROID_FLUX:
-                        asteroidGame.setTFT(tft);
-                        launchGame(&asteroidGame);
-                        break;
-                    case STATE_LANDER_FLUX:
-                        landerGame.setTFT(tft);
-                        launchGame(&landerGame);
-                        break;
-                    case STATE_MAZE_FLUX:
-                        mazeGame.setTFT(tft);
-                        launchGame(&mazeGame);
-                        break;
-                    case STATE_PLATFORM_FLUX:
-                        platformGame.setTFT(tft);
-                        launchGame(&platformGame);
-                        break;
-                    case STATE_TANK_FLUX:
-                        launchGame(&tankGame);
-                        break;
-                    case STATE_TUBE_FLUX:
-                        launchGame(&tubeGame);
-                        break;
-                    default: returnToLauncher(); break;
-                }
+        case STATE_IN_GAME: {
+            // The canvas matching the game's rotation; the 2D games push it
+            // to the display themselves, the rest are pushed here.
+            GFXcanvas16& canvas = activeCanvas();
+            bool running = activeGame->update(canvas, state, audio);
+            if (!activeGame->flushesItself()) {
+                tft.drawRGBBitmap(0, 0, canvas.getBuffer(), canvas.width(), canvas.height());
             }
-            break;
-        }
-
-        case STATE_ASTEROID_FLUX: {
-            bool running = asteroidGame.update(canvasLandscape, state, audio);
-            // Asteroid Flux flushes its own canvas internally (landscape)
-            // because it did so in the standalone version — we keep that pattern.
-            // If you prefer the flush here, remove the internal flush from the game.
             if (!running) returnToLauncher();
             break;
         }
-
-        case STATE_LANDER_FLUX: {
-            bool running = landerGame.update(canvasPortrait, state, audio);
-            tft.drawRGBBitmap(0, 0, canvasPortrait.getBuffer(),
-                              ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
-            if (!running) returnToLauncher();
-            break;
-        }
-
-        case STATE_MAZE_FLUX: {
-            bool running = mazeGame.update(canvasPortrait, state, audio);
-            if (!running) returnToLauncher();
-            break;
-        }
-
-        case STATE_PLATFORM_FLUX: {
-            bool running = platformGame.update(canvasLandscape, state, audio);
-            // Platform Flux flushes its own canvas internally (landscape),
-            // same pattern as Asteroid Flux.
-            if (!running) returnToLauncher();
-            break;
-        }
-
-        case STATE_TANK_FLUX: {
-            bool running = tankGame.update(canvasLandscape, state, audio);
-            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
-                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
-            if (!running) returnToLauncher();
-            break;
-        }
-
-        case STATE_TUBE_FLUX: {
-            bool running = tubeGame.update(canvasLandscape, state, audio);
-            tft.drawRGBBitmap(0, 0, canvasLandscape.getBuffer(),
-                              ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
-            if (!running) returnToLauncher();
-            break;
-        }
-        // Add future game cases here
 
         default:
             returnToLauncher();

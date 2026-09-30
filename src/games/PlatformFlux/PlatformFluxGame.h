@@ -439,7 +439,8 @@ public:
         audio.playLanderStartSound(); // shared game-select jingle, same as Lander/Maze
     }
 
-    void setTFT(Adafruit_ST7735 &tft) { _tft = &tft; }
+    void setTFT(Adafruit_ST7735 &tft) override { _tft = &tft; }
+    bool flushesItself() const override { return true; }
 
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override {
         // Button B: require release first, then hold 2s to exit

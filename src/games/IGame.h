@@ -3,6 +3,8 @@
 
 #include <Adafruit_GFX.h>
 #include "cabinet/InputManager.h"
+
+class Adafruit_ST7735;
 #include "cabinet/AudioEngine.h"
 
 // =============================================================================
@@ -11,8 +13,10 @@
 // To add a new game:
 //   1. Create a class that inherits from IGame
 //   2. Implement the four pure virtual methods below (onExit() is optional)
-//   3. Add a new CabinetState entry in ArcadeConfig.h
-//   4. Register the game in src/main.cpp
+//   3. Add it to gameRegistry[] in src/main.cpp (name + makeGame<YourGame>)
+//
+// Games are built when launched and destroyed on exit (see main.cpp), so
+// only the running game takes RAM: keep state in the object, not in globals.
 //
 // The launcher owns the canvas and passes it by reference each frame.
 // Games must NOT create their own display or canvas objects.
@@ -51,6 +55,12 @@ public:
     // update() returns false). Free large allocations here so the heap is
     // available to other games; init() runs again on the next launch.
     virtual void onExit() {}
+
+    // For games that push their canvas to the display themselves (the 2D
+    // games, from their standalone days): given the display at launch, and
+    // true from flushesItself() so main.cpp doesn't push the frame again.
+    virtual void setTFT(Adafruit_ST7735 &) {}
+    virtual bool flushesItself() const { return false; }
 };
 
 #endif // IGAME_H

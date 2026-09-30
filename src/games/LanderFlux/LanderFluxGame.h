@@ -16,7 +16,8 @@ public:
     }
 
     // tft must be set before first update() — called by src/main.cpp on launch
-    void setTFT(Adafruit_ST7735 &tft) { _engine.setTFT(tft); }
+    void setTFT(Adafruit_ST7735 &tft) override { _engine.setTFT(tft); }
+    bool flushesItself() const override { return true; }
 
     bool update(GFXcanvas16 &canvas,
                 const InputState &input,

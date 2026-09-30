@@ -553,6 +553,7 @@ public:
     bool isMusicEnabled() const   { return _musicOn; }
     bool isFxEnabled() const      { return _fxOn; }
     void preload(const char*)     {}
+    bool exists(const char* path) { return SD.cardType() != CARD_NONE && SD.exists(path); }
 
     void playLanderStartSound() {
         if (SD.cardType() != CARD_NONE) playWAV("/audio/lander_start.wav");

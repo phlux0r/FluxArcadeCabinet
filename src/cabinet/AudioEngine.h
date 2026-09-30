@@ -342,6 +342,12 @@ public:
     void preload(const char* path) {
         if (_ready) loaderCmd(audiomix::LC_PRELOAD, path);
     }
+    // Is this file on the card? For choosing between an optional sound and
+    // a fallback once, in a game's init(): a missing file otherwise costs
+    // an SD open attempt every time it's played.
+    bool exists(const char* path) {
+        return _ready && SD.cardType() != CARD_NONE && SD.exists(path);
+    }
 
     // Duration of the most recent effect, once its header's been read (0
     // until then, or if it couldn't be opened). Use to time gameplay phases.
