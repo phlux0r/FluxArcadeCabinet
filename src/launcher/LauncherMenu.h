@@ -8,15 +8,18 @@
 #include "cabinet/ArcadeConfig.h"
 #include "cabinet/InputManager.h"
 #include "cabinet/AudioEngine.h"
+#include "cabinet/HighScores.h"
 #include "../assets/shared/ArcadeScreen.h"
 
 class IGame;
 
-// A menu entry: its name, and how to build the game when it's launched
-// (see makeGame() in main.cpp; `mem` gets the block to free on exit).
+// A menu entry: its name, how to build the game when it's launched (see
+// makeGame() in main.cpp; `mem` gets the block to free on exit), and its
+// high-score table's key (cabinet/HighScores.h), or null for none.
 struct GameEntry {
     const char* name;
     IGame* (*create)(void*& mem);
+    const char* scoreKey;
 };
 
 class LauncherMenu {
@@ -46,7 +49,72 @@ private:
     bool _bArmed   = false;
     bool _aArmed   = false;
 
-    enum { SET_MASTER, SET_MUSIC, SET_FX, SET_BACK, SET_COUNT };
+    enum { SET_MASTER, SET_MUSIC, SET_FX, SET_SCORES, SET_BACK, SET_COUNT };
+
+    // High-score tables: opened from setup (left/right flips games), or
+    // cycled on their own after IDLE_MS without input, like an arcade
+    // cabinet's attract loop; any input then returns to the menu.
+    static const unsigned long IDLE_MS = 30000;
+    static const unsigned long PAGE_MS = 5000;
+    bool          _scoresOpen = false;
+    bool          _scoresIdle = false;      // the idle cycle, not opened from setup
+    int           _scoreGame  = 0;          // which game's table
+    unsigned long _pageAt     = 0;
+    unsigned long _lastInputAt = 0;
+    hiscore::Table _table{};
+
+    // The next (dir 1) or previous game that has a table, from `from`.
+    int nextScoreGame(int from, int dir) const {
+        for (int k = 1; k <= _gameCount; k++) {
+            int i = ((from + dir * k) % _gameCount + _gameCount) % _gameCount;
+            if (_games[i].scoreKey) return i;
+        }
+        return from;
+    }
+
+    void showScores(int game, bool idle) {
+        _scoresOpen = true;
+        _scoresIdle = idle;
+        _scoreGame  = _games[game].scoreKey ? game : nextScoreGame(game, 1);
+        _pageAt     = millis();
+        if (_games[_scoreGame].scoreKey) hiscore::load(_games[_scoreGame].scoreKey, _table);
+        else hiscore::clear(_table);
+    }
+
+    void renderScores(GFXcanvas16 &canvas) {
+        drawBackground(canvas);
+        const hiscore::GameInfo* g = hiscore::info(_games[_scoreGame].scoreKey ? _games[_scoreGame].scoreKey : "");
+        hiscore::drawTable(canvas, _table, g ? g->title : _games[_scoreGame].name, 40);
+        if (_scoresIdle) {
+            drawHint(canvas, "HIGH SCORES", "ANY BUTTON", "FOR THE MENU");
+        } else {
+            const int y = 40;   // arrows either side of the title
+            canvas.fillTriangle(28, y + 3, 32, y, 32, y + 6, ArcadeConfig::COLOR_AMBER);
+            canvas.fillTriangle(100, y + 3, 96, y, 96, y + 6, ArcadeConfig::COLOR_AMBER);
+            drawHint(canvas, "HIGH SCORES", "[JOY] < > GAME", "[BTN B] BACK");
+        }
+    }
+
+    // One frame of the tables: flipping (from setup) or cycling (idle).
+    void updateScores(const InputState &input, bool aTap, bool bTap, AudioEngine &audio) {
+        if (_scoresIdle) {
+            if (millis() - _pageAt > PAGE_MS) showScores(nextScoreGame(_scoreGame, 1), true);
+            return;
+        }
+        if (aTap || bTap) {
+            _scoresOpen = false;
+            audio.playTone(523, 60);
+            return;
+        }
+        bool joyXActive = (input.joyLeft || input.joyRight);
+        if (!joyXActive) {
+            _joyXWasNeutral = true;
+        } else if (_joyXWasNeutral) {
+            _joyXWasNeutral = false;
+            showScores(nextScoreGame(_scoreGame, input.joyLeft ? -1 : 1), false);
+            audio.playTone(660, 40);
+        }
+    }
 
     // The game list: VISIBLE_ROWS at a 12px pitch from LIST_Y, inside the
     // background art's menu box (border rows 34 and 123, columns 24 and
@@ -184,8 +252,12 @@ private:
         drawVolumeRow(canvas, 68, "MUSIC",  _musicVol, _setupSel == SET_MUSIC);
         drawVolumeRow(canvas, 82, "FX",     _fxVol,    _setupSel == SET_FX);
 
-        drawRow(canvas, 98, _setupSel == SET_BACK);
-        canvas.setCursor(30, 98);
+        drawRow(canvas, 96, _setupSel == SET_SCORES);
+        canvas.setCursor(30, 96);
+        canvas.print("HIGH SCORES");
+
+        drawRow(canvas, 108, _setupSel == SET_BACK);
+        canvas.setCursor(30, 108);
         canvas.print("BACK");
 
         drawHint(canvas, "[JOY] SELECT", "[JOY] < > SET", "[BTN B] BACK");
@@ -216,6 +288,13 @@ private:
 
         if (_setupSel == SET_BACK) {
             if (press) closeSetup(audio);
+            return;
+        }
+        if (_setupSel == SET_SCORES) {
+            if (press) {
+                showScores(_selection, false);
+                audio.playTone(784, 60);
+            }
             return;
         }
         if (dir == 0) return;
@@ -263,6 +342,8 @@ public:
         _inSetup        = false;
         _aArmed         = false;
         _bArmed         = false;
+        _scoresOpen     = false;
+        _lastInputAt    = millis();
         applySettings(audio);
         audio.playTone(523, 80);
     }
@@ -293,6 +374,36 @@ public:
         const bool bTap = input.btnBReleased && _bArmed;
         if (input.btnAReleased) _aArmed = false;
         if (input.btnBReleased) _bArmed = false;
+
+        // Idle: after IDLE_MS untouched, cycle the high-score tables. Any
+        // input stops that, and is used up doing so: a button's release
+        // and the stick's push don't also act on the menu.
+        const bool anyInput = input.btnA || input.btnB || input.joyUp || input.joyDown ||
+                              input.joyLeft || input.joyRight;
+        if (anyInput) _lastInputAt = millis();
+        if (_scoresOpen && _scoresIdle) {
+            if (anyInput) {
+                _scoresOpen = false;
+                _aArmed = _bArmed = false;
+                _joyWasNeutral = _joyXWasNeutral = false;
+                renderMenu(canvas);
+                return -1;
+            }
+            updateScores(input, false, false, audio);
+            renderScores(canvas);
+            return -1;
+        }
+        if (!_scoresOpen && !_inSetup && millis() - _lastInputAt > IDLE_MS) {
+            showScores(_selection, true);
+            renderScores(canvas);
+            return -1;
+        }
+        if (_scoresOpen) {   // opened from setup; closes back to it
+            updateScores(input, aTap, bTap, audio);
+            if (_scoresOpen) renderScores(canvas);
+            else             renderSetup(canvas);
+            return -1;
+        }
 
         if (_inSetup) {
             if (bTap) closeSetup(audio);

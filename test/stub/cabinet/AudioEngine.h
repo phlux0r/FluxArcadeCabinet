@@ -33,6 +33,8 @@ struct AudioEngine {
     void preload(const char*) {}
     bool exists(const char*) const { return false; }   // no card: games take their fallbacks
     void setVolume(float) {}
+    void setMusicVolume(float) {}
+    void setFxVolume(float) {}
     void setMusicEnabled(bool) {}
     void setFxEnabled(bool) {}
 };

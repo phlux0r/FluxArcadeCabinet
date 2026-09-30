@@ -1,25 +1,11 @@
 #include "TankFluxGame.h"
-#include <Preferences.h>
 
 namespace tankflux {
 
-void TankFluxGame::loadHighScore() {
-    Preferences prefs;
-    prefs.begin("tf_data", true);
-    _highScore = prefs.getInt("highscore", 0);
-    prefs.end();
-}
-
-void TankFluxGame::saveHighScore() {
-    Preferences prefs;
-    prefs.begin("tf_data", false);
-    prefs.putInt("highscore", _highScore);
-    prefs.end();
-}
-
-void TankFluxGame::recordHighScore() {
-    if (inDemo()) return;   // the attract demo's score is nobody's
-    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
+// Quitting mid-game: the score still goes on the table (if it makes it),
+// under the last name entered. The attract demo's score is nobody's.
+void TankFluxGame::recordQuit() {
+    if (!inDemo()) _scores.record(_score);
 }
 
 // How far this frame should move things, relative to a frame at the rate the
@@ -35,7 +21,7 @@ void TankFluxGame::updateFrameScale() {
 }
 
 void TankFluxGame::init(AudioEngine &audio) {
-    loadHighScore();
+    _scores.begin("tank");
     _phase = PHASE_ATTRACT;
     _attractSlide      = SLIDE_GAME;
     _attractSlideTimer = millis();
@@ -67,6 +53,7 @@ void TankFluxGame::resetGame() {
     _speed = 0.0f;
     _health = HEALTH_MAX;
     _score = 0;
+    _scores.forget();
     _kills = 0;
     _level = 1;
     _reloadAt = 0;
@@ -110,7 +97,8 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     // still held down from strafing when the game ended. After init(), B
     // must be released first so a press carried over from the launcher
     // doesn't count. During play B is strafe and A+B quits (updatePlaying()).
-    if (_phase != PHASE_PLAYING) {
+    // Not in the name entry either, where B steps back a letter.
+    if (_phase != PHASE_PLAYING && _phase != PHASE_NAME) {
         if (_btnBWasHeld) {
             if (!input.btnB) _btnBWasHeld = false;
         } else if (input.btnB) {
@@ -127,6 +115,7 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
+        case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default:             return updatePlaying(canvas, input, audio);
     }
@@ -134,10 +123,10 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 
 bool TankFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     if (_attractSlide == SLIDE_DEMO) return updateDemo(canvas, input, audio);
-    // Title, how-to-play, then the demo, which returns to the title.
+    // Title, how-to-play, high scores, then the demo, which returns to the title.
     if (millis() - _attractSlideTimer > ATTRACT_SLIDE_MS) {
-        if (_attractSlide == SLIDE_GAME) {
-            _attractSlide      = SLIDE_INFO;
+        if (_attractSlide == SLIDE_GAME || _attractSlide == SLIDE_INFO) {
+            _attractSlide      = _attractSlide == SLIDE_GAME ? SLIDE_INFO : SLIDE_SCORES;
             _attractSlideTimer = millis();
         } else {
             startDemo();
@@ -145,14 +134,28 @@ bool TankFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
         }
     }
 
-    if (_attractSlide == SLIDE_GAME) renderAttractGame(canvas);
-    else                              renderAttractInfo(canvas);
+    if (_attractSlide == SLIDE_GAME)      renderAttractGame(canvas);
+    else if (_attractSlide == SLIDE_INFO) renderAttractInfo(canvas);
+    else                                  renderAttractScores(canvas);
 
     if (input.btnBPressed) {
         audio.mute();
         return false;
     }
     if (input.btnAPressed) startNewGame(audio);
+    return true;
+}
+
+// Name entry, over a black screen; then the game-over screen.
+bool TankFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+    _scores.draw(canvas);
+    if (_scores.update(input, getRotation())) {
+        _phase = PHASE_GAMEOVER;
+        _gameOverEnteredMs = millis();
+        _btnBWasHeld = true;   // B from the entry must be released before hold-to-exit counts
+        audio.playTone(1047, 80);
+    }
     return true;
 }
 
@@ -179,7 +182,7 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
             _quitHoldStart = millis();
         } else if (millis() - _quitHoldStart > QUIT_HOLD_MS) {
             _quitHoldStart = 0;
-            recordHighScore();
+            recordQuit();
             audio.mute();
             return false;
         }
@@ -221,8 +224,8 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     drawQuitHint(canvas);
 
     if (_health <= 0) {
-        recordHighScore();
-        _phase = PHASE_GAMEOVER;
+        // A name for the table first, if the score made it.
+        _phase = !inDemo() && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
         _gameOverEnteredMs = millis();
         _btnBWasHeld = true;   // B held from strafing must be released before hold-to-exit counts
         audio.stopLoop();

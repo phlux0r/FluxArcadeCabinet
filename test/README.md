@@ -121,7 +121,8 @@ test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
-├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling
+├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling; idle score cycle
+├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile
 ├── tubeflux_harness.cpp        # Tube Flux: scripted bot, scenarios, profile, poses
@@ -129,7 +130,7 @@ test/
 └── stub/                       # shadows the hardware headers (-I'd first)
     ├── Arduino.h               # millis()/random()/math, no hardware
     ├── Adafruit_GFX.h          # GFXcanvas16 with a real RGB565 buffer
-    ├── Preferences.h           # no-op settings/high score storage
+    ├── Preferences.h           # in-memory NVS: settings and tables persist within a run
     ├── Adafruit_ST7735.h, Fonts/   # display driver + font, for the 2D games
     ├── driver/, freertos/, SD.h, esp_heap_caps.h  # enough ESP32 for the real (inert) AudioEngine
     └── cabinet/AudioEngine.h   # call counter

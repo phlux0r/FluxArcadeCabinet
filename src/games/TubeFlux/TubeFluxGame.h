@@ -7,6 +7,7 @@
 
 #include "TubeFluxConfig.h"
 #include "TubeMath.h"
+#include "../../cabinet/HighScores.h"
 
 // =============================================================================
 // TUBE FLUX: fly down an endless octagonal tunnel, rolling round its wall to
@@ -48,8 +49,9 @@ public:
     const char* getName()  const override { return "Tube Flux"; }
 
 private:
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_DEMO };
+    // NAME: entering a name for the high-score table, after the shield's gone.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_SCORES, SLIDE_DEMO };
     enum PickupKind : uint8_t { PICKUP_GUN, PICKUP_UPGRADE, PICKUP_SHIELD };
     // See DRONE_* in TubeFluxConfig.h. ESCAPE is the drone flying off ahead
     // after surviving; the chase is over once it's gone.
@@ -120,8 +122,7 @@ private:
     int   _shield = SHIELD_MAX;
     long  _score = 0;
     long  _bonus = 0;            // near misses and gates, added to distance score
-    long  _highScore = 0;
-    bool  _newHighScore = false;   // this run beat the old one
+    hiscore::ScoreBoard _scores;   // the cabinet's table for this game
     unsigned long _invulnUntil = 0;
     unsigned long _hitFlashUntil = 0;
     unsigned long _nearMissUntil = 0;
@@ -228,9 +229,7 @@ private:
     Renderer::Sprite2D  _shipSprite;
 
     // --- TubeFluxGame.cpp ------------------------------------------------------
-    void loadHighScore();
-    void saveHighScore();
-    void recordHighScore();
+    void recordQuit();
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     void resetRun();
@@ -246,6 +245,7 @@ private:
     void hideTransients();
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    bool updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void renderWorld(GFXcanvas16 &canvas);
 
@@ -342,6 +342,7 @@ private:
     void enterAttract();
     void renderAttractTitle(GFXcanvas16 &canvas);
     void renderAttractInfo(GFXcanvas16 &canvas);
+    void renderAttractScores(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
 };
 

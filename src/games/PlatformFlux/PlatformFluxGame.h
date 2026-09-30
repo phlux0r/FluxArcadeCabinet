@@ -5,6 +5,7 @@
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
 #include "../../cabinet/AudioEngine.h"
+#include "../../cabinet/HighScores.h"
 
 #include "PlayerRunner.h"
 #include "PlatformManager.h"
@@ -26,7 +27,6 @@ private:
     RollingBoulderManager _boulders;
     ParticleManager       _particles;
 
-    Preferences      _prefs;
     Adafruit_ST7735* _tft = nullptr;
 
     int _score     = 0;
@@ -46,11 +46,12 @@ private:
     uint16_t _bannerSubColor = ArcadeConfig::COLOR_GREEN;
     unsigned long _bannerUntil = 0;
 
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_GAMEOVER };
+    // NAME: entering a name for the high-score table, after the last life.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_NAME, PHASE_GAMEOVER };
     GamePhase _phase = PHASE_ATTRACT;
 
     // Title, how-to-play, then the autopilot demo (a run with _demo set).
-    enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO };
+    enum AttractSlide { SLIDE_SPLASH, SLIDE_INFO, SLIDE_SCORES };
     bool _demo = false;
     unsigned long _demoUntil = 0;
     AttractSlide  _attractSlide      = SLIDE_SPLASH;
@@ -63,16 +64,18 @@ private:
     unsigned long _gameOverEnteredMs = 0;
     static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
 
+    // The cabinet's table for this game; _highScore is its top score.
+    hiscore::ScoreBoard _scores;
+
     void loadHighScore() {
-        _prefs.begin("pf_data", true);
-        _highScore = _prefs.getInt("highscore", 0);
-        _prefs.end();
+        _scores.begin("runner");
+        _highScore = (int)_scores.best();
     }
 
-    void saveHighScore() {
-        _prefs.begin("pf_data", false);
-        _prefs.putInt("highscore", _highScore);
-        _prefs.end();
+    void renderScoresScreen(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+        hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 18);
+        if ((millis() / 500) & 1) hiscore::printCentred(canvas, "[BTN A] TO START", 108, ArcadeConfig::COLOR_CYAN);
     }
 
     // Stage, lives, score and best along the top; the rule under them is
@@ -144,7 +147,8 @@ private:
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
         canvas.setCursor(4, stripY + 4);
-        canvas.print("BEST:"); canvas.print(_highScore);
+        char hiBuf[24];
+        canvas.print(_scores.bestLine(hiBuf, sizeof(hiBuf), "BEST:"));
         canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 80, stripY + 4);
         canvas.print("[BTN A] START");
     }
@@ -445,12 +449,17 @@ public:
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override {
         // Button B: require release first, then hold 2s to exit
         static unsigned long btnBHoldStart = 0;
-        if (_btnBWasHeld) {
+        if (_phase == PHASE_NAME) {
+            btnBHoldStart = 0;             // B steps back a letter there
+        } else if (_btnBWasHeld) {
             if (!input.btnB) _btnBWasHeld = false;
         } else if (input.btnB) {
             if (btnBHoldStart == 0) btnBHoldStart = millis();
             if (millis() - btnBHoldStart > 2000) {
                 btnBHoldStart = 0;
+                // Quitting mid-game: the score still goes on the table,
+                // under the last name entered.
+                if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_DEATH)) _scores.record(_score);
                 audio.mute();
                 return false;
             }
@@ -470,8 +479,8 @@ public:
         // ---- PHASE: ATTRACT ----
         if (_phase == PHASE_ATTRACT) {
             if (millis() - _attractSlideTimer > ArcadeConfig::ATTRACT_MODE_TIMER) {
-                if (_attractSlide == SLIDE_SPLASH) {
-                    _attractSlide      = SLIDE_INFO;
+                if (_attractSlide != SLIDE_SCORES) {   // splash, how-to-play, scores, demo
+                    _attractSlide      = _attractSlide == SLIDE_SPLASH ? SLIDE_INFO : SLIDE_SCORES;
                     _attractSlideTimer = millis();
                 } else {
                     startDemo();                 // then back to the splash
@@ -479,8 +488,9 @@ public:
                 }
             }
 
-            if (_attractSlide == SLIDE_SPLASH) renderSplash(canvas);
-            else                                renderInfoScreen(canvas);
+            if (_attractSlide == SLIDE_SPLASH)    renderSplash(canvas);
+            else if (_attractSlide == SLIDE_INFO) renderInfoScreen(canvas);
+            else                                  renderScoresScreen(canvas);
 
             flushLandscape(canvas);
 
@@ -606,7 +616,6 @@ public:
                 if (!_demo) {                // a demo death just ends the demo
                     _lives--;
                     _diedThisStage = true;
-                    if (_score > _highScore) { _highScore = _score; saveHighScore(); }
                 }
                 _phase = PHASE_DEATH;
                 _phaseTimer = millis();
@@ -665,11 +674,27 @@ public:
                 return true;
             }
             if (millis() - _phaseTimer > 800) {
+                // Out of lives: a name for the table if the score made it.
                 _particles.clearAll();
-                _phase             = PHASE_GAMEOVER;
+                _scores.forget();
+                _phase             = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
                 audio.stopLoop();
                 audio.playGameOverToneSound();
+            }
+            return true;
+        }
+
+        // ---- PHASE: NAME ENTRY ----
+        if (_phase == PHASE_NAME) {
+            canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+            _scores.draw(canvas);
+            flushLandscape(canvas);
+            if (_scores.update(input, getRotation())) {
+                _highScore         = (int)_scores.best();
+                _phase             = PHASE_GAMEOVER;
+                _gameOverEnteredMs = millis();
+                _btnBWasHeld       = true;   // B from the entry isn't the start of a quit
             }
             return true;
         }
@@ -689,15 +714,13 @@ public:
             canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 55);
             canvas.print("STAGE: "); canvas.print(_stage);
 
-            if (_score >= _highScore && _score > 0) {
-                canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
-                canvas.print("NEW HIGH SCORE!!");
-            } else {
-                canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-                canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
-                canvas.print("BEST: "); canvas.print(_highScore);
-            }
+            const int rank = _scores.lastRank();
+            char hiBuf[24];
+            canvas.setTextColor(rank >= 0 ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_GREY);
+            canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH / 4, 65);
+            if (rank == 0) canvas.print("NEW HIGH SCORE!!");
+            else if (rank > 0) { snprintf(hiBuf, sizeof(hiBuf), "HIGH SCORE #%d", rank + 1); canvas.print(hiBuf); }
+            else canvas.print(_scores.bestLine(hiBuf, sizeof(hiBuf), "BEST: "));
 
             canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
             canvas.setCursor(20, 90);

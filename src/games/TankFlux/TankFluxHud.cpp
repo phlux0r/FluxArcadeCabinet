@@ -50,7 +50,7 @@ void TankFluxGame::drawHUD(GFXcanvas16 &canvas) {
 
     canvas.setTextColor(ArcadeConfig::COLOR_GREY);
     canvas.setCursor(W - 54, 1);
-    canvas.print("HI:"); canvas.print(_highScore);
+    canvas.print("HI:"); canvas.print(_scores.best());
 
     // Boss health: a red bar under the HUD strip during a boss fight.
     if (_bossActive) {
@@ -240,8 +240,8 @@ void TankFluxGame::renderAttractGame(GFXcanvas16 &canvas) {
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         centredText(canvas, "[BTN A] TO START", 111);
     }
-    char hiBuf[20];
-    snprintf(hiBuf, sizeof(hiBuf), "HI: %d", _highScore);
+    char hiBuf[24];
+    _scores.bestLine(hiBuf, sizeof(hiBuf), "HI: ");
     canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
     centredText(canvas, hiBuf, 120);
 }
@@ -281,9 +281,19 @@ void TankFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.setCursor(4, 102);
     canvas.print("BOSS TANK EVERY 15 KILLS");
 
+    char buf[24];
     canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-    canvas.setCursor(28, 118);
-    canvas.print("BEST: "); canvas.print(_highScore);
+    centredText(canvas, _scores.bestLine(buf, sizeof(buf), "BEST: "), 118);
+}
+
+void TankFluxGame::renderAttractScores(GFXcanvas16 &canvas) {
+    canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+    canvas.setFont();
+    hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 16);
+    if (millis() % 1000 < 600) {
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        centredText(canvas, "[BTN A] TO START", 104);
+    }
 }
 
 void TankFluxGame::renderGameOver(GFXcanvas16 &canvas) {
@@ -298,15 +308,13 @@ void TankFluxGame::renderGameOver(GFXcanvas16 &canvas) {
     canvas.setCursor(W / 4, 45);
     canvas.print("SCORE: "); canvas.print(_score);
 
-    if (_score >= _highScore && _score > 0) {
-        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(W / 4, 65);
-        canvas.print("NEW HIGH SCORE!!");
-    } else {
-        canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-        canvas.setCursor(W / 4, 65);
-        canvas.print("BEST: "); canvas.print(_highScore);
-    }
+    const int rank = _scores.lastRank();
+    char buf[24];
+    canvas.setTextColor(rank >= 0 ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_GREY);
+    canvas.setCursor(W / 4, 65);
+    if (rank == 0) canvas.print("NEW HIGH SCORE!!");
+    else if (rank > 0) { snprintf(buf, sizeof(buf), "HIGH SCORE #%d", rank + 1); canvas.print(buf); }
+    else canvas.print(_scores.bestLine(buf, sizeof(buf), "BEST: "));
 
     canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
     canvas.setCursor(20, 90);

@@ -1,30 +1,11 @@
 #include "StarFluxGame.h"
-#include <Preferences.h>
 
 namespace starflux {
 
-void StarFluxGame::loadHighScore() {
-    Preferences prefs;
-    prefs.begin("sf_data", true);
-    _highScore = prefs.getInt("highscore", 0);
-    prefs.end();
-}
-
-void StarFluxGame::saveHighScore() {
-    Preferences prefs;
-    prefs.begin("sf_data", false);
-    prefs.putInt("highscore", (int32_t)_highScore);
-    prefs.end();
-}
-
-// Never from the demo: its score isn't yours.
-void StarFluxGame::recordHighScore() {
-    if (inDemo()) return;
-    if (_score > _highScore) {
-        _highScore = _score;
-        _newHighScore = true;
-        saveHighScore();
-    }
+// Quitting mid-run: the score still goes on the table (if it makes it),
+// under the last name entered. Never from the demo: its score isn't yours.
+void StarFluxGame::recordQuit() {
+    if (!inDemo()) _scores.record(_score);
 }
 
 // Movement is per REFERENCE_FRAME_MS, scaled by the real frame time, as in
@@ -39,7 +20,7 @@ void StarFluxGame::updateFrameScale() {
 }
 
 void StarFluxGame::init(AudioEngine &audio) {
-    loadHighScore();
+    _scores.begin("star");
     enterAttract();
     _btnBWasHeld = true;
     _btnBHoldStart = 0;
@@ -107,7 +88,7 @@ void StarFluxGame::resetRun() {
     _stageNum = STAGE_BELT;
     _lives = LIVES;
     _score = 0;
-    _newHighScore = false;
+    _scores.forget();
     startStage();
 }
 
@@ -144,9 +125,9 @@ void StarFluxGame::clearField() {
     hideBoss();
 }
 
+// The last life's gone: a name for the table first, if the score made it.
 void StarFluxGame::enterGameOver(AudioEngine &audio) {
-    recordHighScore();
-    _phase = PHASE_GAMEOVER;
+    _phase = !inDemo() && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseEnteredMs = millis();
     _shipSprite.enabled = false;
     audio.stopLoop();
@@ -161,7 +142,6 @@ void StarFluxGame::enterResults(AudioEngine &audio) {
     _phaseEnteredMs = millis();
     _shieldBonus = (long)_shield * SHIELD_BONUS_PER_POINT;
     _score += _shieldBonus;
-    recordHighScore();
     static const int n[] = { 784, 988, 1175, 1568, 1319, 1568 };
     static const int d[] = { 110, 110, 110, 220, 110, 380 };
     if (!_silent) audio.playMelody(n, d, 6);
@@ -174,13 +154,16 @@ bool StarFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     // Hold B to exit, in every phase. After init() B must be released
     // first, so the launcher press that started us can't count. While
     // playing, a short tap of B drops a bomb instead (updateBombButton).
-    if (_btnBWasHeld) {
+    // Not while entering a name, where B steps back a letter.
+    if (_phase == PHASE_NAME) {
+        _btnBHoldStart = 0;
+    } else if (_btnBWasHeld) {
         if (!input.btnB) _btnBWasHeld = false;
     } else if (input.btnB) {
         if (_btnBHoldStart == 0) _btnBHoldStart = millis();
         if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
             _btnBHoldStart = 0;
-            if (_phase == PHASE_PLAYING) recordHighScore();
+            if (_phase == PHASE_PLAYING || _phase == PHASE_RESULTS) recordQuit();
             audio.mute();
             return false;
         }
@@ -191,13 +174,14 @@ bool StarFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
         case PHASE_RESULTS:  return updateResults(canvas, input, audio);
+        case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default:             return updatePlaying(canvas, input, audio);
     }
 }
 
-// Title, how-to-play, then a demo (StarFluxDemo.cpp), round and round. A
-// starts a game from any of them.
+// Title, how-to-play, the high scores, then a demo (StarFluxDemo.cpp),
+// round and round. A starts a game from any of them.
 bool StarFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     if (input.btnAPressed) {
         if (inDemo()) endDemo();
@@ -206,8 +190,8 @@ bool StarFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
         return updatePlaying(canvas, InputState{}, audio);
     }
     if (_attractSlide != SLIDE_DEMO && millis() - _attractSlideAt > ATTRACT_SLIDE_MS) {
-        if (_attractSlide == SLIDE_TITLE) {
-            _attractSlide = SLIDE_INFO;
+        if (_attractSlide == SLIDE_TITLE || _attractSlide == SLIDE_INFO) {
+            _attractSlide = _attractSlide == SLIDE_TITLE ? SLIDE_INFO : SLIDE_SCORES;
             _attractSlideAt = millis();
         } else {
             startDemo();
@@ -218,15 +202,31 @@ bool StarFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
             renderAttractTitle(canvas);
             break;
         case SLIDE_INFO:
+        case SLIDE_SCORES:
             // Empty space flying past behind the text.
             _shipX *= 0.95f; _shipY *= 0.95f; _bank *= 0.9f;
             _groundScroll = fmodf(_groundScroll + FLY_SPEED * _frameScale, 100000.0f);
             renderWorld(canvas);
-            renderAttractInfo(canvas);
+            if (_attractSlide == SLIDE_INFO) renderAttractInfo(canvas);
+            else renderAttractScores(canvas);
             break;
         case SLIDE_DEMO:
             updateDemo(canvas, audio);
             break;
+    }
+    return true;
+}
+
+// The world drifts on behind the name entry; when it's done (or timed
+// out), the game-over screen.
+bool StarFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    renderWorld(canvas);
+    _scores.draw(canvas);
+    if (_scores.update(input, getRotation())) {
+        _phase = PHASE_GAMEOVER;
+        _phaseEnteredMs = millis();
+        _btnBWasHeld = input.btnB;   // a B still down from the entry isn't the start of a quit
+        audio.playTone(1047, 80);
     }
     return true;
 }

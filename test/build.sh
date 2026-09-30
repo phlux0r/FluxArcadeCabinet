@@ -8,6 +8,7 @@
 #   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
 #   test/build.sh cabinet          # main.cpp: every game launched and quit
+#   test/build.sh hiscore          # the high-score tables and name entry
 #   test/build.sh --build-only
 #
 # Needs a host g++ with C++17 and Jet's sources. Jet is found automatically
@@ -72,6 +73,10 @@ g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-sign-compare \
     "$HERE/cabinet_sim.cpp" "$ROOT"/src/games/TankFlux/*.cpp "$ROOT"/src/games/TubeFlux/*.cpp \
     "$ROOT"/src/games/StarFlux/*.cpp \
     "$OUT/libjet.a" -o "$OUT/cabinet_sim"
+# The high-score tables and name entry: the stubs, no Jet.
+echo "building hiscore_test"
+g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-function -I"$HERE" -I"$HERE/stub" -I"$ROOT/src" -I"$ROOT/include" \
+    "$HERE/hiscore_test.cpp" -o "$OUT/hiscore_test"
 # The audio mixer and loader are plain C++; this uses no stubs at all.
 echo "building audio_test"
 g++ "${CXXFLAGS[@]}" -Wall -I"$ROOT/src" "$HERE/audio_test.cpp" -o "$OUT/audio_test"
@@ -82,6 +87,7 @@ cd "$OUT"
 [ "${1:-}" = audio ] && exec ./audio_test
 [ "${1:-}" = games2d ] && { shift; exec ./games2d_harness "$@"; }
 [ "${1:-}" = cabinet ] && exec ./cabinet_sim
+[ "${1:-}" = hiscore ] && exec ./hiscore_test
 game=tankflux
 case "${1:-}" in
   tank) game=tankflux; shift ;;
@@ -93,7 +99,9 @@ if [ $# -gt 0 ]; then
 else
   echo "=== audio"
   ./audio_test | tail -1
-  echo "=== cabinet (main.cpp: launch and quit every game, menu scrolling)"
+  echo "=== hiscore (tables, name entry)"
+  ./hiscore_test | tail -1
+  echo "=== cabinet (main.cpp: launch and quit every game, menu scrolling, high-score cycle)"
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000

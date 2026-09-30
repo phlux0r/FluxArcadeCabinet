@@ -27,7 +27,8 @@ public:
                               input.btnB,
                               input.rawJoyX,
                               input.rawJoyY,
-                              audio);
+                              audio,
+                              input);
     }
 
     uint8_t getRotation() const override { return 2; }
