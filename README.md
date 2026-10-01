@@ -381,8 +381,10 @@ commands to them through lock-free queues, so it never blocks):
   is queued ahead of the speaker, so sounds start promptly.
 - **loader** (priority 3) does all SD access. Effects are decoded into PSRAM
   the first time they play (or at `preload()`) and then play from memory;
-  the cache is 1MB, least-recently-used first out (Star Flux's whole set,
-  ~900KB, fits, so its explosion is never re-read from SD mid-game). Music streams through
+  the cache is 1.25MB, least-recently-used first out (Star Flux's whole set,
+  ~1.19MB with every optional sound, fits, so its explosion is never re-read
+  from SD mid-game). A new optional sound that takes a game's set past the
+  cache means its least-used sounds get re-read from SD: keep them mono. Music streams through
   a ~743ms ring buffer (it rides out the SD card stalling while the
   display holds the shared bus, seen at up to 400ms).
 
