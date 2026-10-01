@@ -127,6 +127,7 @@ void StarFluxGame::clearField() {
     for (auto &b : _blasts) b.active = false;
     for (auto &p : _particles.pool) p.active = false;
     _bombActive = false;
+    _frozenUntil = 0;
     hideWorld();
     hideBoss();
 }
@@ -323,6 +324,7 @@ void StarFluxGame::renderWorld(GFXcanvas16 &canvas) {
     _particles.update((1.0f / 60.0f) * _frameScale);
     _particles.render(_scene, &_camera, canvas.width(), canvas.height());
     drawGates(canvas);
+    drawMines(canvas);   // over the meshes, as the gates: they're mostly the nearer
     drawFlightAids(canvas);
     drawFan(canvas);
     drawShots(canvas);

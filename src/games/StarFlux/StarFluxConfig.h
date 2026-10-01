@@ -186,6 +186,24 @@ inline constexpr unsigned long TRENCH_FIELD_MS = 1400;
 inline constexpr float BARRIER_GAP     = 300.0f;    // the way through a barrier
 inline constexpr unsigned long GATE_MS = 1100;      // laser gates: on this long, then off as long
 
+// --- Stage 4: the canyon -----------------------------------------------------------
+// A V of ice walls leaning outwards: half width CANYON_HALF_W at the floor,
+// growing by CANYON_SLOPE per unit of height, up to CANYON_TOP.
+inline constexpr float CANYON_FLOOR    = -380.0f;
+inline constexpr float CANYON_HALF_W   = 520.0f;
+inline constexpr float CANYON_SLOPE    = 0.45f;
+inline constexpr float CANYON_TOP      = 700.0f;
+inline constexpr unsigned long CANYON_FIELD_MS = 1250;
+inline constexpr float BRIDGE_Y        = 380.0f;    // ice bridges' undersides: icicles hang from here
+// Mines: drifting spheres that steer gently at you until MISSILE_STOP_Z.
+inline constexpr float MINE_DRIFT      = 7.0f;      // most sideways speed, per frame
+inline constexpr float MINE_TURN       = 0.03f;
+inline constexpr int   MINE_POINTS     = 80;
+inline constexpr float MINE_R          = 60.0f;     // drawn body, and with the ship's for a hit
+// The walker's frost shards: a hit also slows your steering for FREEZE_MS.
+inline constexpr unsigned long FREEZE_MS = 1500;
+inline constexpr float FREEZE_STEER    = 0.4f;      // share of normal speed while frozen
+
 // --- Obstacles and turrets ----------------------------------------------------------
 inline constexpr int   BOX_POOL        = 14;
 inline constexpr int   BOX_DAMAGE      = 25;

@@ -70,7 +70,7 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
         r->obj->setRotation(20, 30, 0);
     }
     g._shots[0] = { true, 0, 0, 1400, 1400 };
-    g._eshots[0] = { true, false, 100, -50, 1000, 0, 0, -30 };
+    g._eshots[0] = { true, false, false, 100, -50, 1000, 0, 0, -30 };
     g._rings[0] = { true, false, -150, 0, 2400 };
     frame("pose_rocks");
 
@@ -105,10 +105,14 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
     frame("pose_boss_open");
     g.hideBoss();
 
-    // Stages 2 and 3: the ground with pillars, a tower and an arch; the
-    // trench with a barrier, a gate and a tower; then their bosses, whole
-    // and with the core open (the reactor's fan showing).
-    for (int st = 1; st <= 2; ++st) {
+    // Stages 2-4: the ground with pillars, a tower and an arch; the trench
+    // with a barrier, a gate and a tower; the canyon with icicles, an arch,
+    // pillars and mines; then their bosses, whole and with the core open
+    // (the reactor's fan showing, the walker's frost shards in flight).
+    static const char* const scene[3] = { "pose_planet", "pose_trench", "pose_canyon" };
+    static const char* const boss[3] = { "pose_boss_crawler", "pose_boss_reactor", "pose_boss_walker" };
+    static const char* const bossOpen[3] = { "pose_boss_crawler_open", "pose_boss_reactor_open", "pose_boss_walker_open" };
+    for (int st = 1; st <= 3; ++st) {
         g._stageNum = st;
         g.applyStagePalette();
         g.hideWorld();
@@ -120,6 +124,16 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
             g.spawnBox(-150, -30, GROUND_Y, 420, 4200, 150);
             g.spawnBox(330, 450, GROUND_Y, 420, 4200, 150);
             g.spawnBox(-150, 450, 170, 420, 4200, 150);
+        } else if (st == 3) {
+            const float hw = g.canyonHalfW(BRIDGE_Y);
+            g.spawnBox(-hw, hw, BRIDGE_Y, BRIDGE_Y + 150, 3200, 170);
+            for (float x : { -300.0f, -80.0f, 280.0f }) g.spawnBox(x - 45, x + 45, BRIDGE_Y - 470, BRIDGE_Y, 3200, 90);
+            g.spawnBox(-g.canyonHalfW(0), g.canyonHalfW(0), -60, 60, 5200, 170);
+            g.spawnBox(-380, -200, CANYON_FLOOR, 600, 1900, 180);
+            g.spawnBox(160, 380, CANYON_FLOOR, -80, 2200, 220);
+            for (auto &r : g._rocks) { r.active = false; r.obj->enabled = false; }
+            g.spawnMine(); g._rocks[ROCK_BIG_SLOTS].x = -120; g._rocks[ROCK_BIG_SLOTS].y = 60; g._rocks[ROCK_BIG_SLOTS].z = 1500;
+            g.spawnMine(); g._rocks[ROCK_BIG_SLOTS + 1].x = 260; g._rocks[ROCK_BIG_SLOTS + 1].y = 180; g._rocks[ROCK_BIG_SLOTS + 1].z = 2600;
         } else {
             g.spawnBox(-TRENCH_HALF_W, -100, TRENCH_FLOOR, TRENCH_TOP, 3000, 160);
             g.spawnBox(200, TRENCH_HALF_W, TRENCH_FLOOR, TRENCH_TOP, 3000, 160);
@@ -133,7 +147,8 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
             g._rapid = true;
             g._pod.active = true; g._pod.x = -80; g._pod.y = 120; g._pod.z = 2200;
         }
-        frame(st == 1 ? "pose_planet" : "pose_trench");
+        frame(scene[st - 1]);
+        for (auto &r : g._rocks) r.active = false;
         g._rapid = false; g._pod.active = false;
         if (st == 2) {   // the barrier nearest: outlined, the marker red, then green in the gap
             for (auto &b : g._boxes) if (b.gate) b.active = false;
@@ -149,11 +164,18 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
         g._bossAt = g_fakeMillis - BOSS_ENTER_MS - 10;
         g._bossZ = g.bossZ();
         g.placeBoss();
-        frame(st == 1 ? "pose_boss_crawler" : "pose_boss_reactor");
+        frame(boss[st - 1]);
         g._cannonHp[0] = g._cannonHp[1] = 0;
         g._fanAngle = 30;
         g.placeBoss();
-        frame(st == 1 ? "pose_boss_crawler_open" : "pose_boss_reactor_open");
+        if (st == 3) {   // a ring of frost shards on its way
+            float cx, cy, cz;
+            g.bossPartPos(2, cx, cy, cz);
+            g.ringBurst(cx, cy, cz, true);
+            for (auto &e : g._eshots) if (e.active) { e.x += e.vx * 20; e.y += e.vy * 20; e.z += e.vz * 20; }
+        }
+        frame(bossOpen[st - 1]);
+        for (auto &e : g._eshots) e.active = false;
         g.hideBoss();
     }
     g._stageNum = 0;
@@ -333,6 +355,34 @@ int main(int argc, char** argv) {
         printf("ring by a gapped wall: %d placed of 200 tries, %d in the wall\n", placed, inWall);
         check(placed > 0 && inWall == 0 && heldBack, "rings go in the gap; fields hold back near one");
         printf("rings on stages 2-3 at loop 5: %d, inside an obstacle: %d\n", rings, blocked);
+        // Stage 4: a frost shard slows your steering; a mine steers at you.
+        g._stageNum = StarFluxGame::STAGE_CANYON; g._loop = 1;
+        g.startStage();
+        for (int i = 0; i < 200; ++i) step(none);
+        g._shipX = 0; g._shipY = 0; g._invulnUntil = 0; g._shield = SHIELD_MAX;
+        for (auto &r : g._rocks) { r.active = false; r.obj->enabled = false; }
+        for (auto &e : g._eshots) e.active = false;
+        if (StarFluxGame::EShot* e = g.fireAt(0, 0, SHIP_Z + 400.0f, 0, 0)) e->frost = true;
+        for (int i = 0; i < 20 && !((long)(g._frozenUntil - g_fakeMillis) > 0); ++i) step(none);
+        const bool frozen = (long)(g._frozenUntil - g_fakeMillis) > 0;
+        InputState push{}; push.joyY = 1.0f / STEER_X_SIGN;
+        const float x0 = g._shipX;
+        for (int i = 0; i < 10; ++i) step(push);
+        const float slow = fabsf(g._shipX - x0);
+        g._frozenUntil = 0; g._shipX = 0;
+        for (int i = 0; i < 10; ++i) step(push);
+        const float fast = fabsf(g._shipX);
+        printf("frozen %d; steering over 10 frames: %.0f frozen, %.0f normal\n", (int)frozen, slow, fast);
+        check(frozen && slow < fast * 0.6f, "a frost shard slows steering");
+        g._shipX = 200; g._shipY = 100;
+        g.spawnMine();
+        StarFluxGame::Rock* mine = nullptr;
+        for (auto &r : g._rocks) if (r.active && r.mine) mine = &r;
+        const float far0 = mine ? hypotf(mine->x - g._shipX, mine->y - g._shipY) : 0;
+        for (int i = 0; i < 60 && mine && mine->active; ++i) { g._shipX = 200; g._shipY = 100; step(none); }
+        const float far1 = mine ? hypotf(mine->x - g._shipX, mine->y - g._shipY) : 0;
+        printf("mine off your line: %.0f, then %.0f\n", far0, far1);
+        check(mine && far1 < far0 * 0.7f, "a mine steers at you");
         check(rings >= 10 && blocked == 0, "every ring reachable");
         g.onExit();
         printf("%s\n", ok ? "PASS" : "FAIL");
@@ -418,7 +468,7 @@ int main(int argc, char** argv) {
     }
 
     struct SegCost { long frames = 0; double us = 0, drawn = 0; int objs = 0, tris = 0; };
-    SegCost cost[3][12];
+    SegCost cost[StarFluxGame::STAGE_COUNT][12];
 
     bool prevB = false;
     int stallStage = -1, stallSeg = -1;
@@ -584,7 +634,7 @@ int main(int argc, char** argv) {
     if (profile) {
         // Relative only: host microseconds are not ESP32 microseconds.
         printf("\nstage seg  frames  drawnTris  update_us   sceneObjs/sceneTris\n");
-        for (int st = 0; st < 3; ++st) {
+        for (int st = 0; st < StarFluxGame::STAGE_COUNT; ++st) {
             for (int s = 0; s < 12; ++s) {
                 const SegCost &c = cost[st][s];
                 if (!c.frames) continue;

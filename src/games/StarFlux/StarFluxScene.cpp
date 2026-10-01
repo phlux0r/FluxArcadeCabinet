@@ -273,6 +273,7 @@ void StarFluxGame::drawBackdrop(GFXcanvas16 &canvas) {
     switch (_stageNum) {
         case STAGE_PLANET: drawPlanet(canvas); break;
         case STAGE_TRENCH: drawTrench(canvas); break;
+        case STAGE_CANYON: drawCanyon(canvas); break;
         default:           drawSpace(canvas); break;
     }
 }
@@ -368,6 +369,31 @@ void StarFluxGame::drawPod(GFXcanvas16 &canvas) {
     if (h > 3 && ((millis() / 100) & 1)) canvas.drawCircle(x, y, h + 2, rgb(255, 230, 120));
 }
 
+// Mines: pale spheres with eight spikes and a red light that blinks
+// faster as they close in.
+void StarFluxGame::drawMines(GFXcanvas16 &canvas) {
+    for (const auto &r : _rocks) {
+        if (!r.active || !r.mine) continue;
+        float sx, sy;
+        if (!project(r.x, r.y, r.z, sx, sy)) continue;
+        const float ppu = pixelsPerUnit(r.z);
+        const int rad = (int)(MINE_R * ppu + 0.5f);
+        const int x = (int)sx, y = (int)sy;
+        const bool flash = before(r.flashUntil);
+        if (rad < 2) { canvas.drawPixel(x, y, rgb(200, 220, 240)); continue; }
+        const float spin = (float)(millis() % 3000) * (2.0f * PI / 3000.0f);
+        const uint16_t spike = rgb(170, 190, 215);
+        for (int i = 0; i < 8; ++i) {
+            const float a = spin + (float)i * (PI / 4.0f);
+            canvas.drawLine(x, y, x + (int)(cosf(a) * (float)rad * 1.45f), y + (int)(sinf(a) * (float)rad * 1.45f), spike);
+        }
+        canvas.fillCircle(x, y, rad, flash ? rgb(255, 255, 255) : rgb(120, 140, 170));
+        canvas.drawCircle(x, y, rad, rgb(210, 226, 244));
+        const unsigned long period = r.z < 3000.0f ? 160 : 400;
+        if ((millis() / period) & 1) canvas.fillCircle(x, y, rad / 3 > 0 ? rad / 3 : 1, rgb(255, 50, 50));
+    }
+}
+
 // Twin green lasers, enemy shots (hot orange balls), and the bomb.
 void StarFluxGame::drawShots(GFXcanvas16 &canvas) {
     const uint16_t beam = rgb(70, 255, 110), core = rgb(220, 255, 220);
@@ -387,6 +413,13 @@ void StarFluxGame::drawShots(GFXcanvas16 &canvas) {
         if (!project(e.x, e.y, e.z, sx, sy)) continue;
         float r = ESHOT_R * pixelsPerUnit(e.z);
         if (r < 1.0f) r = 1.0f;
+        if (e.frost) {   // an ice shard: a pale diamond
+            const int x = (int)sx, y = (int)sy, k = (int)(r * 1.3f + 0.5f) + 1;
+            const uint16_t col = (millis() / 60) & 1 ? rgb(140, 230, 255) : rgb(230, 250, 255);
+            canvas.fillTriangle(x - k, y, x, y - k, x + k, y, col);
+            canvas.fillTriangle(x - k, y, x, y + k, x + k, y, col);
+            continue;
+        }
         canvas.fillCircle((int)sx, (int)sy, (int)(r + 0.5f), (millis() / 60) & 1 ? rgb(255, 90, 30) : rgb(255, 40, 80));
         canvas.fillCircle((int)sx, (int)sy, (int)(r * 0.45f), rgb(255, 240, 200));
     }
@@ -511,13 +544,16 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _rockMat[0].color = rgb(150, 128, 110);
     _rockMat[1].color = rgb(120, 126, 145);
     for (auto &m : _rockMat) m.shadingMode = Renderer::ShadingMode::FLAT;
-    for (Renderer::Material* m : { &_boxMat, &_crawlerMat, &_crawlerDarkMat, &_reactorMat, &_reactorDarkMat }) {
+    for (Renderer::Material* m : { &_boxMat, &_crawlerMat, &_crawlerDarkMat, &_reactorMat, &_reactorDarkMat,
+                                   &_walkerMat, &_walkerDarkMat }) {
         m->shadingMode = Renderer::ShadingMode::FLAT;
     }
     _crawlerMat.color     = rgb(120, 110, 84);
     _crawlerDarkMat.color = rgb(60, 56, 50);
     _reactorMat.color     = rgb(120, 128, 152);
     _reactorDarkMat.color = rgb(48, 52, 70);
+    _walkerMat.color      = rgb(150, 170, 196);
+    _walkerDarkMat.color  = rgb(56, 66, 90);
     _boxLightMat.color    = rgb(255, 70, 70);
     applyStagePalette();
     buildMountains();
@@ -545,6 +581,7 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _bossHulls[STAGE_BELT] = buildBossHull();
     _bossHulls[STAGE_PLANET] = buildCrawler();
     _bossHulls[STAGE_TRENCH] = buildReactor();
+    _bossHulls[STAGE_CANYON] = buildWalker();
     for (auto* h : _bossHulls) _scene->addObject(h);
     _bossHull = _bossHulls[STAGE_BELT];
     for (auto &b : _boxes) {

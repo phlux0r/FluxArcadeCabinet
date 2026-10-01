@@ -99,7 +99,7 @@ void setBoxSize(Renderer::Object* o, float w, float h, float d) {
 }  // namespace
 
 const char* StarFluxGame::stageName() const {
-    static const char* const names[STAGE_COUNT] = { "AURORA BELT", "EMBER REACH", "TRENCH RUN" };
+    static const char* const names[STAGE_COUNT] = { "AURORA BELT", "EMBER REACH", "TRENCH RUN", "FROST CANYON" };
     return names[_stageNum];
 }
 
@@ -107,6 +107,7 @@ float StarFluxGame::floorY() const {
     switch (_stageNum) {
         case STAGE_PLANET: return GROUND_Y;
         case STAGE_TRENCH: return TRENCH_FLOOR;
+        case STAGE_CANYON: return CANYON_FLOOR;
         default:           return -1e9f;
     }
 }
@@ -117,6 +118,7 @@ bool StarFluxGame::starVisible(float x, float y) const {
     switch (_stageNum) {
         case STAGE_PLANET: return false;
         case STAGE_TRENCH: return y > TRENCH_TOP || fabsf(x) < TRENCH_HALF_W;
+        case STAGE_CANYON: return y > CANYON_TOP;
         default:           return true;
     }
 }
@@ -124,7 +126,11 @@ bool StarFluxGame::starVisible(float x, float y) const {
 // Obstacle and turret colours to suit the stage: red rock on the planet,
 // steel and red lights in the trench.
 void StarFluxGame::applyStagePalette() {
-    if (_stageNum == STAGE_TRENCH) {
+    if (_stageNum == STAGE_CANYON) {   // ice; no turrets here
+        _boxMat.color = rgb(60, 220, 210);   // turquoise: stands out from the blue walls
+        _turretMat.color = rgb(120, 220, 255);
+        _turretMat2.color = rgb(40, 110, 170);
+    } else if (_stageNum == STAGE_TRENCH) {
         _boxMat.color = rgb(196, 156, 70);
         _turretMat.color = rgb(255, 70, 60);
         _turretMat2.color = rgb(140, 30, 30);
@@ -391,6 +397,127 @@ void StarFluxGame::drawTrench(GFXcanvas16 &canvas) {
     }
 }
 
+// The canyon: a frozen river between two walls of ice that lean outwards
+// (half width canyonHalfW(y)), under a night sky. Walls in strata, blue
+// below and snow at the top, split by crevices; the river in ice slabs with
+// snow banks at its edges; a pale mist far off. The walls are planes, so
+// each surface's region of the screen is convex: where both ends of a span
+// are on the same surface, its ends are worked out exactly and the pattern
+// stepped across in fixed point, as drawTrench() does.
+void StarFluxGame::drawCanyon(GFXcanvas16 &canvas) {
+    const int w = canvas.width(), h = canvas.height();
+    uint16_t* buf = canvas.getBuffer();
+    const float invF = 1.0f / _camera.fovFactor;
+    const float cx = w * 0.5f, cy = h * 0.5f;
+    const float c = _rollCos, s = _rollSin;
+
+    const uint16_t mist = rgb(150, 178, 210);
+    static uint16_t skyLut[32];
+    static Fogged iceA, iceB, snow, wallDeep, wallMid, wallSnow, crevice;
+    static bool built = false;
+    if (!built) {
+        for (int i = 0; i < 32; ++i) {
+            float t = (float)i / 31.0f;
+            skyLut[i] = t < 0.25f ? mix565(mist, rgb(60, 90, 150), t / 0.25f)
+                                  : mix565(rgb(60, 90, 150), rgb(6, 10, 34), (t - 0.25f) / 0.75f);
+        }
+        iceA     = fogged(rgb(120, 170, 214), mist);
+        iceB     = fogged(rgb(96, 146, 196), mist);
+        snow     = fogged(rgb(226, 236, 248), mist);
+        wallDeep = fogged(rgb(54, 92, 150), mist);
+        wallMid  = fogged(rgb(88, 132, 190), mist);
+        wallSnow = fogged(rgb(214, 228, 244), mist);
+        crevice  = fogged(rgb(24, 40, 80), mist);
+        built = true;
+    }
+    const float k = CANYON_SLOPE, F = CANYON_FLOOR;
+    const float drop = F - _camY;
+    const float numR = CANYON_HALF_W + k * (_camY - F) - _camX;    // right wall: z = numR / (dx - k dy)
+    const float numL = -CANYON_HALF_W - k * (_camY - F) - _camX;   // left: z = numL / (dx + k dy)
+    const int scroll = (int)_groundScroll;
+    const int top = (int)(CANYON_TOP - F);
+    const int bank = (int)CANYON_HALF_W - 70;   // snow banks past this across the river
+
+    // Which surface a ray meets first: 0 sky, 1 floor, 2 left wall, 3 right
+    // wall; its depth; and its pattern coordinates (floor: across, along;
+    // walls: along, height above the floor).
+    struct Hit { int s; float z, u, v; };
+    auto hitAt = [&](float dx, float dy) -> Hit {
+        Hit r{ 0, 1e9f, 0, 0 };
+        if (dy < 0.0f) { r.s = 1; r.z = drop / dy; }
+        const float dr = dx - k * dy, dl = dx + k * dy;
+        if (dr > 1e-4f) {
+            const float z = numR / dr;
+            if (z > 0.0f && z < r.z && _camY + dy * z <= CANYON_TOP) { r.s = 3; r.z = z; }
+        }
+        if (dl < -1e-4f) {
+            const float z = numL / dl;
+            if (z > 0.0f && z < r.z && _camY + dy * z <= CANYON_TOP) { r.s = 2; r.z = z; }
+        }
+        if (r.s == 1) { r.u = _camX + dx * r.z + 4096.0f; r.v = r.z + (float)scroll; }
+        else if (r.s >= 2) { r.u = r.z + (float)scroll; r.v = _camY + dy * r.z - F; }
+        else r.u = dy * 60.0f;
+        return r;
+    };
+    auto floorPx = [&](int gx, int gz, int step) -> uint16_t {
+        if (gx < 4096 - bank || gx > 4096 + bank) return snow.c[step];
+        return ((((gx + (gz >> 3)) >> 9) + (gz >> 9)) & 1 ? iceA : iceB).c[step];
+    };
+    auto wallPx = [&](int gz, int wy, int step) -> uint16_t {
+        if ((gz & 1023) < 40) return crevice.c[step];
+        if (wy > top - 80) return wallSnow.c[step];
+        return (((wy + ((gz >> 5) & 63)) >> 7) & 1 ? wallMid : wallDeep).c[step];
+    };
+    auto colourOf = [&](const Hit &r) -> uint16_t {
+        if (r.s == 0) { int si = (int)r.u; return skyLut[si > 31 ? 31 : si < 0 ? 0 : si]; }
+        if (r.z > FOG_FAR) return mist;
+        if (r.s == 1) return floorPx((int)r.u, (int)r.v, fogStep(r.z));
+        return wallPx((int)r.u, (int)r.v, fogStep(r.z));
+    };
+
+    // Spans of SPAN pixels, each from its first pixel's ray to the next
+    // span's: one ray worked out per span, the end shared.
+    constexpr int SPAN = 16;
+    const float sx = invF * c, sy = -invF * s;
+    for (int y = 0; y < h; ++y) {
+        const float v = (cy - ((float)y + 0.5f)) * invF;
+        uint16_t* row = buf + y * w;
+        const float u0 = (0.5f - cx) * invF;
+        float dxA = u0 * c + v * s, dyA = -u0 * s + v * c;
+        Hit a = hitAt(dxA, dyA);
+        for (int x0 = 0; x0 < w; x0 += SPAN) {
+            const int n = (x0 + SPAN <= w ? SPAN : w - x0);
+            const float dxB = dxA + sx * (float)n, dyB = dyA + sy * (float)n;
+            uint16_t* out = row + x0;
+            const Hit b = hitAt(dxB, dyB);
+            if (n > 1 && a.s == b.s && (a.s == 0 || (a.z < FOG_FAR && b.z < FOG_FAR))) {
+                if (a.s == 0) {
+                    int32_t fi = (int32_t)(a.u * 65536.0f);
+                    const int32_t st = (int32_t)((b.u - a.u) * 65536.0f) / n;
+                    for (int i = 0; i < n; ++i, fi += st) {
+                        int si = fi >> 16;
+                        out[i] = skyLut[si > 31 ? 31 : si < 0 ? 0 : si];
+                    }
+                } else {
+                    const int step = fogStep((a.z + b.z) * 0.5f);
+                    int32_t pu = (int32_t)(a.u * 256.0f), pv = (int32_t)(a.v * 256.0f);
+                    const int32_t su = ((int32_t)(b.u * 256.0f) - pu) / n, sv = ((int32_t)(b.v * 256.0f) - pv) / n;
+                    if (a.s == 1) {
+                        for (int i = 0; i < n; ++i, pu += su, pv += sv) out[i] = floorPx(pu >> 8, pv >> 8, step);
+                    } else {
+                        for (int i = 0; i < n; ++i, pu += su, pv += sv) out[i] = wallPx(pu >> 8, pv >> 8, step);
+                    }
+                }
+            } else {
+                out[0] = colourOf(a);
+                float dx = dxA + sx, dy = dyA + sy;
+                for (int i = 1; i < n; ++i, dx += sx, dy += sy) out[i] = colourOf(hitAt(dx, dy));
+            }
+            dxA = dxB; dyA = dyB; a = b;
+        }
+    }
+}
+
 // The ship's shadow on the ground or the trench floor: the pixels under it
 // at a quarter brightness, with a dotted drop line up to the ship, so how
 // high you are over the ground (and short pillars and towers) reads at a
@@ -567,6 +694,44 @@ void StarFluxGame::spawnTrenchHazard() {
     }
     // A turret tower half way to the next one.
     if (random(0, 100) < 35) spawnTower((float)random(-300, 301), z + 1000.0f, true);
+}
+
+// The canyon's fields: ice bridges overhead with icicles hanging down
+// (fly between them), low arches (over or under), pillars of ice from the
+// river (short ones to hop), and, later in the stage, mines.
+void StarFluxGame::spawnCanyonHazard() {
+    const float z = BOX_SPAWN_Z, F = CANYON_FLOOR, d = 170.0f;
+    const int r = (int)random(0, 100);
+    if (_seg >= 4 && r < 22) {
+        spawnMine();
+        if (random(0, 100) < 50) spawnMine();
+        return;
+    }
+    if (r < 50) {
+        // A bridge with three or four icicles: one gap at least twice the ship.
+        const float hw = canyonHalfW(BRIDGE_Y);
+        spawnBox(-hw, hw, BRIDGE_Y, BRIDGE_Y + 150.0f, z, d);
+        const int n = 3 + (int)random(0, 2);
+        const int gap = (int)random(0, n + 1);           // the slot left clear
+        const float pitch = (2.0f * BOX_X + 120.0f) / (float)(n + 1);
+        for (int i = 0, slot = 0; i < n + 1; ++i, ++slot) {
+            if (i == gap) continue;
+            const float x = -BOX_X - 60.0f + pitch * ((float)slot + 0.5f);
+            const float len = (float)random(380, 560);   // down past the ship's highest
+            spawnBox(x - 45.0f, x + 45.0f, BRIDGE_Y - len, BRIDGE_Y, z, 90.0f);
+        }
+    } else if (r < 75) {
+        // A low arch across the river: over or under.
+        const float gy = (float)random((long)BOX_Y_MIN + 120, (long)BOX_Y_MAX - 150);
+        const float hw = canyonHalfW(gy + 70.0f);
+        spawnBox(-hw, hw, gy, gy + 120.0f, z, d);
+    } else {
+        // Two pillars of ice, one tall, one short enough to hop.
+        const float x0 = (float)random(-(long)BOX_X, (long)BOX_X + 1);
+        const float x1 = x0 + (x0 < 0 ? 1.0f : -1.0f) * (float)random(260, 400);
+        spawnBox(x0 - 90.0f, x0 + 90.0f, F, 600.0f, z, 180.0f);
+        spawnBox(x1 - 110.0f, x1 + 110.0f, F, (float)random(-120, -40), z, 220.0f);
+    }
 }
 
 void StarFluxGame::updateBoxes(AudioEngine &audio) {
@@ -750,6 +915,21 @@ Renderer::Object* StarFluxGame::buildReactor() {
 }
 
 // An obstacle slot: a unit box, resized by spawnBox().
+// The ice walker: a body on two long legs, a cockpit at the front, its
+// knee cannons (parts 0, 1) and core (part 2) are separate objects.
+Renderer::Object* StarFluxGame::buildWalker() {
+    auto* o = new Renderer::Object();
+    addBox(o, -330, 200, 0, 150, 400, 200, &_walkerDarkMat);    // legs
+    addBox(o, 330, 200, 0, 150, 400, 200, &_walkerDarkMat);
+    addBox(o, -330, 20, -40, 240, 40, 340, &_walkerMat);        // feet
+    addBox(o, 330, 20, -40, 240, 40, 340, &_walkerMat);
+    addBox(o, 0, 560, 0, 900, 300, 560, &_walkerMat);           // body
+    addBox(o, 0, 760, 60, 520, 110, 360, &_walkerDarkMat);      // back
+    addBox(o, 0, 470, -330, 300, 120, 120, &_walkerDarkMat);    // chin, under the core
+    addBox(o, 0, 660, -285, 820, 22, 8, &_boxLightMat);         // running light
+    return finishSolid(o);
+}
+
 Renderer::Object* StarFluxGame::buildObstacleBox() {
     auto* o = new Renderer::Object();
     addBox(o, 0, 0, 0, 100, 100, 100, &_boxMat);

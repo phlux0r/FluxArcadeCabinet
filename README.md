@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
-| Star Flux | Star | Landscape | 3D on-rails space shooter: three stages of fighter waves, hazards and bosses (see below) |
+| Star Flux | Star | Landscape | 3D on-rails space shooter: four stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
@@ -46,7 +46,7 @@ head-on pairs, a wing overtaking from behind, a weaving snake) that swoop,
 fire and break away, hazard fields between them, silver rings that restore
 40 shield, and a boss. Each stage runs 70-100 seconds and ends with a
 results screen (fighters downed, targets, rings, and a bonus for the
-shield you kept); after the third, the game loops back to the first,
+shield you kept); after the fourth, the game loops back to the first,
 harder each loop up to the fifth: a fighter more in every wave, fighters
 6% quicker, more of their shots fired and aimed ahead of you, pairs of
 shots from loop 3, bosses with 20% more health attacking 8% quicker, and
@@ -69,6 +69,14 @@ fields 8% denser, each loop.
    reactor at the trench's end: two emitters; then spiral streams; then a
    rotating shield fan over its core, which only shots through the gap
    reach.
+4. **Frost Canyon** (an ice canyon under a night sky): ice bridges with
+   icicles hanging down (fly between them), low ice arches (over or
+   under), ice pillars (short ones to hop), and mines that drift in,
+   steering gently at you (shoot them, 80 points). The ice walker, striding
+   across the canyon: two knee cannons; lose one and it fires fans of
+   frost shards, which slow your steering for 1.5s when they hit; lose
+   both and its core fires frost spreads between rings of shards closing
+   round you.
 
 A shield bar and 3 lives, with an extra life at 75,000 points and every
 50,000 after (up to 9): an empty shield costs a life and restarts the

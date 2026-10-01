@@ -13,6 +13,9 @@
 //   Reactor (stage 3): the end of the trench. Emitters; then spiral
 //     streams; then the core is shielded by a rotating fan, and only shots
 //     through its gap reach it (line up off-centre, where the gap's coming).
+//   Ice walker (stage 4): strides across the canyon. Knee cannons; then
+//     fans of frost shards (a hit slows your steering); then its core
+//     fires frost spreads between rings of shards closing round you.
 
 namespace starflux {
 
@@ -20,10 +23,11 @@ namespace {
 // Per boss: depth it holds at, hull sphere (for soaking up shots and the
 // death explosions), relative to the boss's position.
 struct BossDef { float z, hullY, hullR; const char* name; const char* downBanner; };
-const BossDef BOSSES[3] = {
+const BossDef BOSSES[4] = {
     { 2000.0f,   0.0f, 330.0f, "DREADNOUGHT", "DREADNOUGHT DESTROYED" },
     { 2300.0f, 300.0f, 480.0f, "CRAWLER",     "CRAWLER DESTROYED" },
     { 2700.0f,   0.0f, 560.0f, "REACTOR",     "REACTOR DESTROYED" },
+    { 2500.0f, 560.0f, 480.0f, "ICE WALKER",  "ICE WALKER DESTROYED" },
 };
 
 inline uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -47,7 +51,8 @@ void StarFluxGame::startBoss() {
     _bossAt = millis();
     _bossZ = BOSS_ENTER_Z;
     _bossX = 0;
-    _bossY = _bossKind == STAGE_PLANET ? GROUND_Y : _bossKind == STAGE_TRENCH ? 40.0f : BOSS_BASE_Y;
+    _bossY = _bossKind == STAGE_PLANET ? GROUND_Y : _bossKind == STAGE_TRENCH ? 40.0f
+           : _bossKind == STAGE_CANYON ? CANYON_FLOOR : BOSS_BASE_Y;
     _bossAlarms = 0;
     _fanAngle = 0;
     if (!_retrying || (_cannonHp[0] <= 0 && _cannonHp[1] <= 0 && _coreHp <= 0)) {
@@ -62,10 +67,10 @@ void StarFluxGame::startBoss() {
     _coreFireAt = start + 900;
     _cannonFlash[0] = _cannonFlash[1] = _coreFlash = 0;
     // Weak points in the boss's own colours.
-    static const uint16_t partA[3] = { rgb(255, 150, 30), rgb(170, 255, 60), rgb(80, 220, 255) };
-    static const uint16_t partB[3] = { rgb(200, 80, 10),  rgb(90, 170, 20),  rgb(20, 120, 200) };
-    static const uint16_t coreA[3] = { rgb(255, 60, 200), rgb(255, 70, 50),  rgb(240, 250, 255) };
-    static const uint16_t coreB[3] = { rgb(160, 20, 130), rgb(170, 20, 20),  rgb(120, 160, 255) };
+    static const uint16_t partA[4] = { rgb(255, 150, 30), rgb(170, 255, 60), rgb(80, 220, 255), rgb(255, 120, 40) };
+    static const uint16_t partB[4] = { rgb(200, 80, 10),  rgb(90, 170, 20),  rgb(20, 120, 200), rgb(170, 60, 10) };
+    static const uint16_t coreA[4] = { rgb(255, 60, 200), rgb(255, 70, 50),  rgb(240, 250, 255), rgb(120, 255, 255) };
+    static const uint16_t coreB[4] = { rgb(160, 20, 130), rgb(170, 20, 20),  rgb(120, 160, 255), rgb(30, 140, 200) };
     _cannonMat.color = partA[_bossKind];
     _cannonMat2.color = partB[_bossKind];
     _coreMat.color = coreA[_bossKind];
@@ -86,6 +91,10 @@ void StarFluxGame::bossPartPos(int part, float &x, float &y, float &z) const {
         case STAGE_TRENCH:
             if (part < 2) { x = _bossX + side * 400.0f; y = _bossY + 170.0f; z = _bossZ - 260.0f; }
             else          { x = _bossX;                 y = _bossY - 10.0f;  z = _bossZ - 300.0f; }
+            break;
+        case STAGE_CANYON:   // knee cannons on the legs' fronts; the core under the cockpit
+            if (part < 2) { x = _bossX + side * 330.0f; y = _bossY + 250.0f; z = _bossZ - 160.0f; }
+            else          { x = _bossX;                 y = _bossY + 560.0f; z = _bossZ - 360.0f; }
             break;
         default:
             if (part < 2) { x = _bossX + side * CANNON_X; y = _bossY - 15.0f; z = _bossZ - 70.0f; }
@@ -137,10 +146,11 @@ void StarFluxGame::hideBoss() {
 }
 
 // BURST_SHOTS shots aimed at a ring BURST_RADIUS round where you are now.
-void StarFluxGame::ringBurst(float x, float y, float z) {
+void StarFluxGame::ringBurst(float x, float y, float z, bool frost) {
     for (int i = 0; i < BURST_SHOTS; ++i) {
         float a = (float)i * (2.0f * PI / (float)BURST_SHOTS);
-        fireAt(x, y, z, _shipX + cosf(a) * BURST_RADIUS, _shipY + sinf(a) * BURST_RADIUS, 0.9f);
+        EShot* e = fireAt(x, y, z, _shipX + cosf(a) * BURST_RADIUS, _shipY + sinf(a) * BURST_RADIUS, 0.9f);
+        if (e) e->frost = frost;
     }
 }
 
@@ -175,7 +185,7 @@ void StarFluxGame::updateBoss(AudioEngine &audio) {
         }
     } else if (_stage == STAGE_BOSS_DEATH) {
         _bossZ += 6.0f * _frameScale;   // sinking away as it breaks up
-        if (_bossKind != STAGE_PLANET) _bossY -= 3.0f * _frameScale;
+        if (_bossKind != STAGE_PLANET && _bossKind != STAGE_CANYON) _bossY -= 3.0f * _frameScale;
     } else {
         _bossZ = hold;
     }
@@ -190,6 +200,12 @@ void StarFluxGame::updateBoss(AudioEngine &audio) {
                 _bossX = 60.0f * sinf((float)t * 0.0007f);
                 _bossY = 40.0f + 40.0f * sinf((float)t * 0.0011f);
                 break;
+            case STAGE_CANYON: {   // strides from side to side, bobbing with each step
+                const float phase = (float)t * 0.0005f * pace;
+                _bossX = 220.0f * sinf(phase);
+                _bossY = CANYON_FLOOR + 30.0f * fabsf(sinf(phase * 6.0f));
+                break;
+            }
             default:
                 _bossX = BOSS_SWAY_X * sinf((float)t * 0.00055f * pace);
                 _bossY = BOSS_BASE_Y + BOSS_SWAY_Y * sinf((float)t * 0.0009f * pace);
@@ -262,6 +278,32 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
             }
             break;
 
+        case STAGE_CANYON:
+            // Fans of five frost shards; with the core open, rings of
+            // them closing round you, and spreads from the core.
+            if (oneLost && reached(_burstAt)) {
+                if (coreOpen()) {
+                    ringBurst(cx, cy, cz, true);
+                } else {
+                    int p = _cannonHp[0] > 0 ? 0 : 1;
+                    float x, y, z;
+                    bossPartPos(p, x, y, z);
+                    for (int i = -2; i <= 2; ++i) {
+                        if (EShot* e = fireAt(x, y, z, _shipX + (float)i * 140.0f, _shipY, 1.0f)) e->frost = true;
+                    }
+                }
+                sfx(audio, SFX_BURST);
+                _burstAt = millis() + bossMs(coreOpen() ? 2600 : 1900);
+            }
+            if (coreOpen() && reached(_coreFireAt)) {
+                for (int i = -1; i <= 1; ++i) {
+                    if (EShot* e = fireAt(cx, cy, cz, _shipX + (float)i * 150.0f, _shipY, 1.1f)) e->frost = true;
+                }
+                sfx(audio, SFX_BOSS_FIRE);
+                _coreFireAt = millis() + bossMs(1400);
+            }
+            break;
+
         default:
             if (oneLost && reached(_burstAt)) {
                 ringBurst(cx, cy, cz);
@@ -299,7 +341,7 @@ void StarFluxGame::hitBossPart(int part, int damage, AudioEngine &audio) {
             bossPartPos(2, cx, cy, cz);
             addBlast(cx, cy, cz - 40.0f, 260.0f, ArcadeConfig::COLOR_WHITE);
         } else {
-            static const char* const lost[3] = { "CANNON DOWN", "POD DOWN", "EMITTER DOWN" };
+            static const char* const lost[4] = { "CANNON DOWN", "POD DOWN", "EMITTER DOWN", "LEG CANNON DOWN" };
             setBanner(lost[_bossKind], ArcadeConfig::COLOR_YELLOW, 1400);
             _burstAt = millis() + 1200;
         }

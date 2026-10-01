@@ -54,6 +54,18 @@ const StarFluxGame::Segment& StarFluxGame::segment() const {
             { SEG_WAVE,  PAT_LOOP,    6,  1,     0,    false },
             { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
         },
+        {   // 4, Frost Canyon: icicles, arches, ice pillars and mines; the ice walker.
+            { SEG_WAVE,  PAT_WEAVE,   6,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_SWEEP,   6,  0,     0,    false },
+            { SEG_WAVE,  PAT_VDIVE,   7, -1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    false },
+            { SEG_WAVE,  PAT_HEADON,  6,  1,     0,    true  },
+            { SEG_WAVE,  PAT_LOOP,    6, -1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_WEAVE,   6, -1,     0,    false },
+            { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+        },
     };
     return scripts[_stageNum][_seg];
 }
@@ -116,6 +128,11 @@ void StarFluxGame::spawnField(AudioEngine &audio) {
             if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
             spawnPlanetHazard();
             _nextFieldAt = millis() + fieldMs(PLANET_FIELD_MS);
+            break;
+        case STAGE_CANYON:
+            if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
+            spawnCanyonHazard();
+            _nextFieldAt = millis() + fieldMs(CANYON_FIELD_MS);
             break;
         default:
             if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
@@ -208,6 +225,7 @@ void StarFluxGame::retrySegment() {
     _shield = SHIELD_MAX;
     if (_bombs < BOMBS_START) _bombs = BOMBS_START;
     _shipX = 0; _shipY = 0; _shipVX = _shipVY = 0; _bank = 0;
+    _frozenUntil = 0;
     _stage = STAGE_RUN;
     _stageAt = millis();
     _invulnUntil = millis() + SPAWN_INVULN_MS;
@@ -229,7 +247,13 @@ void StarFluxGame::updateShip(const InputState &input) {
         if (fabsf(ix) < 0.12f) ix = 0;
         if (fabsf(iy) < 0.12f) iy = 0;
     }
-    const float k = clampf(SHIP_SMOOTH * fs, 0.0f, 1.0f);
+    float k = clampf(SHIP_SMOOTH * fs, 0.0f, 1.0f);
+    if (before(_frozenUntil)) {   // a frost shard: sluggish, and icy sparks
+        ix *= FREEZE_STEER; iy *= FREEZE_STEER; k *= FREEZE_STEER;
+        if ((millis() / 100) & 1) {
+            _particles.emitSparks(Renderer::Vec3f{ _shipX, _shipY, SHIP_Z }, Renderer::Vec3f{ 0, 1, 0 }, 120.0f, 1);
+        }
+    }
     if (_stage == STAGE_INTRO && _phase == PHASE_PLAYING) {
         _shipVX = 0;
         _shipVY = (0.0f - _shipY) * 0.05f;
@@ -465,7 +489,25 @@ void StarFluxGame::spawnRock(bool aimed) {
     r->ax = (float)random(0, 360); r->ay = (float)random(0, 360); r->az = (float)random(0, 360);
     r->sx = (float)random(-40, 41) * 0.1f; r->sy = (float)random(-40, 41) * 0.1f; r->sz = (float)random(-20, 21) * 0.1f;
     r->flashUntil = 0;
+    r->mine = false;
     r->obj->enabled = true;
+}
+
+// A mine: a small rock's slot, drawn in 2D (drawMines()), starting off to
+// one side and steering at you (updateRocks()).
+void StarFluxGame::spawnMine() {
+    Rock* r = nullptr;
+    for (int i = ROCK_BIG_SLOTS; i < ROCK_POOL && !r; ++i) if (!_rocks[i].active) r = &_rocks[i];
+    if (!r) return;
+    r->active = true;
+    r->mine = true;
+    r->hp = 1;
+    r->x = (float)random(-(long)BOX_X, (long)BOX_X + 1);
+    r->y = (float)random((long)BOX_Y_MIN, (long)BOX_Y_MAX + 1);
+    r->vx = r->vy = 0;
+    r->z = BOX_SPAWN_Z;
+    r->flashUntil = 0;
+    r->obj->enabled = false;
 }
 
 void StarFluxGame::updateRocks(AudioEngine &audio) {
@@ -477,15 +519,21 @@ void StarFluxGame::updateRocks(AudioEngine &audio) {
         r.y += r.vy * fs;
         r.ax += r.sx * fs; r.ay += r.sy * fs; r.az += r.sz * fs;
         if (r.z < CAMERA_NEAR + 10) { r.active = false; r.obj->enabled = false; continue; }
+        if (r.mine && r.z > MISSILE_STOP_Z) {   // steering at you, gently, till close
+            const float k = clampf(MINE_TURN * fs, 0.0f, 1.0f);
+            r.vx += (clampf((_shipX - r.x) * 0.02f, -MINE_DRIFT, MINE_DRIFT) - r.vx) * k;
+            r.vy += (clampf((_shipY - r.y) * 0.02f, -MINE_DRIFT, MINE_DRIFT) - r.vy) * k;
+        }
         // Passing the ship: collide.
         if (_stage == STAGE_RUN && fabsf(r.z - SHIP_Z) < r.r * 0.6f) {
-            float dx = r.x - _shipX, dy = r.y - _shipY, rr = r.r * 0.8f + SHIP_HIT_R;
+            float dx = r.x - _shipX, dy = r.y - _shipY, rr = r.mine ? MINE_R + SHIP_HIT_R * 0.8f : r.r * 0.8f + SHIP_HIT_R;
             if (dx * dx + dy * dy < rr * rr && !before(_invulnUntil)) {
                 destroyRock(r, false, audio);
                 damageShip(ROCK_DAMAGE, audio);
                 continue;
             }
         }
+        if (r.mine) continue;   // drawn in 2D
         r.obj->setPosition((int32_t)r.x, (int32_t)r.y, (int32_t)r.z);
         r.obj->setRotation((int32_t)r.ax, (int32_t)r.ay, (int32_t)r.az);
         bool flash = before(r.flashUntil);
@@ -504,7 +552,7 @@ void StarFluxGame::destroyRock(Rock &r, bool byPlayer, AudioEngine &audio) {
     _particles.emitSparks(Renderer::Vec3f{ r.x, r.y, r.z }, Renderer::Vec3f{ 0, 0, -1 }, 500.0f, big ? 16 : 8);
     sfx(audio, SFX_POP);
     if (!byPlayer) return;
-    _score += big ? ROCK_BIG_POINTS : ROCK_SMALL_POINTS;
+    _score += r.mine ? MINE_POINTS : big ? ROCK_BIG_POINTS : ROCK_SMALL_POINTS;
     ++_targetsDowned;
     if (!big) return;
     int made = 0;
@@ -520,6 +568,7 @@ void StarFluxGame::destroyRock(Rock &r, bool byPlayer, AudioEngine &audio) {
         c.vy = (float)random(-30, 31) * 0.1f;
         c.sx = (float)random(-60, 61) * 0.1f; c.sy = (float)random(-60, 61) * 0.1f; c.sz = 0;
         c.flashUntil = 0;
+        c.mine = false;
         c.obj->enabled = true;
         ++made;
     }

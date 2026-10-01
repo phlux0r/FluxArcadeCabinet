@@ -76,6 +76,9 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
     if (_stageNum == STAGE_TRENCH) {
         x *= 0.55f;
         y = y * 0.7f + 60.0f;
+    } else if (_stageNum == STAGE_CANYON) {   // the canyon's a little wider, and opens upwards
+        x *= 0.7f;
+        y = y * 0.8f + 40.0f;
     }
 }
 
@@ -224,6 +227,7 @@ StarFluxGame::EShot* StarFluxGame::fireAt(float x, float y, float z, float tx, f
         float k = eshotSpeed() * speedMul / len;
         e.active = true;
         e.homing = false;
+        e.frost = false;
         e.x = x; e.y = y; e.z = z;
         e.vx = dx * k; e.vy = dy * k; e.vz = dz * k;
         return &e;
@@ -268,6 +272,10 @@ void StarFluxGame::updateEShots(AudioEngine &audio) {
             if (_stage == STAGE_RUN && dx * dx + dy * dy < SHIP_HIT_R * SHIP_HIT_R && !before(_invulnUntil)) {
                 e.active = false;
                 if (e.homing) addBlast(cx, cy, SHIP_Z, 140.0f, ArcadeConfig::COLOR_YELLOW);
+                if (e.frost) {   // frozen: steering slowed for a while
+                    _frozenUntil = millis() + FREEZE_MS;
+                    addBlast(cx, cy, SHIP_Z, 130.0f, ArcadeConfig::COLOR_CYAN);
+                }
                 damageShip(e.homing ? SHOT_DAMAGE + 6 : SHOT_DAMAGE, audio);
                 continue;
             }
