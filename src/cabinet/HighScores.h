@@ -42,10 +42,11 @@ struct Entry { char name[4]; int32_t score; };
 struct Table { Entry e[ENTRIES]; };
 
 // Every game with a table: its key, the name on the table, and where its
-// high score lived before (for carrying it over).
+// high score lived before (for carrying it over; null for a newer game).
 struct GameInfo { const char* key; const char* title; const char* legacyNs; const char* legacyKey; };
 inline const GameInfo GAMES[] = {
     { "asteroids", "ASTEROIDS", "af_data",     "highscore"  },
+    { "brick",     "BRICK FLUX", nullptr,      nullptr      },
     { "lander",    "LANDER",    "lander_flux", "high_score" },
     { "maze",      "MAZE",      "maze_flux",   "high_score" },
     { "runner",    "RUNNER",    "pf_data",     "highscore"  },
@@ -82,8 +83,10 @@ inline void load(const char* key, Table &t) {
         for (auto &e : t.e) e.name[3] = '\0';   // whatever's stored, names stay strings
         return;
     }
-    // No table yet: carry over the old single high score, if there was one.
-    if (const GameInfo* g = info(key)) {
+    // No table yet: carry over the old single high score, if there was one
+    // (games newer than the tables have none).
+    const GameInfo* g = info(key);
+    if (g && g->legacyNs) {
         Preferences old;
         old.begin(g->legacyNs, true);
         int32_t best = old.getInt(g->legacyKey, 0);

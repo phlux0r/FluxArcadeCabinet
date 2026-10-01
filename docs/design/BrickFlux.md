@@ -82,9 +82,11 @@ a sloppy horizontal push doesn't tilt by accident.
   and gun bolts you absorb add 2 (§6). Full at 24.
 - With the meter full, hold A: the bat glows white and crackles (sparks
   from its ends). Release A to open a **150ms window**: if the ball meets
-  the bat within it, it smashes. Miss the window and the bat just plays
-  a normal bounce, *and the meter stays full*, so a mistimed release costs
-  nothing but the chance.
+  the bat within it, it smashes. Letting go up to 60ms *after* the ball
+  left the bat still counts (a Good: the ball is turned onto the bat's
+  aim), as players tend to release a touch late. Miss and the bat just
+  plays a normal bounce, *and the meter stays full*, so a mistimed release
+  costs nothing but the chance.
 - **Good** (contact 50-150ms after release): the ball turns white-hot and
   goes straight up the bat's aim, piercing every brick in its path
   (steel, portals, either polarity) until it reaches the top wall, then
@@ -112,7 +114,7 @@ a sloppy horizontal push doesn't tilt by accident.
 
 | Brick | Look | Hits | Points | Notes |
 |---|---|---|---|---|
-| Neutral | white | 1 | 10 | |
+| Neutral | by row: white, yellow, orange, green, blue, amber | 1 | 10 | never cyan or magenta, which are polarity's |
 | Cyan / Magenta | colour | 1 | 20 x chain | polarity |
 | Hard | colour, darker with a bevel | 2-3 | 30 per hit | neutral or coloured; cracks show |
 | Steel | grey, rivets | Smash only | 300 | not needed to clear a level |
@@ -139,7 +141,9 @@ a sloppy horizontal push doesn't tilt by accident.
 - Interval: 14s on level 1, down 0.5s a level to 7s; loops take 15% more
   off (floor 4s). Boss levels have no wall.
 - If a breakable brick crosses the danger line: lose a life, the bricks
-  that crossed it explode, and the formation is pushed back up 3 rows.
+  that crossed it explode, and the formation is pushed back up 3 rows;
+  play restarts with a ball on the bat, as after a lost ball.
+- The wall waits while a ball is on the bat to be served.
 - Clearing the level scores a **headroom bonus**: 100 for each empty row
   left between the formation's lowest row reached and the danger line.
 
@@ -186,8 +190,7 @@ then the next level.
   hard, `s` steel, `g`/`G` gun cyan/magenta, `o` magnet, `p` portal, `*`
   spark): ~180 bytes each, ~3KB in all.
 - New mechanics come in one at a time: levels 1-2 neutral and hard only;
-  polarity from 3 (two big colour blocks), the wall's step-tick shown on 1
-  but first felt on 2; magnets 6; guns 7; portals 11; sparks from 3.
+  polarity from 3 (two big colour blocks); the wall from level 1; magnets 6; guns 7; portals 11; sparks from 3.
   Flux Smash is there from level 1 (the how-to-play shows it).
 - After level 20 the game loops (up to loop 5): ball +10% start speed, wall
   15% faster, guns fire 20% more often, bosses +20% HP, each loop. The
@@ -198,6 +201,9 @@ then the next level.
   losing a life adds 2,000.
 
 ## 11. Look and feel
+
+- The title is drawn, not a bitmap (a band of bricks, the name, a ball
+  bouncing off a bat), which saves the 40kB a 128x160 image would take.
 
 - Black field, a faint dot grid scrolling down very slowly as the wall
   advances (the only backdrop: cheap, and it shows the creep).
@@ -257,25 +263,28 @@ autopilot:
 
 ## 14. Implementation notes
 
-- Files: `BrickFluxGame.h` (states, attract, HUD, scoring), `BrickBoard.h`
-  (grid, wall creep, bricks, layouts), `BrickBall.h` (balls, bat, physics,
-  smash), `BrickBosses.h`, `BrickAutopilot.h`, `assets/` (title art,
-  layouts). Constants in a `BrickConfig` block in `ArcadeConfig.h` with
-  the other 2D games'.
+- Files: `BrickFluxGame.h` (class, phases, attract, sounds), `BrickPlay.h`
+  (bat, balls, bricks, smash, capsules, wall), `BrickRender.h` (drawing),
+  `BrickAutopilot.h`, `BrickBoard.h` (grid and creep), `BrickBall.h` (types
+  and bounce maths), `BrickLevels.h` (layouts as text), `BrickConfig.h`
+  (all tuning, in its own header like the 3D games' rather than in
+  `ArcadeConfig.h`). Stage 2 adds `BrickBosses.h`.
 - State is all in the game object: grid 15x22 bytes, up to 6 balls, 8
   bolts, 4 capsules, 4 sparks, 16 laser shots: well under 2kB.
 - Draw: bricks as filled rects into the canvas, only the 15x22 grid walked.
   Nothing per-pixel, so frame cost is well inside the budget; the display
   push (~8ms) dominates.
-- Flash: title art 128x160 RGB565 is 40kB, the only large asset. Check
-  `pio run`'s size report.
+- Flash: no large assets (the title is drawn); still check `pio run`'s
+  size report.
 - Registry: `{ "Brick", makeGame<BrickFluxGame>, "brick" }` and `brick` in
   `hiscore::GAMES`. The launcher already scrolls past six.
 
 ## 15. Host harness
 
-A `brick` harness in the 2D style (`games2d_harness.cpp`) with the fake
-clock and seeded RNG:
+`test/brickflux_harness.cpp` (`test/build.sh brick <scenario>`), with the
+fake clock and seeded RNG. Stage 1 has `play`, `wall`, `smash`, `tunnel`
+(fast balls at a steel row never get through), `idle` and `demoexit`;
+`polarity` and `boss` come with stage 2. Planned:
 
 - `brick play N`: the autopilot plays real games for N frames; checks no
   ball escapes the field, none tunnels through a brick (positions checked
@@ -295,6 +304,15 @@ clock and seeded RNG:
 The build follows the two stages agreed: the **core** (bat and tilt, smash,
 wall, capsules, layouts 1-4, attract, high scores) and then the **second
 pass** (polarity, living bricks, bosses, the remaining layouts).
+
+## Stage 1: built
+
+The bat and its tilt, the ball physics, the Flux Smash (with the late
+release), the advancing wall, all six capsules, layouts 1-4 (the levels
+cycle through them; each pass of 20 levels is a loop), extra lives, the
+level-clear bonus, the attract cycle with its demo, name entry, the
+launcher entry and the harness. Not yet: polarity (B does nothing but
+quit), living bricks, bosses, layouts 5-20.
 
 ## Needs the board
 
