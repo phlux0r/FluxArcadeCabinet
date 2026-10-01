@@ -137,18 +137,22 @@ int main() {
         CHECK(a.playing == 0 && b.playing == 0 && a.queued == 0 && r.mixer.activeVoices() == 0, "voices end and release");
     }
 
-    // --- Five effects on four voices: the oldest makes way.
+    // --- One effect more than there are voices: the oldest makes way.
     {
+        constexpr int N = FX_VOICES + 1;
         Rig r;
-        static int16_t s[5][4000];
-        Pcm p[5];
-        for (int i = 0; i < 5; ++i) { for (auto &v : s[i]) v = (int16_t)(100 * (i + 1)); p[i].data = s[i]; p[i].frames = 4000; }
-        for (int i = 0; i < 4; ++i) r.mix(MC_PLAY_PCM, 0, 0, &p[i]);
+        static int16_t s[N][4000];
+        Pcm p[N];
+        for (int i = 0; i < N; ++i) { for (auto &v : s[i]) v = (int16_t)(100 * (i + 1)); p[i].data = s[i]; p[i].frames = 4000; }
+        for (int i = 0; i < FX_VOICES; ++i) r.mix(MC_PLAY_PCM, 0, 0, &p[i]);
         r.run(10);
-        r.mix(MC_PLAY_PCM, 0, 0, &p[4]);
+        r.mix(MC_PLAY_PCM, 0, 0, &p[N - 1]);
         auto out = r.run(10);
-        CHECK(r.mixer.activeVoices() == 4 && p[0].playing == 0 && p[4].playing == 1, "oldest stolen");
-        CHECK(out[5] == 200 + 300 + 400 + 500, "mix after stealing: %d", out[5]);
+        CHECK(r.mixer.activeVoices() == FX_VOICES && p[0].playing == 0 && p[N - 1].playing == 1, "oldest stolen");
+        int want = 0;
+        for (int i = 1; i < N; ++i) want += 100 * (i + 1);   // all but the first
+        CHECK(out[5] == want, "mix after stealing: %d (want %d)", out[5], want);
+        CHECK(FX_VOICES >= 5, "at least five effects at once: %d", FX_VOICES);
     }
 
     // --- Synth: a tone lasts its length; a melody its notes' lengths, 85% sounding.

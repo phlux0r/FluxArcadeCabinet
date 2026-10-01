@@ -56,7 +56,9 @@ static_assert(sizeof(SFX) / sizeof(SFX[0]) == 13, "one SfxDef per Sfx");
 // would otherwise cost an SD open every time it's asked for. What will
 // play is decoded into the mixer's cache now, so the first play isn't late.
 void StarFluxGame::findSounds(AudioEngine &audio) {
-    static const char* const always[] = { "/audio/tube_shot.wav", "/audio/tube_bump.wav" };
+    // The ship's explosion too: it's big, and fetched from SD mid-game it
+    // would start late (after the banner).
+    static const char* const always[] = { "/audio/tube_shot.wav", "/audio/tube_bump.wav", "/audio/explosion.wav" };
     for (const char* f : always) audio.preload(f);
     for (int i = 0; i < SFX_COUNT; ++i) {
         _sfxOnCard[i] = audio.exists(SFX[i].path);

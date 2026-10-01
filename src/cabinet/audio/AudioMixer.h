@@ -39,7 +39,7 @@
 namespace audiomix {
 
 constexpr uint32_t OUT_RATE      = 44100;
-constexpr int      FX_VOICES     = 4;
+constexpr int      FX_VOICES     = 6;
 constexpr int      STREAM_MUSIC  = 0;
 constexpr int      STREAM_JINGLE = 1;
 constexpr int      STREAMS       = 2;
