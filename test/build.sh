@@ -111,7 +111,7 @@ else
     [ "$g" = tubeflux ] && scenarios+=("idle 8000" "demoexit")
     [ "$g" = tankflux ] && scenarios+=("idle 12000" "demoexit")
     # Star Flux runs at 33ms a frame (the others 16ms), so fewer frames go as far.
-    [ "$g" = starflux ] && scenarios=("play 12000" "god 12000" "menus 3000" "idle 3000" "demoexit" "passive 12000" "rapid" "loops")
+    [ "$g" = starflux ] && scenarios=("play 12000" "god 12000" "menus 3000" "idle 3000" "demoexit" "passive 12000" "rapid" "loops" "reach")
     for s in "${scenarios[@]}"; do
       echo "=== $g $s"
       # shellcheck disable=SC2086

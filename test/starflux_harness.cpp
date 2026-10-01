@@ -60,6 +60,25 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
     frame("pose_fighters_close");
     for (auto &f : g._fighters) { f.active = false; f.obj->enabled = false; }
 
+    // A loop-5 V of nine, far off and then closed up mid-dive.
+    {
+        g._loop = 5; g._seg = 0; g._segSpawned = 0; g._segAt = g_fakeMillis; g._waveLeft[0] = 0;
+        g.spawnWaveFighters();
+        for (unsigned long t : { 400UL, 3000UL }) {
+            for (auto &f : g._fighters) {
+                if (!f.active) continue;
+                const long rel = (long)t - (long)(f.startAt - g._segAt - 400);
+                g.pathPoint(f, (unsigned long)std::max(0L, rel), f.x, f.y, f.z);
+                f.obj->enabled = true;
+                f.obj->setPosition((int32_t)f.x, (int32_t)f.y, (int32_t)f.z);
+                f.obj->setRotation(0, 180, 0);
+            }
+            frame(t < 1000 ? "pose_vdive_far" : "pose_vdive_close");
+        }
+        for (auto &f : g._fighters) { f.active = false; f.obj->enabled = false; }
+        g._loop = 1;
+    }
+
     // Rocks: one of each size, and a shot and enemy shot in flight.
     auto &r0 = g._rocks[0];
     r0.active = true; r0.x = -250; r0.y = 100; r0.z = 1500; r0.obj->enabled = true;
@@ -365,6 +384,32 @@ int main(int argc, char** argv) {
         printf("ring by a gapped wall: %d placed of 200 tries, %d in the wall\n", placed, inWall);
         check(placed > 0 && inWall == 0 && heldBack, "rings go in the gap; fields hold back near one");
         printf("rings on stages 2-3 at loop 5: %d, inside an obstacle: %d\n", rings, blocked);
+        // Every wave of a stage perfect: the bonus at the results; one short: none.
+        g._stageNum = StarFluxGame::STAGE_BELT; g._loop = 1;
+        g.startStage();
+        const int nWaves = g.wavesInStage();
+        g._wavesPerfect = nWaves; g._shield = 0;
+        long before = g._score;
+        g.enterResults(audio);
+        const long allGot = g._score - before;
+        g.startStage(); g._phase = StarFluxGame::PHASE_PLAYING;
+        g._wavesPerfect = nWaves - 1; g._shield = 0;
+        before = g._score;
+        g.enterResults(audio);
+        const long shortGot = g._score - before;
+        g._phase = StarFluxGame::PHASE_PLAYING;
+        printf("stage 1 waves %d: all perfect +%ld, one short +%ld\n", nWaves, allGot, shortGot);
+        check(nWaves == 6 && allGot == ALL_PERFECT_POINTS && shortGot == 0, "all waves perfect: the stage bonus");
+        // Two overlapping waves of nine still launch whole.
+        g._loop = 5; g.startStage();
+        for (auto &f : g._fighters) f.active = false;
+        g._seg = 0; g._segSpawned = 0; g._segAt = g_fakeMillis; g._waveLeft[0] = 0; g.spawnWaveFighters();
+        const int first = g._segSpawned;
+        g._seg = 2; g._segSpawned = 0; g._segAt = g_fakeMillis; g._waveLeft[2] = 0; g.spawnWaveFighters();
+        printf("loop 5, two waves at once: %d and %d launched of %d\n", first, g._segSpawned, g.waveCount(6));
+        check(first == g.waveCount(7) && g._segSpawned == g.waveCount(6), "two waves of nine fit the fighter pool");
+        for (auto &f : g._fighters) f.active = false;
+        g._loop = 1;
         // Stage 4: a frost shard slows your steering; a mine steers at you.
         g._stageNum = StarFluxGame::STAGE_CANYON; g._loop = 1;
         g.startStage();
@@ -427,6 +472,59 @@ int main(int argc, char** argv) {
         check(rings >= 10 && blocked == 0, "every ring reachable");
         g.onExit();
         printf("%s\n", ok ? "PASS" : "FAIL");
+        return ok ? 0 : 1;
+    }
+
+    if (strcmp(mode, "reach") == 0) {
+        // Every fighter of every wave, every stage, loops 1-5: how long is it
+        // where your lasers can hit it (in front, in range, and within a
+        // shot's reach of somewhere the ship can be)? A perfect wave needs
+        // them all; under MIN_MS is too short to aim at.
+        const unsigned long MIN_MS = 700;
+        const float reachX = BOX_X + FIGHTER_R + SHOT_HIT_PAD - 30.0f;
+        const float lowY = BOX_Y_MIN - FIGHTER_R - SHOT_HIT_PAD + 30.0f, highY = BOX_Y_MAX + FIGHTER_R + SHOT_HIT_PAD - 30.0f;
+        int checked = 0, tooShort = 0;
+        unsigned long worst = ~0UL;
+        InputState none{};
+        g.update(canvas, none, audio);
+        for (int loop = 1; loop <= 5; ++loop) {
+            for (int st = 0; st < StarFluxGame::STAGE_COUNT; ++st) {
+                g._loop = loop; g._stageNum = st;
+                for (int seg = 0; seg < g.segmentCount(); ++seg) {
+                    g._seg = seg;
+                    const auto &s = g.segment();
+                    if (s.type != StarFluxGame::SEG_WAVE) continue;
+                    for (auto &f : g._fighters) f.active = false;
+                    g._segSpawned = 0; g._segAt = g_fakeMillis; g._waveLeft[seg] = 0;
+                    g.spawnWaveFighters();
+                    for (auto &f : g._fighters) {
+                        if (!f.active) continue;
+                        unsigned long inReach = 0;
+                        for (unsigned long t = 0; t < g.patternLength(f.pattern); t += 20) {
+                            float x, y, z;
+                            g.pathPoint(f, t, x, y, z);
+                            if (z > SHIP_Z + 400.0f && z < SHIP_Z + SHOT_RANGE * 0.7f && fabsf(x) < reachX && y > lowY && y < highY)
+                                inReach += 20;
+                        }
+                        // Time on the clock: paths run quicker in later loops.
+                        inReach = inReach * 100 / (100 + FIGHTER_PACE_PER_LOOP * g.steps());
+                        ++checked;
+                        if (inReach < worst) worst = inReach;
+                        if (inReach < MIN_MS) {
+                            ++tooShort;
+                            if (tooShort <= 12)
+                                printf("  loop %d stage %d seg %d pattern %d: fighter at (%+.0f,%+.0f) in reach %lums\n",
+                                       loop, st + 1, seg, (int)f.pattern, f.ox * f.mirror, f.oy, inReach);
+                        }
+                    }
+                }
+            }
+        }
+        for (auto &f : g._fighters) f.active = false;
+        printf("fighters checked %d, in reach under %lums: %d (worst %lums)\n", checked, MIN_MS, tooShort, worst);
+        const bool ok = tooShort == 0;
+        printf("%s\n", ok ? "PASS" : "FAIL");
+        g.onExit();
         return ok ? 0 : 1;
     }
 
