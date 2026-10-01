@@ -46,8 +46,11 @@ head-on pairs, a wing overtaking from behind, a weaving snake) that swoop,
 fire and break away, hazard fields between them, silver rings that restore
 40 shield, and a boss. Each stage runs 70-100 seconds and ends with a
 results screen (fighters downed, targets, rings, and a bonus for the
-shield you kept); after the third, the game loops back to the first with
-faster fire and tougher bosses.
+shield you kept); after the third, the game loops back to the first,
+harder each loop up to the fifth: a fighter more in every wave, fighters
+6% quicker, more of their shots fired and aimed ahead of you, pairs of
+shots from loop 3, bosses with 20% more health attacking 8% quicker, and
+fields 8% denser, each loop.
 
 1. **Aurora Belt** (space): rock fields (big rocks take three hits and
    split). The dreadnought: two wing cannons firing aimed shots; lose one

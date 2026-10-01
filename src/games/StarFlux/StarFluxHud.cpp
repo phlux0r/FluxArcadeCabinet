@@ -40,14 +40,22 @@ void StarFluxGame::drawHUD(GFXcanvas16 &canvas) {
         canvas.print(buf);
     }
 
-    // Shield: green, amber below half, red below a quarter.
+    // Shield: green, amber below half, red (blinking) below a quarter.
+    // Overcharge fills over it: orange to twice full, then red to three times.
     const int16_t bx = 48, bw = 52;
     canvas.drawRect(bx, 1, bw, 7, ArcadeConfig::COLOR_GREY);
-    int16_t fill = (int16_t)((long)(bw - 2) * _shield / SHIELD_MAX);
-    uint16_t col = _shield * 4 < SHIELD_MAX ? ArcadeConfig::COLOR_RED
-                 : _shield * 2 < SHIELD_MAX ? ArcadeConfig::COLOR_AMBER : ArcadeConfig::COLOR_GREEN;
-    if (_shield * 4 < SHIELD_MAX && ((millis() / 250) & 1)) col = rgb(90, 0, 0);
+    const int base = min(_shield, SHIELD_MAX);
+    int16_t fill = (int16_t)((long)(bw - 2) * base / SHIELD_MAX);
+    uint16_t col = base * 4 < SHIELD_MAX ? ArcadeConfig::COLOR_RED
+                 : base * 2 < SHIELD_MAX ? ArcadeConfig::COLOR_AMBER : ArcadeConfig::COLOR_GREEN;
+    if (base * 4 < SHIELD_MAX && ((millis() / 250) & 1)) col = rgb(90, 0, 0);
     canvas.fillRect(bx + 1, 2, fill, 5, col);
+    const uint16_t over[2] = { ArcadeConfig::COLOR_ORANGE, ArcadeConfig::COLOR_RED };
+    for (int layer = 0; layer < 2; ++layer) {
+        int amount = _shield - SHIELD_MAX * (layer + 1);
+        if (amount <= 0) break;
+        canvas.fillRect(bx + 1, 2, (int16_t)((long)(bw - 2) * min(amount, SHIELD_MAX) / SHIELD_MAX), 5, over[layer]);
+    }
 
     // Bombs: blue pips.
     for (int i = 0; i < _bombs && i < BOMBS_MAX; ++i) {

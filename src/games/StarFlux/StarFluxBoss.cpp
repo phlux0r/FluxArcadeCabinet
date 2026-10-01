@@ -51,7 +51,7 @@ void StarFluxGame::startBoss() {
     _bossAlarms = 0;
     _fanAngle = 0;
     if (!_retrying || (_cannonHp[0] <= 0 && _cannonHp[1] <= 0 && _coreHp <= 0)) {
-        float k = 1.0f + 0.25f * (float)(_loop - 1);
+        float k = 1.0f + (float)(BOSS_HP_PER_LOOP * steps()) / 100.0f;
         _cannonHp[0] = _cannonHp[1] = (int)(CANNON_HP * k);
         _coreHp = (int)(CORE_HP * k);
         _bossMaxHp = bossHp();
@@ -216,7 +216,7 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
         bossPartPos(p, x, y, z);
         fireAt(x, y, z, _shipX, _shipY, 1.1f);
         sfx(audio, SFX_BOSS_FIRE);
-        _cannonFireAt = millis() + (oneLost ? CANNON_FIRE_MS * 3 / 4 : CANNON_FIRE_MS);
+        _cannonFireAt = millis() + bossMs(oneLost ? CANNON_FIRE_MS * 3 / 4 : CANNON_FIRE_MS);
     }
 
     switch (_bossKind) {
@@ -229,12 +229,12 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
                 fireMissile(x, y, z);
                 if (coreOpen()) fireMissile(x + 300.0f, y, z);
                 sfx(audio, SFX_BURST);
-                _burstAt = millis() + (coreOpen() ? 2200 : 2600);
+                _burstAt = millis() + bossMs(coreOpen() ? 2200 : 2600);
             }
             if (coreOpen() && reached(_coreFireAt)) {
                 for (int i = -2; i <= 2; ++i) fireAt(cx, cy, cz, _shipX + (float)i * 150.0f, _shipY, 1.1f);
                 sfx(audio, SFX_BOSS_FIRE);
-                _coreFireAt = millis() + 1300;
+                _coreFireAt = millis() + bossMs(1300);
             }
             break;
 
@@ -243,7 +243,7 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
             // circle about you, for 1.6s; then a pause.
             if (oneLost && reached(_burstAt)) {
                 unsigned long since = millis() - _burstAt;
-                const unsigned long stream = 1600, pause = coreOpen() ? 1400 : 2400;
+                const unsigned long stream = 1600, pause = bossMs(coreOpen() ? 1400 : 2400);
                 if (since < stream) {
                     if (reached(_spiralShotAt) || since < 20) {
                         _spiralShotAt = millis() + 110;
@@ -258,7 +258,7 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
             if (coreOpen() && reached(_coreFireAt)) {
                 for (int i = -1; i <= 1; ++i) fireAt(cx, cy, cz, _shipX + (float)i * 130.0f, _shipY, 1.15f);
                 sfx(audio, SFX_BOSS_FIRE);
-                _coreFireAt = millis() + 1500;
+                _coreFireAt = millis() + bossMs(1500);
             }
             break;
 
@@ -266,12 +266,12 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
             if (oneLost && reached(_burstAt)) {
                 ringBurst(cx, cy, cz);
                 sfx(audio, SFX_BURST);
-                _burstAt = millis() + (coreOpen() ? CORE_BURST_MS : RING_BURST_MS);
+                _burstAt = millis() + bossMs(coreOpen() ? CORE_BURST_MS : RING_BURST_MS);
             }
             if (coreOpen() && reached(_coreFireAt)) {
                 for (int i = -1; i <= 1; ++i) fireAt(cx, cy, cz, _shipX + (float)i * 130.0f, _shipY, 1.15f);
                 sfx(audio, SFX_BOSS_FIRE);
-                _coreFireAt = millis() + CORE_FIRE_MS;
+                _coreFireAt = millis() + bossMs(CORE_FIRE_MS);
             }
             break;
     }

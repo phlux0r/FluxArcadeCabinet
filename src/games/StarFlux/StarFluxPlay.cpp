@@ -71,7 +71,7 @@ void StarFluxGame::startSegment(int index) {
     switch (segment().type) {
         case SEG_WAVE:
             _waveLeft[_seg] = 0;
-            _waveToCome[_seg] = segment().count;
+            _waveToCome[_seg] = (uint8_t)waveCount(segment().count);
             _waveClean[_seg] = true;
             _segLaunchedAt = millis();
             spawnWaveFighters();
@@ -90,7 +90,7 @@ bool StarFluxGame::segmentDone() const {
         // the way through its run: the next wave overlaps its exit.
         case SEG_WAVE: {
             if (millis() - _segAt < 1000) return false;
-            if (_segSpawned < s.count && millis() - _segAt < WAVE_LAUNCH_MS) return false;
+            if (_segSpawned < waveCount(s.count) && millis() - _segAt < WAVE_LAUNCH_MS) return false;
             if (_waveLeft[_seg] == 0) return true;
             return millis() - _segLaunchedAt > patternStagger(s.pattern) + patternLength(s.pattern) * 3 / 4;
         }
@@ -103,23 +103,24 @@ bool StarFluxGame::segmentDone() const {
 
 // A field's next hazard, when it's due: rocks in space, pillars and turret
 // towers on the planet, barriers, gates and turrets in the trench. Denser
-// each loop.
+// each loop. Nothing is put in the way of a ring or pod on its way in.
 void StarFluxGame::spawnField(AudioEngine &audio) {
     const Segment &s = segment();
     if (s.type != SEG_FIELD || millis() - _segAt >= s.lengthMs || !reached(_nextFieldAt)) return;
-    const unsigned long quicker = (unsigned long)min(250, 40 * (_loop - 1));
     switch (_stageNum) {
         case STAGE_BELT:
-            spawnRock(random(0, 100) < ROCK_AIMED_PCT);
-            _nextFieldAt = millis() + ROCK_SPAWN_MS - min(quicker, 200UL);
+            spawnRock(random(0, 100) < ROCK_AIMED_PCT + ROCK_AIMED_PER_LOOP * steps());
+            _nextFieldAt = millis() + fieldMs(ROCK_SPAWN_MS);
             break;
         case STAGE_PLANET:
+            if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
             spawnPlanetHazard();
-            _nextFieldAt = millis() + PLANET_FIELD_MS - quicker;
+            _nextFieldAt = millis() + fieldMs(PLANET_FIELD_MS);
             break;
         default:
+            if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
             spawnTrenchHazard();
-            _nextFieldAt = millis() + TRENCH_FIELD_MS - quicker;
+            _nextFieldAt = millis() + fieldMs(TRENCH_FIELD_MS);
             break;
     }
     ++_fieldCount;
@@ -138,7 +139,7 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
         case STAGE_RUN:
             spawnField(audio);
             // A wave launches the fighters that didn't fit as slots free up.
-            if (segment().type == SEG_WAVE && _segSpawned < segment().count) {
+            if (segment().type == SEG_WAVE && _segSpawned < waveCount(segment().count)) {
                 if (millis() - _segAt < WAVE_LAUNCH_MS) {
                     spawnWaveFighters();
                 } else if (_waveToCome[_seg]) {
@@ -146,13 +147,10 @@ void StarFluxGame::updateStage(AudioEngine &audio) {
                     _waveClean[_seg] = false;    // and it's no longer a whole wave to down
                 }
             }
-            if (!_segRingDone && millis() - _segAt > 1200) {
-                spawnRing();
-                _segRingDone = true;
-            }
+            // Rings and pods wait for a clear spot (tried every frame).
+            if (!_segRingDone && millis() - _segAt > 1200) _segRingDone = spawnRing();
             if (!_segPodDone && millis() - _segAt > POD_AFTER_MS) {
-                _segPodDone = true;
-                if (_loop > 1 && !_rapid && (_seg == POD_SEG_A || _seg == POD_SEG_B)) spawnPod();
+                _segPodDone = !(_loop > 1 && !_rapid && (_seg == POD_SEG_A || _seg == POD_SEG_B)) || spawnPod();
             }
             if (segmentDone() && _seg + 1 < segmentCount()) startSegment(_seg + 1);
             break;
@@ -527,17 +525,50 @@ void StarFluxGame::destroyRock(Rock &r, bool byPlayer, AudioEngine &audio) {
     }
 }
 
-// A ring somewhere you can reach, far ahead.
-void StarFluxGame::spawnRing() {
+// Is (x, y) clear of every obstacle within PICKUP_CLEAR_Z of depth z, by
+// PICKUP_CLEAR_R? Gates count whether on or off.
+bool StarFluxGame::pickupClear(float x, float y, float z) const {
+    for (const auto &b : _boxes) {
+        if (!b.active || fabsf(b.z - z) > PICKUP_CLEAR_Z + b.depth * 0.5f) continue;
+        float nx = clampf(x, b.x0, b.x1), ny = clampf(y, b.y0, b.y1);
+        float dx = x - nx, dy = y - ny;
+        if (dx * dx + dy * dy < PICKUP_CLEAR_R * PICKUP_CLEAR_R) return false;
+    }
+    return true;
+}
+
+// A ring or pod on its way in within PICKUP_CLEAR_Z of depth z: the field
+// holds its next obstacle back until it's past.
+bool StarFluxGame::pickupNear(float z) const {
+    for (const auto &r : _rings) {
+        if (r.active && !r.resolved && fabsf(r.z - z) < PICKUP_CLEAR_Z) return true;
+    }
+    return _pod.active && !_pod.resolved && fabsf(_pod.z - z) < PICKUP_CLEAR_Z;
+}
+
+// Somewhere you can reach at depth z: random tries until one's clear of
+// the obstacles about it. False if none is (the caller tries again later).
+bool StarFluxGame::placePickup(float &x, float &y, float z) const {
+    for (int i = 0; i < 24; ++i) {
+        x = (float)random(-(long)(BOX_X - 90), (long)(BOX_X - 90) + 1);
+        y = (float)random((long)(BOX_Y_MIN + 90), (long)(BOX_Y_MAX - 90) + 1);
+        if (pickupClear(x, y, z)) return true;
+    }
+    return false;
+}
+
+// A ring somewhere you can reach, far ahead. False if there's no clear
+// spot just now.
+bool StarFluxGame::spawnRing() {
     for (auto &r : _rings) {
         if (r.active) continue;
+        if (!placePickup(r.x, r.y, ROCK_SPAWN_Z)) return false;
         r.active = true;
         r.resolved = false;
-        r.x = (float)random(-(long)(BOX_X - 90), (long)(BOX_X - 90) + 1);
-        r.y = (float)random((long)(BOX_Y_MIN + 90), (long)(BOX_Y_MAX - 90) + 1);
         r.z = ROCK_SPAWN_Z;
-        return;
+        return true;
     }
+    return true;   // no free slot: give up on this one
 }
 
 void StarFluxGame::updateRings(AudioEngine &audio) {
@@ -549,10 +580,11 @@ void StarFluxGame::updateRings(AudioEngine &audio) {
             r.resolved = true;
             float dx = r.x - _shipX, dy = r.y - _shipY;
             if (_stage == STAGE_RUN && dx * dx + dy * dy < RING_CATCH_R * RING_CATCH_R) {
-                _shield = min(SHIELD_MAX, _shield + RING_SHIELD);
+                _shield = min(SHIELD_CAP, _shield + RING_SHIELD);   // past full: overcharge
                 _score += RING_POINTS;
                 ++_ringsCaught;
-                setBanner("SHIELD UP", ArcadeConfig::COLOR_GREEN, 1200);
+                setBanner(_shield > SHIELD_MAX ? "OVERCHARGE" : "SHIELD UP",
+                          _shield > SHIELD_MAX ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_GREEN, 1200);
                 sfx(audio, SFX_RING);
             }
         }
@@ -560,12 +592,12 @@ void StarFluxGame::updateRings(AudioEngine &audio) {
 }
 
 // The rapid-fire pod, somewhere you can reach, far ahead.
-void StarFluxGame::spawnPod() {
+bool StarFluxGame::spawnPod() {
+    if (!placePickup(_pod.x, _pod.y, ROCK_SPAWN_Z)) return false;
     _pod.active = true;
     _pod.resolved = false;
-    _pod.x = (float)random(-(long)(BOX_X - 90), (long)(BOX_X - 90) + 1);
-    _pod.y = (float)random((long)(BOX_Y_MIN + 90), (long)(BOX_Y_MAX - 90) + 1);
     _pod.z = ROCK_SPAWN_Z;
+    return true;
 }
 
 void StarFluxGame::updatePod(AudioEngine &audio) {
@@ -582,6 +614,16 @@ void StarFluxGame::updatePod(AudioEngine &audio) {
         setBanner("RAPID FIRE", ArcadeConfig::COLOR_YELLOW, 1500);
         sfx(audio, SFX_POWER);
     }
+}
+
+// 75k, then every 50k: a life, up to LIVES_MAX (past that, just the points).
+void StarFluxGame::checkExtraLife(AudioEngine &audio) {
+    if (inDemo() || _phase != PHASE_PLAYING || _score < _nextLifeAt) return;
+    _nextLifeAt += EXTRA_LIFE_EVERY;
+    if (_lives >= LIVES_MAX) return;
+    ++_lives;
+    setBanner("EXTRA LIFE", ArcadeConfig::COLOR_YELLOW, 1600);
+    sfx(audio, SFX_EXTRA);
 }
 
 void StarFluxGame::damageShip(int amount, AudioEngine &audio) {

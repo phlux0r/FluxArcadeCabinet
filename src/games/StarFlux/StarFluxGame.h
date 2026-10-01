@@ -80,7 +80,7 @@ private:
     // Optional sounds (see the list in README.md): each is played if it's on
     // the card, else its fallback (another WAV, or a tone).
     enum Sfx : uint8_t { SFX_POP, SFX_HIT, SFX_ARMOR, SFX_BOSS_WARN, SFX_BOSS_FIRE, SFX_BURST,
-                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_POWER, SFX_COUNT };
+                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_POWER, SFX_EXTRA, SFX_COUNT };
 
     struct Fighter {
         Renderer::Object* obj = nullptr;
@@ -145,7 +145,8 @@ private:
     int   _loop = 1;                 // times round all the stages, from 1: difficulty
     int   _stageNum = STAGE_BELT;    // which stage
     int   _lives = LIVES;
-    int   _shield = SHIELD_MAX;
+    int   _shield = SHIELD_MAX;          // up to SHIELD_CAP: past SHIELD_MAX is overcharge
+    long  _nextLifeAt = EXTRA_LIFE_FIRST;
     int   _bombs = BOMBS_START;
     long  _score = 0;
     StageState _stage = STAGE_INTRO;
@@ -324,9 +325,9 @@ private:
     void  spawnRock(bool aimed);
     void  updateRocks(AudioEngine &audio);
     void  destroyRock(Rock &r, bool byPlayer, AudioEngine &audio);
-    void  spawnRing();
+    bool  spawnRing();
     void  updateRings(AudioEngine &audio);
-    void  spawnPod();
+    bool  spawnPod();
     void  updatePod(AudioEngine &audio);
     bool  nextObstacle(float &front) const;
     bool  passClear(float front) const;
@@ -386,8 +387,23 @@ private:
     void  bossPartPos(int part, float &x, float &y, float &z) const;
     bool  bossPartAlive(int part) const;
     void  hideBoss();
-    int   firePct() const { return FIRE_PCT + FIRE_PCT_PER_LOOP * (_loop - 1); }
-    float eshotSpeed() const { return ESHOT_SPEED + ESHOT_SPEED_PER_LOOP * (float)(_loop - 1); }
+    // Difficulty by loop (see StarFluxConfig.h's Loops block).
+    int   steps() const { return (_loop < LOOP_CAP ? _loop : LOOP_CAP) - 1; }
+    int   firePct() const { return FIRE_PCT + FIRE_PCT_PER_LOOP * steps(); }
+    float eshotSpeed() const { return ESHOT_SPEED + ESHOT_SPEED_PER_LOOP * (float)steps(); }
+    int   leadPct() const { return LEAD_PCT + LEAD_PCT_PER_LOOP * steps(); }
+    int   burstPct() const { return _loop < BURST_FROM_LOOP ? 0 : BURST_PCT + BURST_PCT_PER_LOOP * (steps() + 1 - BURST_FROM_LOOP); }
+    int   waveCount(int base) const { int n = base + WAVE_EXTRA_PER_LOOP * steps(); return n > WAVE_MAX ? WAVE_MAX : n; }
+    // A fighter's time along its path: quicker each loop.
+    unsigned long flightMs(const Fighter &f) const {
+        return (millis() - f.startAt) * (unsigned long)(100 + FIGHTER_PACE_PER_LOOP * steps()) / 100;
+    }
+    unsigned long bossMs(unsigned long ms) const { return ms * 100 / (unsigned long)(100 + BOSS_PACE_PER_LOOP * steps()); }
+    unsigned long fieldMs(unsigned long ms) const { return ms * (unsigned long)(100 - FIELD_DENSER_PER_LOOP * steps()) / 100; }
+    bool  pickupClear(float x, float y, float z) const;
+    bool  pickupNear(float z) const;
+    bool  placePickup(float &x, float &y, float z) const;
+    void  checkExtraLife(AudioEngine &audio);
 
     // --- StarFluxDemo.cpp ------------------------------------------------------
     bool inDemo() const { return _phase == PHASE_ATTRACT && _attractSlide == SLIDE_DEMO; }

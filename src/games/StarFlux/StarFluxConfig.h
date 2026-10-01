@@ -56,6 +56,8 @@ inline constexpr float FLY_SPEED   = 45.0f;     // the world's speed past you, p
 
 // --- Shield and lives ---------------------------------------------------------------
 inline constexpr int SHIELD_MAX        = 100;
+// Rings overcharge past full, up to this: shown orange, then red, on the bar.
+inline constexpr int SHIELD_CAP        = 3 * SHIELD_MAX;
 inline constexpr int SHOT_DAMAGE       = 14;
 inline constexpr int ROCK_DAMAGE       = 22;
 inline constexpr int RAM_DAMAGE        = 20;
@@ -100,7 +102,28 @@ inline constexpr unsigned long FORMATION_STAGGER_MS = 330;
 // A wave waits this long at most for slots the last one's fighters hold.
 inline constexpr unsigned long WAVE_LAUNCH_MS = 10000;
 inline constexpr int   FIRE_PCT        = 70;        // chance a fighter takes a shot it's due, loop 1
-inline constexpr int   FIRE_PCT_PER_LOOP = 12;
+inline constexpr int   FIRE_PCT_PER_LOOP = 8;
+
+// --- Loops ----------------------------------------------------------------------
+// Each loop round the stages is harder, up to LOOP_CAP; after that it stays
+// as hard as loop LOOP_CAP. "Steps" below are loops past the first, capped.
+inline constexpr int   LOOP_CAP          = 5;
+inline constexpr int   WAVE_EXTRA_PER_LOOP = 1;     // fighters added to every wave
+inline constexpr int   WAVE_MAX          = 9;
+inline constexpr int   FIGHTER_PACE_PER_LOOP = 6;   // % faster along their paths
+inline constexpr int   BURST_FROM_LOOP   = 3;       // fighters can fire pairs from here
+inline constexpr int   BURST_PCT         = 15;      // chance a shot is a pair, at BURST_FROM_LOOP...
+inline constexpr int   BURST_PCT_PER_LOOP = 10;     // ...and up this much each loop after
+inline constexpr int   LEAD_PCT_PER_LOOP = 6;
+inline constexpr int   BOSS_PACE_PER_LOOP = 8;      // % quicker boss attacks
+inline constexpr int   BOSS_HP_PER_LOOP  = 20;      // % more boss health
+inline constexpr int   FIELD_DENSER_PER_LOOP = 8;   // % shorter gaps between field hazards
+inline constexpr int   ROCK_AIMED_PER_LOOP = 6;
+
+// --- Extra lives ----------------------------------------------------------------
+inline constexpr long  EXTRA_LIFE_FIRST  = 75000;
+inline constexpr long  EXTRA_LIFE_EVERY  = 50000;
+inline constexpr int   LIVES_MAX         = 9;
 
 // --- Enemy shots --------------------------------------------------------------
 inline constexpr int   ESHOT_POOL      = 18;
@@ -137,6 +160,10 @@ inline constexpr int   POD_SEG_A       = 2;
 inline constexpr int   POD_SEG_B       = 6;
 inline constexpr unsigned long POD_AFTER_MS = 2500; // into the segment
 inline constexpr float POD_R           = 80.0f;
+// Rings and pods are placed clear of any obstacle within this much depth,
+// and no obstacle is put within it while one is on its way.
+inline constexpr float PICKUP_CLEAR_Z  = 900.0f;
+inline constexpr float PICKUP_CLEAR_R  = 110.0f;
 inline constexpr float POD_CATCH_R     = 140.0f;
 inline constexpr int   POD_POINTS      = 500;
 

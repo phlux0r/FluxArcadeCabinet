@@ -87,6 +87,7 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
 void StarFluxGame::spawnWaveFighters() {
     const Segment &s = segment();
     const PathDef &d = PATHS[s.pattern];
+    const int count = waveCount(s.count);   // bigger waves each loop
     int n = _segSpawned;
     const int before = n;
     auto when = [&](unsigned long offset) {
@@ -94,7 +95,7 @@ void StarFluxGame::spawnWaveFighters() {
         return (long)(planned - soonest) > 0 ? planned : soonest;
     };
     for (auto &f : _fighters) {
-        if (n >= s.count) break;
+        if (n >= count) break;
         if (f.active) continue;
         f.active = true;
         f.pattern = s.pattern;
@@ -128,7 +129,7 @@ void StarFluxGame::spawnWaveFighters() {
     _segSpawned = n;
     _segLaunchedAt = millis();
     _waveLeft[_seg] += (uint8_t)(n - before);
-    _waveToCome[_seg] = (uint8_t)(s.count - n);
+    _waveToCome[_seg] = (uint8_t)(count - n);
     _fightersSeen += n - before;
 }
 
@@ -139,7 +140,7 @@ void StarFluxGame::updateFighters(AudioEngine &audio) {
     for (auto &f : _fighters) {
         if (!f.active) continue;
         if (!reached(f.startAt)) { f.obj->enabled = false; continue; }
-        unsigned long t = millis() - f.startAt;
+        unsigned long t = flightMs(f);
         if (t >= patternLength(f.pattern)) {   // got away
             f.active = false;
             f.obj->enabled = false;
@@ -163,12 +164,17 @@ void StarFluxGame::updateFighters(AudioEngine &audio) {
             if (_stage == STAGE_RUN && f.z > MIN_FIRE_Z && random(0, 100) < firePct()) {
                 // Some lead you: aimed where you'll be if you keep going.
                 float tx = _shipX, ty = _shipY;
-                if (random(0, 100) < LEAD_PCT) {
+                if (random(0, 100) < leadPct()) {
                     float frames = (f.z - SHIP_Z) / eshotSpeed();
                     tx += _shipVX * frames;
                     ty += _shipVY * frames;
                 }
                 fireAt(f.x, f.y, f.z, tx, ty);
+                // From BURST_FROM_LOOP, sometimes a pair: the second to one
+                // side of the first, so holding still doesn't dodge both.
+                if (random(0, 100) < burstPct()) {
+                    fireAt(f.x, f.y, f.z, tx + (random(0, 2) ? 160.0f : -160.0f), ty);
+                }
             }
         }
         // Flying through you.

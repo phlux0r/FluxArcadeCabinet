@@ -174,6 +174,7 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
 //   idle     no input at all: the attract cycle (title, how-to-play, demo)
 //   demoexit press A mid-demo: the real game must start clean (prints PASS/FAIL)
+//   loops    extra lives, shield overcharge, difficulty by loop, reachable rings (PASS/FAIL)
 //   rapid    the rapid-fire pod (loop 2 on) and the flight-aid marker (PASS/FAIL)
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "play";
@@ -226,6 +227,115 @@ int main(int argc, char** argv) {
                (int)g._phase, (int)g._stage, g._seg, g._score, g._lives, g._shield, (int)g._silent,
                visible, live, ok ? "PASS" : "FAIL");
         g.onExit();
+        return ok ? 0 : 1;
+    }
+
+    if (strcmp(mode, "loops") == 0) {
+        // Extra lives, shield overcharge, difficulty by loop, and rings
+        // that can be reached.
+        bool ok = true;
+        auto check = [&](bool c, const char* what) { printf("%-52s %s\n", what, c ? "PASS" : "FAIL"); ok = ok && c; };
+        auto step = [&](const InputState &in) { g.update(canvas, in, audio); g_fakeMillis += 33; };
+        InputState none{};
+        for (long f = 0; f < 3000 && g._phase != StarFluxGame::PHASE_PLAYING; ++f) {
+            InputState in{}; in.btnA = in.btnAPressed = (f & 1); step(in);
+        }
+        for (int i = 0; i < 200; ++i) step(none);
+        // Extra lives at 75k, 125k, 175k...
+        const int lives0 = g._lives;
+        g._score = EXTRA_LIFE_FIRST - 10; step(none);
+        check(g._lives == lives0, "no life before 75k");
+        g._score = EXTRA_LIFE_FIRST; step(none);
+        check(g._lives == lives0 + 1 && g._nextLifeAt == EXTRA_LIFE_FIRST + EXTRA_LIFE_EVERY, "a life at 75k, next at 125k");
+        g._score = EXTRA_LIFE_FIRST + 2 * EXTRA_LIFE_EVERY; step(none); step(none);
+        check(g._lives == lives0 + 3, "125k and 175k: two more");
+        g._lives = LIVES_MAX; g._score = 1000000; step(none);
+        check(g._lives == LIVES_MAX, "never more than LIVES_MAX");
+        g._lives = 3;
+        // Overcharge: rings past full, to 3x; carried into the next stage; a
+        // lost life resets it.
+        g._shield = SHIELD_MAX;
+        int got = 0;
+        for (int i = 0; i < 8; ++i) {
+            auto &r = g._rings[0];
+            r.active = true; r.resolved = false; r.x = g._shipX; r.y = g._shipY; r.z = SHIP_Z + 10.0f;
+            g._invulnUntil = g_fakeMillis + 100000; step(none); ++got;
+        }
+        check(g._shield == SHIELD_CAP, "8 rings from full: capped at 3x");
+        g._invulnUntil = 0; g._stage = StarFluxGame::STAGE_RUN;
+        g.damageShip(30, audio);
+        check(g._shield == SHIELD_CAP - 30, "damage comes off the overcharge first");
+        g.startStage();
+        check(g._shield == SHIELD_CAP - 30, "overcharge carried into the next stage");
+        g._stage = StarFluxGame::STAGE_RUN; g._invulnUntil = 0;
+        g.damageShip(SHIELD_CAP, audio);
+        for (int i = 0; i < 80; ++i) step(none);
+        check(g._shield == SHIELD_MAX, "a lost life: back to plain full");
+        // Difficulty by loop, capped at LOOP_CAP.
+        int waves[7], pace[7];
+        for (int l = 1; l <= 6; ++l) {
+            g._loop = l; waves[l] = g.waveCount(6); pace[l] = (int)g.bossMs(1000);
+        }
+        printf("wave of 6 by loop: %d %d %d %d %d %d; boss 1000ms: %d %d %d %d %d %d\n", waves[1], waves[2], waves[3],
+               waves[4], waves[5], waves[6], pace[1], pace[2], pace[3], pace[4], pace[5], pace[6]);
+        check(waves[1] == 6 && waves[2] == 7 && waves[4] == 9 && waves[6] == 9, "waves grow by one a loop, to 9");
+        check(pace[1] == 1000 && pace[5] < pace[2] && pace[6] == pace[5], "boss quicker each loop, capped");
+        g._loop = 2; const int b2 = g.burstPct(); g._loop = 3; const int b3 = g.burstPct();
+        check(b2 == 0 && b3 == BURST_PCT, "pairs of shots from loop 3");
+        g._loop = 1;
+        // Rings on the planet and in the trench: none may sit inside an
+        // obstacle, however dense the field (loop 5).
+        int rings = 0, blocked = 0;
+        for (int st = 1; st <= 2; ++st) {
+            g._stageNum = st; g._loop = 5;
+            g.startStage();
+            for (int i = 0; i < 200; ++i) step(none);
+            for (int seg = 0; seg < 9; ++seg) {
+                if (g.segment().type == StarFluxGame::SEG_BOSS) continue;
+                g.startSegment(seg);
+                g._segRingDone = false;   // a ring in every segment
+                bool was[RING_POOL] = {};
+                for (int f = 0; f < 300; ++f) {
+                    g._shield = SHIELD_MAX;
+                    step(none);
+                    for (int k = 0; k < RING_POOL; ++k) {
+                        auto &r = g._rings[k];
+                        if (r.active && !r.resolved && r.z - SHIP_Z < 60.0f && !was[k]) {
+                            was[k] = true; ++rings;
+                            for (auto &b : g._boxes) {
+                                if (!b.active || fabsf(b.z - r.z) > b.depth * 0.5f + 60.0f) continue;
+                                float nx = std::max(b.x0, std::min(r.x, b.x1)), ny = std::max(b.y0, std::min(r.y, b.y1));
+                                float dx = r.x - nx, dy = r.y - ny, rr = SHIP_HIT_R * 0.7f;
+                                if (dx * dx + dy * dy < rr * rr) { ++blocked; break; }
+                            }
+                        }
+                        if (!r.active) was[k] = false;
+                    }
+                }
+            }
+        }
+        // Directly: a wall with a narrow gap right where a ring appears; the
+        // ring must land in the gap (or wait), and no new obstacle may be
+        // put down on top of it.
+        int placed = 0, inWall = 0;
+        for (int i = 0; i < 200; ++i) {
+            for (auto &b : g._boxes) { b.active = false; if (b.obj) b.obj->enabled = false; }
+            for (auto &r : g._rings) r.active = false;
+            g.spawnBox(-TRENCH_HALF_W, -60.0f, TRENCH_FLOOR, TRENCH_TOP, ROCK_SPAWN_Z, 160.0f);
+            g.spawnBox(220.0f, TRENCH_HALF_W, TRENCH_FLOOR, TRENCH_TOP, ROCK_SPAWN_Z, 160.0f);
+            if (!g.spawnRing()) continue;
+            ++placed;
+            const auto &r = g._rings[0];
+            if (r.x < -60.0f + SHIP_HIT_R * 0.7f || r.x > 220.0f - SHIP_HIT_R * 0.7f) ++inWall;
+        }
+        g._rings[0].active = true; g._rings[0].resolved = false; g._rings[0].z = BOX_SPAWN_Z - 300.0f;
+        const bool heldBack = g.pickupNear(BOX_SPAWN_Z);
+        printf("ring by a gapped wall: %d placed of 200 tries, %d in the wall\n", placed, inWall);
+        check(placed > 0 && inWall == 0 && heldBack, "rings go in the gap; fields hold back near one");
+        printf("rings on stages 2-3 at loop 5: %d, inside an obstacle: %d\n", rings, blocked);
+        check(rings >= 10 && blocked == 0, "every ring reachable");
+        g.onExit();
+        printf("%s\n", ok ? "PASS" : "FAIL");
         return ok ? 0 : 1;
     }
 

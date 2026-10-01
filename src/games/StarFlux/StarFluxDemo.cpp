@@ -96,7 +96,7 @@ bool StarFluxGame::pickAim(float &x, float &y) const {
     for (const auto &f : _fighters) {
         if (!f.active || !reached(f.startAt) || f.z < SHIP_Z + 300.0f || f.z > SHIP_Z + 5000.0f) continue;
         if (f.z >= best) continue;
-        unsigned long t = millis() - f.startAt;
+        unsigned long t = flightMs(f);
         unsigned long lead = (unsigned long)((f.z - SHIP_Z) / SHOT_SPEED * (float)REFERENCE_FRAME_MS);
         float lx, ly, lz;
         pathPoint(f, t + lead, lx, ly, lz);

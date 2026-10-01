@@ -693,7 +693,7 @@ void StarFluxGame::updateTurrets(AudioEngine &audio) {
                 ty += _shipVY * frames;
             }
             fireAt(t.x, t.y + 40.0f, t.z - 40.0f, tx, ty);
-            unsigned long gap = TURRET_FIRE_MS - (unsigned long)min(500, 100 * (_loop - 1));
+            unsigned long gap = TURRET_FIRE_MS - 100UL * (unsigned long)steps();
             t.fireAt = millis() + gap + (unsigned long)random(0, 400);
         }
     }
