@@ -102,7 +102,7 @@ at the results, which show PERFECT WAVES x/y. Every fighter of every wave
 is within your reach for over a second: V formations close up as they
 dive, and two whole waves can always be in the air at once.
 
-Flight aids on stages 2 and 3: the next pillar, arch, tower or barrier has
+Flight aids on stages 2-5: the next pillar, arch, tower or barrier has
 its front face outlined, and a diamond on it marks where the ship will pass
 if you hold your line. Yellow outline and green diamond: clear. Both blink
 red: you'll hit it, so steer until they turn back. A laser gate counts only
