@@ -62,9 +62,9 @@ a sloppy horizontal push doesn't tilt by accident.
 
 - Ball 3x3, speed starts at 90 px/s, +3% each level, capped at 170 px/s
   (loops raise the start, see §10). Slow capsule: x0.65.
-- Movement scales with frame time (`_frameScale` against a 33ms reference
-  frame), and the ball moves in substeps of at most 2px so it never tunnels
-  through a 4px brick at speed.
+- Movement scales with frame time (speeds in px/s against the measured
+  frame time), and the ball moves in substeps of at most 1.5px so it never
+  tunnels through a 4px brick at speed.
 - **Bat reflection**: the ball reflects about the bat's *tilted* normal,
   then gets the usual contact-point English (±12° from the centre to the
   ends). The result is clamped to 20°-160° from horizontal, so no tilt can
@@ -78,8 +78,8 @@ a sloppy horizontal push doesn't tilt by accident.
 
 ## 4. Flux Smash
 
-- The meter fills by 1 per brick broken (2 per brick in a chain of 4+),
-  and gun bolts you absorb add 2 (§6). Full at 24.
+- The meter fills by 1 per brick broken (2 per brick at a chain of x4 or
+  more), and gun bolts you absorb add 2 (§6). Full at 24.
 - With the meter full, hold A: the bat glows white and crackles (sparks
   from its ends). Release A to open a **150ms window**: if the ball meets
   the bat within it, it smashes. Letting go up to 60ms *after* the ball
@@ -101,13 +101,17 @@ a sloppy horizontal push doesn't tilt by accident.
   **magenta**.
 - The bat is cyan or magenta (B swaps it). The ball takes the bat's colour
   **when it touches the bat**, so you choose the colour for the *next*
-  flight, not the current one. It is drawn in its colour with a 1px trail.
+  flight, not the current one. It is drawn in its colour with a white
+  centre, and the side walls show the bat's colour.
 - A ball matching a brick's colour breaks it (or knocks a hit off a hard
   one). A mismatched ball bounces off with no damage and the brick flashes.
-- **Chain**: each coloured brick broken in its own colour adds 1 to the
-  chain, x1 up to x8, shown beside the score. Neutral bricks neither add
-  to nor break it. A mismatched bounce, a lost ball or a polarity swap with
-  the ball in the air resets it. Touching the bat does not.
+- **Chain**: each coloured brick broken in its own colour scores x the
+  chain and adds 1 to it, x1 up to x8, shown beside the score. Neutral
+  bricks neither add to nor break it. A mismatched bounce or a lost life
+  resets it; swapping colour and touching the bat don't (an earlier draft
+  had a swap mid-flight reset it, but swapping mid-flight is the point:
+  it chooses the next flight's colour).
+- Smashes and lasers break either colour; neither adds to the chain.
 - Swapping has a 0.25s cooldown, so mashing B can't flicker the colour.
 
 ## 6. Bricks
@@ -115,12 +119,12 @@ a sloppy horizontal push doesn't tilt by accident.
 | Brick | Look | Hits | Points | Notes |
 |---|---|---|---|---|
 | Neutral | by row: white, yellow, orange, green, blue, amber | 1 | 10 | never cyan or magenta, which are polarity's |
-| Cyan / Magenta | colour | 1 | 20 x chain | polarity |
-| Hard | colour, darker with a bevel | 2-3 | 30 per hit | neutral or coloured; cracks show |
+| Cyan / Magenta | colour, a dark centre mark | 1 | 20 x chain | polarity |
+| Hard | grey, darker with a bevel, or dark cyan/magenta | 2-3 (coloured: 2) | 30 per hit | neutral or coloured; cracks show |
 | Steel | grey, rivets | Smash only | 300 | not needed to clear a level |
-| Gun | red frame, coloured eye | 2 | 100 | fires a bolt down at the bat every 3-5s, in its eye's colour |
-| Magnet | blue, pulsing ring | 2 | 50 | bends the ball within 28px gently towards it |
-| Portal | purple ring, in pairs | Smash only | 200 | the ball enters one and leaves the other, keeping its velocity |
+| Gun | red frame, coloured eye | 2 (10 for the first) | 100 | fires a bolt down at the bat every 3-5s, in its eye's colour; either colour of ball breaks it |
+| Magnet | blue, pulsing ring | 2 (10 for the first) | 50 | turns a ball within 28px towards it, up to 150°/s at the magnet |
+| Portal | purple ring, in pairs | Smash only (both go) | 200 | the ball enters one and leaves the other's centre, keeping its direction; it ignores portals for 0.25s after |
 | Spark | yellow, twinkling | 1 | 50 | drops a spark (see below) |
 
 - **Gun bolts** fall at 60 px/s. One of the bat's colour is absorbed (+2
@@ -129,8 +133,8 @@ a sloppy horizontal push doesn't tilt by accident.
   it, so a buried gun stays quiet until you dig it out.
 - **Sparks** fall at 40 px/s, wobbling. Catch one for 250. The third spark
   caught in a level gives an extra life (once per level, up to 5).
-- Steel, portals and unbroken hard bricks reaching the danger line don't
-  cost a life: they shatter (no points). Only breakable bricks count.
+- Steel and portals reaching the danger line don't cost a life: they
+  shatter (no points). Breakable bricks, hard ones included, do.
 - A level is clear when every brick except steel and portals is gone.
 
 ## 7. The advancing wall
@@ -165,30 +169,45 @@ Multiball stacks with any of them.
 
 ## 9. Bosses
 
-Every fifth level is a boss, with no wall and no capsules except Flux. Each
-boss has a **core** with an HP bar under the HUD: a ball hit does 1, a Good
-smash 4, a Perfect 6. Beaten: 5,000 x boss number, a big explosion,
-then the next level.
+Every fifth level is a boss, with no wall (except the Flux Engine's) and
+no capsules except Flux. Each boss has a **core** with an HP bar under the
+meter: a ball hit does 1, a Good smash 4, a Perfect 6 (and the smash stops
+at the core). After a ball's hit a core ignores balls for 0.3s (they still
+bounce), so a ball trapped between a core and its shields can't pinball it
+down in seconds. Beaten: 5,000 x boss number (+2,000 for no life lost), a
+big explosion, then the next level. Cores and shields are off the grid,
+checked by the ball like bricks; one that moves onto the ball lets it
+slip out rather than trapping it. A boss only fires once the ball's served.
 
 1. **Warden** (level 5): a core sliding along the top, with a ring of 12
-   orbiting bricks in alternating colours as its shield. It fires single
-   bolts that alternate colour. 16 HP.
-2. **Hive** (level 10): a fixed core that buds gun bricks every 6s, which
-   drift down in a loose wall of their own. Clear them before they reach
-   the danger line (same rule as §7). 20 HP.
+   orbiting bricks in alternating colours as its shield, which grows back
+   a brick every 5s. It fires single bolts, aimed, alternating colour.
+   16 HP.
+2. **Hive** (level 10): a fixed core that buds gun bricks every 6s (up to
+   10), which creep down at 2.5px/s, firing (a bud with another under it
+   holds fire). One reaching the danger line costs a life, as with the
+   wall: those that crossed go, the rest move back up 3 rows. 20 HP.
 3. **Twins** (level 15): two cores, one cyan and one magenta, each shielded
-   by bricks of its own colour that only a matching ball breaks. They swap
-   places every 8s. 14 HP each.
-4. **Flux Engine** (level 20): a core behind a band of steel with a portal
-   pair either side, and its own advancing wall underneath. It fires fans
-   of three bolts; below half HP the fan's colours mix. 30 HP.
+   by six bricks of its own colour; only a ball of a core's colour harms it
+   or its shield. They swap places every 8s, up and over each other, and
+   fire aimed bolts of their colour. 14 HP each.
+4. **Flux Engine** (level 20): a core in a chamber above a band of steel;
+   two portal pairs link the chamber with the space below the band, and
+   its own advancing wall of coloured bricks sits under that. The core is
+   reached through the portals, or by smashing up through the steel. It
+   fires fans of three bolts, one colour a volley; below half HP the
+   middle bolt is the other colour. 30 HP.
+
+All four get 20% more HP each loop, and fire 20% more often.
 
 ## 10. Progression and lives
 
 - 20 levels: 16 layouts and the 4 bosses. Layouts are 15x12 character
-  grids in PROGMEM (`.` empty, `n` neutral, `c`/`m` cyan/magenta, `C`/`M`/`N`
-  hard, `s` steel, `g`/`G` gun cyan/magenta, `o` magnet, `p` portal, `*`
-  spark): ~180 bytes each, ~3KB in all.
+  grids in PROGMEM (`.` empty, `n` neutral, `h`/`H` hard neutral (2/3
+  hits), `c`/`m` cyan/magenta, `C`/`M` hard cyan/magenta, `s` steel,
+  `g`/`G` gun with a cyan/magenta eye, `o` magnet, `p` and `q` two portal
+  pairs, `*` spark): ~180 bytes each, ~3KB in all, plus the Flux Engine's
+  grid.
 - New mechanics come in one at a time: levels 1-2 neutral and hard only;
   polarity from 3 (two big colour blocks); the wall from level 1; magnets 6; guns 7; portals 11; sparks from 3.
   Flux Smash is there from level 1 (the how-to-play shows it).
@@ -212,7 +231,8 @@ then the next level.
   x3") rise from bricks with a multiplier.
 - The level intro "LEVEL n" with the layout dropping in row by row (0.8s),
   and the ball served on A.
-- Boss intro: "WARNING" flashing twice, the boss name, its music.
+- Boss intro (2.4s): "WARNING" flashing twice, then the boss's name. The
+  game's music carries on (one track per game, as elsewhere).
 
 ## 12. Audio
 
@@ -227,24 +247,28 @@ the 1.25MB cache.
 | Brick break | `brick_break.wav` | tone, pitch rising with the chain |
 | Mismatch bounce | `brick_clank.wav` | tone 220Hz 30ms |
 | Hard brick hit | `brick_crack.wav` | tone 440Hz 25ms |
-| Polarity swap | `brick_swap.wav` | two-note blip, up for cyan, down for magenta |
-| Meter full | `brick_ready.wav` | short arpeggio |
-| Flux Smash | `brick_smash.wav` | `explosion.wav`, then noise burst |
-| Perfect | `brick_perfect.wav` | `brick_smash.wav` + high chime |
-| Wall step | `brick_step.wav` | tone 80Hz 60ms |
-| Gun bolt / stun | `brick_zap.wav` | tone sweep down |
+| Polarity swap | `brick_swap.wav` | tone, high for cyan, low for magenta |
+| Meter full | `brick_ready.wav` | tone |
+| Flux Smash | `brick_smash.wav` | `explosion.wav` |
+| Perfect | `brick_perfect.wav` | `explosion.wav` |
+| Wall about to step / steps | `brick_tick.wav`, `brick_step.wav` | tones |
+| Gun fires | `brick_bolt.wav` | tone |
+| Stunned | `brick_zap.wav` | tone |
 | Absorbed bolt | `brick_absorb.wav` | tone 1320Hz 15ms |
-| Capsule caught | `powerup.wav` (shared) | PROGMEM pickup |
+| Portal | `brick_portal.wav` | tone |
+| Capsule caught | `powerup.wav` (shared) | tone |
 | Spark caught | `pickup.wav` (shared) | tone |
-| Ball lost | `death.wav` (shared) | PROGMEM |
-| Level clear | `brick_clear.wav` | melody |
-| Boss warn / die | `brick_boss_warn.wav`, `star_boss_die.wav` (shared) | tones |
-| Start / game over | `gamestart.wav`, `gameend.wav` (shared) | as other games |
+| Ball lost | `death.wav` (shared) | tone |
+| Level clear | `brick_clear.wav` | tone |
+| Serve, extra life | `brick_serve.wav`, `brick_extra.wav` | tones |
+| Boss warn / hit / down | `brick_boss_warn.wav`, `brick_boss_hit.wav`, `brick_boss_die.wav` | tones; `star_boss_die.wav` |
+| Start / game over | melodies, as Tube Flux | |
 
 ## 13. Attract cycle and demo
 
-Title (title art, best score and name) → how-to-play (two slides: bat and
-polarity, then smash and the wall, each with a small looping diagram) →
+Title (drawn, with the best score and name) → how-to-play (three slides:
+the bat, with a small one tilting; colour and the smash; the bricks, drawn,
+and the wall) →
 high-score table → a silent 30-40s demo → title. A starts a real game from
 any of them. Nothing from the demo is scored or saved
 (`audio.setSilenced(true)`).
@@ -254,21 +278,26 @@ autopilot:
 
 - predicts where the ball will reach the bat line (wall reflections only),
   and gets there early;
-- picks a target: the lowest column of bricks in the ball's colour, or the
-  gun nearest a clear shot, and sets the tilt that aims the rebound at it;
-- swaps polarity to match the colour most of its next path will hit;
-- dodges mismatched bolts, catches sparks and capsules on the way when it
-  can afford to;
+- picks a target: the lowest breakable brick (nearest where the ball
+  lands), or on a boss level the core (the Hive's lowest bud first; the
+  Flux Engine's wall, then a portal into its chamber), and sets the tilt
+  that aims the rebound at it;
+- swaps to the target's colour (the Warden: that of the shield brick
+  under its core);
+- for a bolt of the other colour coming down on it, swaps to absorb it if
+  the ball isn't due first, else dodges; catches sparks and capsules on the
+  way when it can afford to;
 - smashes when the meter is full, Perfect about 70% of the time.
 
 ## 14. Implementation notes
 
 - Files: `BrickFluxGame.h` (class, phases, attract, sounds), `BrickPlay.h`
-  (bat, balls, bricks, smash, capsules, wall), `BrickRender.h` (drawing),
-  `BrickAutopilot.h`, `BrickBoard.h` (grid and creep), `BrickBall.h` (types
-  and bounce maths), `BrickLevels.h` (layouts as text), `BrickConfig.h`
-  (all tuning, in its own header like the 3D games' rather than in
-  `ArcadeConfig.h`). Stage 2 adds `BrickBosses.h`.
+  (bat, balls, bricks, smash, capsules, wall), `BrickLiving.h` (polarity,
+  guns, bolts, magnets, portals, sparks), `BrickBosses.h`, `BrickRender.h`
+  (drawing), `BrickAutopilot.h`, `BrickBoard.h` (grid and creep),
+  `BrickBall.h` (types and bounce maths), `BrickLevels.h` (layouts as
+  text), `BrickConfig.h` (all tuning, in its own header like the 3D games'
+  rather than in `ArcadeConfig.h`).
 - State is all in the game object: grid 15x22 bytes, up to 6 balls, 8
   bolts, 4 capsules, 4 sparks, 16 laser shots: well under 2kB.
 - Draw: bricks as filled rects into the canvas, only the 15x22 grid walked.
@@ -282,40 +311,26 @@ autopilot:
 ## 15. Host harness
 
 `test/brickflux_harness.cpp` (`test/build.sh brick <scenario>`), with the
-fake clock and seeded RNG. Stage 1 has `play`, `wall`, `smash`, `tunnel`
-(fast balls at a steel row never get through), `idle` and `demoexit`;
-`polarity` and `boss` come with stage 2. Planned:
+fake clock and seeded RNG: `play` (real games by the autopilot: no ball
+inside a brick or out of the field, the score never drops), `wall`,
+`smash` (release timing), `tunnel` (fast balls at a steel row never get
+through), `polarity`, `living` (guns, bolts, magnets, portals, sparks),
+`levels` (every regular level cleared by the autopilot, lives pinned),
+`boss` (each boss beaten likewise), `idle` and `demoexit`. `DUMP_AT`
+writes frames of `play`, `levels` and `boss`. test/README.md has the
+details.
 
-- `brick play N`: the autopilot plays real games for N frames; checks no
-  ball escapes the field, none tunnels through a brick (positions checked
-  each substep), the score only rises, and levels clear.
-- `brick wall`: no input; checks the wall steps on time, a breakable brick
-  at the line costs exactly one life and pushes the wall back, steel there
-  doesn't.
-- `brick smash`: scripted releases at 0, 40, 100, 200ms before contact;
-  checks Perfect / Good / Good / none and that a miss keeps the meter.
-- `brick polarity`: checks matching breaks, mismatch bounces, chain counts
-  and resets.
-- `brick boss N`: each boss, autopilot, beaten in a frame budget.
-- `brick idle` / `brick demoexit`: attract cycle, demo silent, high score
-  untouched, A starts a real game.
-- `DUMP_AT` frames for the layout, the tilted bat, a smash and each boss.
+## Built
 
-The build follows the two stages agreed: the **core** (bat and tilt, smash,
-wall, capsules, layouts 1-4, attract, high scores) and then the **second
-pass** (polarity, living bricks, bosses, the remaining layouts).
-
-## Stage 1: built
-
-The bat and its tilt, the ball physics, the Flux Smash (with the late
-release), the advancing wall, all six capsules, layouts 1-4 (the levels
-cycle through them; each pass of 20 levels is a loop), extra lives, the
-level-clear bonus, the attract cycle with its demo, name entry, the
-launcher entry and the harness. Not yet: polarity (B does nothing but
-quit), living bricks, bosses, layouts 5-20.
+Built in two stages, as agreed: the core (bat and tilt, smash, wall,
+capsules, layouts 1-4, attract, high scores), then polarity, the living
+bricks, the four bosses and layouts 5-20 (level 3 and 4's layouts gained
+their colours then).
 
 ## Needs the board
 
-Frame rate, how the analogue speed and tilt feel, the smash window (150ms
-may want tuning), sound levels, and whether 8x5 bricks read well on the
-real panel.
+Stage 1 checked on the cabinet: frame rate, bat feel and play are good.
+Still to judge there: whether cyan and magenta read apart at a glance on
+the panel, bolt speed and the stun's length, how hard each boss is, and the
+new levels' pace (the autopilot, lives pinned, takes 1.5-5 minutes a level
+and 1-2 minutes a boss).

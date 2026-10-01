@@ -3,7 +3,8 @@
 
 // =============================================================================
 // BRICK FLUX — play: the bat, balls, bricks, the Flux Smash, capsules and
-// the advancing wall. Included from BrickFluxGame.h.
+// the advancing wall. Included from BrickFluxGame.h. Polarity's rules and
+// the living bricks are in BrickLiving.h, the bosses in BrickBosses.h.
 // =============================================================================
 
 namespace brickflux {
@@ -39,12 +40,23 @@ inline bool BrickFluxGame::anyHeld() const {
     return false;
 }
 
-// A level from the top: its layout, the formation back up, a ball on the
-// bat, and the rows dropping in.
+// A level from the top: its layout (or its boss), the formation back up, a
+// ball on the bat, and the rows dropping in.
 inline void BrickFluxGame::loadLevel() {
-    _board.load(_level - 1);
+    const int boss = bossForLevel(_level);
+    _board.load(boss == BOSS_ENGINE ? ENGINE_LAYOUT : boss ? -1 : layoutForLevel(_level));
+    if (boss && boss != BOSS_ENGINE) {
+        // The other bosses bring their own bricks: the grid starts empty.
+        for (int r = 0; r < ROWS; ++r)
+            for (int c = 0; c < COLS; ++c) _board.at(r, c) = BrickBoard::Cell{ BrickBoard::EMPTY, 0, 0, POL_NONE, 0, 0 };
+    }
     _capsule.active = false;
     for (auto &s : _shots) s.active = false;
+    for (auto &b : _bolts) b.active = false;
+    for (auto &s : _sparks) s.active = false;
+    for (auto &f : _flashes) f.until = 0;
+    _sparksCaught = 0;
+    _sparkLife = false;
     _effect = CAP_COUNT;
     _wallElapsed = 0;
     _warned = false;
@@ -52,6 +64,8 @@ inline void BrickFluxGame::loadLevel() {
     _lowestReached = _board.lowestBottom();
     _round = ROUND_INTRO;
     _roundAt = millis();
+    _serving = true;
+    startBoss(boss);
     serveReset();
 }
 
@@ -64,6 +78,7 @@ inline void BrickFluxGame::serveReset() {
     b.heldOffset = 0;
     b.x = _batX;
     b.y = BAT_Y - BALL_HALF - 0.5f;
+    b.pol = _batPol;
     _serving = true;
     _charging = false;
     _releaseAt = 0;
@@ -78,11 +93,13 @@ inline void BrickFluxGame::stepPlay(const InputState &in) {
     switch (_round) {
         case ROUND_INTRO:
             _aHeld = in.btnA;
+            _bHeld = in.btnB;
             for (auto &b : _balls) if (b.active && b.held) b.x = _batX + b.heldOffset;
-            if (_now - _roundAt >= INTRO_MS) { _round = ROUND_PLAY; _roundAt = _now; }
+            if (_now - _roundAt >= (_boss ? BOSS_INTRO_MS : INTRO_MS)) { _round = ROUND_PLAY; _roundAt = _now; }
             return;
         case ROUND_LOST:
             _aHeld = in.btnA;
+            _bHeld = in.btnB;
             if (_lives > 0 && _now - _roundAt >= LOST_MS) {
                 serveReset();
                 _round = ROUND_PLAY;
@@ -91,6 +108,7 @@ inline void BrickFluxGame::stepPlay(const InputState &in) {
             return;
         case ROUND_CLEAR:
             _aHeld = in.btnA;
+            _bHeld = in.btnB;
             if (_now - _roundAt >= CLEAR_MS) { ++_level; loadLevel(); }
             return;
         default:
@@ -98,6 +116,7 @@ inline void BrickFluxGame::stepPlay(const InputState &in) {
     }
 
     updateButtonA(in);
+    updateButtonB(in);
     if (_charging && random(2)) {           // sparks off the charged bat's ends
         const float half = batW() * 0.5f;
         _particles.spawnFire(_batX + (random(2) ? half : -half), BAT_Y,
@@ -105,31 +124,44 @@ inline void BrickFluxGame::stepPlay(const InputState &in) {
     }
     if (_effect != CAP_COUNT && _now >= _effectUntil) endEffect();
 
-    // Held balls ride the bat; a caught one goes by itself after a while.
+    // Held balls ride the bat (taking its colour); a caught one goes by
+    // itself after a while.
     const float half = batW() * 0.5f;
     for (auto &b : _balls) {
         if (!b.active || !b.held) continue;
         b.heldOffset = constrain(b.heldOffset, -half + 1.0f, half - 1.0f);
         b.x = _batX + b.heldOffset;
         b.y = BAT_Y - BALL_HALF - 0.5f;
+        b.pol = _batPol;
         if (!_serving && _now - b.heldSince >= CATCH_AUTO_RELEASE_MS) launchHeld(b);
     }
 
+    updateBoss();
     const float dist = ballSpeed() * _dt;
-    for (auto &b : _balls) if (b.active && !b.held) moveBall(b, dist);
+    for (auto &b : _balls) {
+        if (!b.active || b.held) continue;
+        applyMagnets(b);
+        moveBall(b, dist);
+    }
 
     updateCapsules();
     updateShots();
+    updateGuns();
+    updateBolts();
+    updateSparks();
+    if (_round != ROUND_PLAY) return;        // a boss's bud reached the line
     if (activeBalls() == 0) { loseLife(); return; }
     updateWall();
     if (_round != ROUND_PLAY) return;
-    if (_board.remaining() == 0) levelCleared();
+    if (_boss ? bossBeaten() : _board.remaining() == 0) levelCleared();
 }
 
 // Left/right moves the bat, its speed following the stick (gentle near the
 // middle, for fine placing); up/down tilts it, past a deadzone so a sloppy
-// sideways push doesn't. In portrait, screen up is +joyY.
+// sideways push doesn't. In portrait, screen up is +joyY. A stunned bat
+// (a bolt of the other colour) doesn't move at all.
 inline void BrickFluxGame::updateBat(const InputState &in) {
+    if (_now < _stunUntil) return;
     const float x = in.joyX;
     _batX += BAT_SPEED * x * (0.4f + 0.6f * fabsf(x)) * _dt;
     const float half = batW() * 0.5f;
@@ -188,11 +220,14 @@ inline void BrickFluxGame::launchHeld(Ball &b) {
     b.y = BAT_Y - BALL_HALF - 0.5f;
     b.contactAt = 0;
     b.idleBounces = 0;
+    b.pol = _batPol;
 }
 
 // The ball moves in steps of at most SUBSTEP_PX, across then down, so it
 // can't pass through a brick (4px) whatever its speed or the frame time.
 // A brick in the way puts it back where it was on that axis and turns it.
+// A boss's loose bricks and cores count the same way, except one that has
+// moved onto the ball, which it slips out of rather than sticking.
 inline void BrickFluxGame::moveBall(Ball &b, float dist) {
     const float lo = FIELD_L + BALL_HALF, hi = FIELD_R - BALL_HALF, top = FIELD_T + BALL_HALF;
     int n = (int)ceilf(dist / SUBSTEP_PX);
@@ -200,9 +235,10 @@ inline void BrickFluxGame::moveBall(Ball &b, float dist) {
     const float step = dist / n;
     for (int i = 0; i < n; ++i) {
         if (!b.active || b.held) return;
-        int r, c;
+        int r, c, fk, fi;
         // Across
         const float px = b.x;
+        const bool wasInFree = _boss && freeSolidAt(b.x, b.y, fk, fi);
         b.x += b.dx * step;
         if (b.x < lo) { b.x = 2 * lo - b.x; b.dx = fabsf(b.dx); afterBounce(b, false); }
         else if (b.x > hi) { b.x = 2 * hi - b.x; b.dx = -fabsf(b.dx); afterBounce(b, false); }
@@ -210,10 +246,16 @@ inline void BrickFluxGame::moveBall(Ball &b, float dist) {
         else if (_board.solidAt(b.x, b.y, BALL_HALF, r, c)) {
             b.x = px;
             b.dx = -b.dx;
-            hitCell(r, c, &b, false, 1);
+            hitCell(r, c, &b, false, 1, b.pol);
+        }
+        if (_boss && !wasInFree && freeSolidAt(b.x, b.y, fk, fi)) {
+            if (!(b.pierce && fk == 1)) { b.x = px; b.dx = -b.dx; }
+            hitFree(fk, fi, &b, b.pierce, b.perfect);
+            if (fk == 0) b.pierce = b.perfect = false;   // a smash stops at a core
         }
         // Down (or up)
         const float py = b.y, prevBottom = b.y + BALL_HALF;
+        const bool wasInFreeY = _boss && freeSolidAt(b.x, b.y, fk, fi);
         b.y += b.dy * step;
         if (b.y < top) {
             b.y = 2 * top - b.y;
@@ -225,8 +267,14 @@ inline void BrickFluxGame::moveBall(Ball &b, float dist) {
         else if (_board.solidAt(b.x, b.y, BALL_HALF, r, c)) {
             b.y = py;
             b.dy = -b.dy;
-            hitCell(r, c, &b, false, 1);
+            hitCell(r, c, &b, false, 1, b.pol);
         }
+        if (_boss && !wasInFreeY && freeSolidAt(b.x, b.y, fk, fi)) {
+            if (!(b.pierce && fk == 1)) { b.y = py; b.dy = -b.dy; }
+            hitFree(fk, fi, &b, b.pierce, b.perfect);
+            if (fk == 0) b.pierce = b.perfect = false;
+        }
+        if (!b.pierce) checkPortal(b);
         // The bat: the ball's bottom crossing its top, within its width.
         if (b.dy > 0 && prevBottom <= BAT_Y + 0.01f && b.y + BALL_HALF >= BAT_Y &&
             fabsf(b.x - _batX) <= batW() * 0.5f + BALL_HALF) {
@@ -237,9 +285,10 @@ inline void BrickFluxGame::moveBall(Ball &b, float dist) {
     }
 }
 
-// Off the bat. Inside the smash window it's a Flux Smash; otherwise the
-// tilted bounce, and Catch holds it.
+// Off the bat, taking its colour. Inside the smash window it's a Flux
+// Smash; otherwise the tilted bounce, and Catch holds it.
 inline void BrickFluxGame::batBounce(Ball &b) {
+    b.pol = _batPol;
     if (_releaseAt && _now - _releaseAt <= SMASH_WINDOW_MS) {
         const bool perfect = _now - _releaseAt <= PERFECT_MS;
         _releaseAt = 0;
@@ -285,8 +334,8 @@ inline void BrickFluxGame::smash(Ball &b, bool perfect) {
     }
 }
 
-// A smashing ball takes every brick it touches; a Perfect one the columns
-// either side too.
+// A smashing ball takes every brick it touches, portals included; a
+// Perfect one the columns either side too.
 inline void BrickFluxGame::pierceCells(Ball &b) {
     const float ext = b.perfect ? (float)CELL_W : 0.0f;
     int r0, r1, c0, c1;
@@ -294,17 +343,29 @@ inline void BrickFluxGame::pierceCells(Ball &b) {
                      b.y + BALL_HALF - 0.001f, r0, r1, c0, c1)) return;
     for (int r = r0; r <= r1; ++r)
         for (int c = c0; c <= c1; ++c)
-            if (_board.solid(r, c)) hitCell(r, c, &b, true, b.perfect ? 3 : 2);
+            if (_board.occupied(r, c)) hitCell(r, c, &b, true, b.perfect ? 3 : 2, b.pol);
 }
 
-inline void BrickFluxGame::hitCell(int r, int c, Ball *b, bool smashHit, int mult) {
+// One hit on a grid cell, by a ball of colour `pol` (POL_ANY: a laser).
+// A coloured brick broken in its own colour scores x the chain, and adds
+// to it; one of the other colour turns the ball and breaks the chain.
+inline void BrickFluxGame::hitCell(int r, int c, Ball *b, bool smashHit, int mult, uint8_t pol) {
     const float cx = BrickBoard::cellX(c) + CELL_W * 0.5f, cy = _board.cellY(r) + CELL_H * 0.5f;
-    const BrickBoard::HitResult res = _board.hit(r, c, smashHit);
+    const BrickBoard::HitResult res = _board.hit(r, c, smashHit, pol);
     if (!res.hit) return;
+    if (res.mismatch) {
+        if (b) mismatch(*b, cx - CELL_W * 0.5f, cy - CELL_H * 0.5f);
+        return;
+    }
+    if (res.coloured && b && !smashHit) {
+        mult = _chain;
+        if (_chain < CHAIN_MAX) ++_chain;
+    }
     if (res.broken) {
         brickBroken(cx, cy, res.colour, res.points, mult);
+        if (res.kind == BrickBoard::SPARK) dropSpark(cx, cy);
         if (b) b->idleBounces = 0;
-    } else if (res.points > 0) {            // a hard brick cracked
+    } else if (res.points > 0) {            // a hard brick (or a gun, a magnet) cracked
         addScore((long)res.points * mult);
         _particles.spawnExplosion(cx, cy, res.colour, 2, 250);
         sfx(SFX_CRACK);
@@ -331,15 +392,19 @@ inline void BrickFluxGame::afterBounce(Ball &b, bool useful) {
     }
 }
 
+// A brick gone: points, debris, the meter, and now and then a capsule (on
+// a boss level, only ever Flux). A chain climbs the break's pitch. `mult`
+// is the chain's multiplier (or a smash's x2/x3).
 inline void BrickFluxGame::brickBroken(float x, float y, uint16_t colour, int pts, int mult) {
     addScore((long)pts * mult);
     _particles.spawnExplosion(x, y, colour, 5, 400);
-    sfx(SFX_BREAK);
+    sfx(SFX_BREAK, 1000 + 100 * min(_chain, CHAIN_MAX));
     if (mult > 1) addPopup(x, y, pts * mult, (uint8_t)mult);
-    if (_meter < METER_FULL && ++_meter >= METER_FULL) sfx(SFX_READY);
+    // A brick fills the meter by 1; in a chain of 4 or more, by 2.
+    if (_meter < METER_FULL && (_meter += mult >= 4 ? 2 : 1) >= METER_FULL) { _meter = METER_FULL; sfx(SFX_READY); }
     if (!_capsule.active && random(CAPSULE_CHANCE) == 0) {
         _capsule.active = true;
-        _capsule.kind = (uint8_t)random(CAP_COUNT);
+        _capsule.kind = _boss ? (uint8_t)CAP_FLUX : (uint8_t)random(CAP_COUNT);
         _capsule.x = constrain(x - CAPSULE_W * 0.5f, (float)FIELD_L, (float)(FIELD_R - CAPSULE_W));
         _capsule.y = y;
     }
@@ -364,12 +429,16 @@ inline void BrickFluxGame::addPopup(float x, float y, int32_t pts, uint8_t mult)
     *slot = Popup{ true, (int16_t)x, (int16_t)y, pts, mult, _now };
 }
 
+// Does the bat (its top edge, a few px deep) overlap this box?
+inline bool BrickFluxGame::batCatches(float x0, float x1, float y0, float y1) const {
+    const float half = batW() * 0.5f;
+    return y1 >= BAT_Y && y0 <= BAT_Y + 3 && x1 >= _batX - half && x0 <= _batX + half;
+}
+
 inline void BrickFluxGame::updateCapsules() {
     if (!_capsule.active) return;
     _capsule.y += CAPSULE_SPEED * _dt;
-    const float half = batW() * 0.5f;
-    if (_capsule.y + CAPSULE_H >= BAT_Y && _capsule.y <= BAT_Y + 3 &&
-        _capsule.x + CAPSULE_W >= _batX - half && _capsule.x <= _batX + half) {
+    if (batCatches(_capsule.x, _capsule.x + CAPSULE_W, _capsule.y, _capsule.y + CAPSULE_H)) {
         _capsule.active = false;
         ++_statCapsules;
         sfx(SFX_CAPSULE);
@@ -435,18 +504,22 @@ inline void BrickFluxGame::fireLasers() {
 }
 
 // Laser shots climb in 2px steps (a row is 5px), each taking one hit off
-// the first brick it meets; steel stops them.
+// the first brick it meets, whatever its colour (no chain); steel stops
+// them. They hit a boss's bricks and cores too.
 inline void BrickFluxGame::updateShots() {
     const float dist = SHOT_SPEED * _dt;
     const int n = (int)ceilf(dist / 2.0f);
     for (auto &s : _shots) {
         for (int i = 0; i < n && s.active; ++i) {
             s.y -= dist / n;
-            int r, c;
+            int r, c, fk, fi;
             if (s.y < FIELD_T) s.active = false;
             else if (_board.solidAt(s.x, s.y, 0.5f, r, c)) {
                 s.active = false;
-                hitCell(r, c, nullptr, false, 1);
+                hitCell(r, c, nullptr, false, 1, POL_ANY);
+            } else if (_boss && freeSolidAt(s.x, s.y, fk, fi)) {
+                s.active = false;
+                hitFree(fk, fi, nullptr, false, false);
             }
         }
     }
@@ -455,9 +528,9 @@ inline void BrickFluxGame::updateShots() {
 // The advancing wall: a step down every wallStepMs() of play (not while a
 // ball waits to be served), with a tick WALL_WARN_MS before. A breakable
 // brick past the danger line costs a life and pushes the formation back up;
-// steel there just shatters.
+// steel there just shatters. Only the Flux Engine of the bosses has one.
 inline void BrickFluxGame::updateWall() {
-    if (_serving) return;
+    if (_serving || (_boss && _boss != BOSS_ENGINE)) return;
     _wallElapsed += (unsigned long)(_dt * 1000.0f + 0.5f);
     const unsigned long step = wallStepMs();
     if (!_warned && _wallElapsed + WALL_WARN_MS >= step) { _warned = true; sfx(SFX_TICK); }
@@ -493,37 +566,51 @@ inline void BrickFluxGame::updateWall() {
     if (lb > _lowestReached) _lowestReached = lb;
 }
 
-// The last ball's gone, or the wall got through. The meter keeps half.
+// The last ball's gone, or the wall got through. The meter keeps half; the
+// chain's broken.
 inline void BrickFluxGame::loseLife() {
     --_lives;
     _lostThisLevel = true;
     _meter /= 2;
+    _chain = 1;
     _charging = false;
     _releaseAt = 0;
+    _stunUntil = 0;
     endEffect();
     _capsule.active = false;
     for (auto &s : _shots) s.active = false;
+    for (auto &b : _bolts) b.active = false;
+    for (auto &s : _sparks) s.active = false;
     for (auto &b : _balls) b.active = false;
     sfx(SFX_LOST);
     _round = ROUND_LOST;
     _roundAt = _now;
 }
 
-// Every breakable brick gone: the bonus for the level, the headroom left
-// between the formation's lowest point and the danger line, and for not
-// losing a life on it.
+// Every breakable brick gone (or the boss beaten): the bonus for the level,
+// the headroom left between the formation's lowest point and the danger
+// line (a boss instead: BOSS_BONUS x its number), and for not losing a life
+// on it.
 inline void BrickFluxGame::levelCleared() {
-    _headroomRows = max(0, (int)((DANGER_Y - _lowestReached) / CELL_H));
-    _clearBonus = CLEAR_BONUS + (long)_headroomRows * HEADROOM_PER_ROW + (_lostThisLevel ? 0 : NO_LOSS_BONUS);
+    if (_boss) {
+        _headroomRows = 0;
+        _clearBonus = BOSS_BONUS * _boss + (_lostThisLevel ? 0 : NO_LOSS_BONUS);
+        ++_statBosses;
+    } else {
+        _headroomRows = max(0, (int)((DANGER_Y - _lowestReached) / CELL_H));
+        _clearBonus = CLEAR_BONUS + (long)_headroomRows * HEADROOM_PER_ROW + (_lostThisLevel ? 0 : NO_LOSS_BONUS);
+    }
     addScore(_clearBonus);
     for (auto &b : _balls) b.active = false;
     _capsule.active = false;
     for (auto &s : _shots) s.active = false;
+    for (auto &b : _bolts) b.active = false;
+    for (auto &s : _sparks) s.active = false;
     endEffect();
     _charging = false;
     _releaseAt = 0;
     ++_statCleared;
-    sfx(SFX_CLEAR);
+    sfx(_boss ? SFX_BOSS_DIE : SFX_CLEAR);
     _round = ROUND_CLEAR;
     _roundAt = _now;
 }

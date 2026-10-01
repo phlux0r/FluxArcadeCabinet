@@ -66,7 +66,8 @@ echo "building games2d_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-sign-compare \
     -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
     "$HERE/games2d_harness.cpp" -o "$OUT/games2d_harness"
-# Brick Flux: its play, wall, smash timing and attract demo. Real (inert)
+# Brick Flux: its play, wall, smash timing, polarity, living bricks, every
+# level and boss, and attract demo. Real (inert)
 # audio engine like the other 2D games; no Jet.
 echo "building brickflux_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
@@ -113,10 +114,10 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
-  for s in "play 40000" wall smash tunnel "idle 6000" demoexit; do
+  for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit; do
     echo "=== brick $s"
     # shellcheck disable=SC2086
-    ./brickflux_harness $s | tail -6
+    ./brickflux_harness $s | tail -9
   done
   for g in tankflux tubeflux starflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")

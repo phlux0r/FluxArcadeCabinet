@@ -26,11 +26,40 @@ struct Ball {
     bool  perfect = false;       // ...three columns wide
     uint8_t idleBounces = 0;     // walls and steel since a brick or the bat
     unsigned long contactAt = 0; // last time it left the bat (for a late release)
+    uint8_t pol = POL_CYAN;      // its colour, taken from the bat at each touch
+    unsigned long portalUntil = 0; // just came out of a portal: ignore portals till then
 };
 
 struct Capsule { bool active = false; float x = 0, y = 0; uint8_t kind = 0; };
 struct Shot    { bool active = false; float x = 0, y = 0; };
 struct Popup   { bool active = false; int16_t x = 0, y = 0; int32_t pts = 0; uint8_t mult = 1; unsigned long at = 0; };
+// A gun's or a boss's shot, falling at the bat in its colour.
+struct Bolt    { bool active = false; float x = 0, y = 0, vx = 0, vy = 0; uint8_t pol = POL_CYAN; };
+// From a spark brick: wobbles down to be caught.
+struct Spark   { bool active = false; float x0 = 0, y = 0; unsigned long at = 0; };
+
+// A boss's core: a block the ball damages (a coloured one only by a ball
+// of its colour), with HP.
+struct Core {
+    bool  active = false;
+    float x = 0, y = 0, w = 0, h = 0;   // centre and size
+    int   hp = 0, maxHp = 0;
+    uint8_t pol = POL_NONE;
+    float vx = 0, homeX = 0;
+    unsigned long flashUntil = 0, fireAt = 0;
+    unsigned long immuneUntil = 0;      // a ball's hit doesn't count again till then
+};
+// A loose brick belonging to a boss: a shield (orbiting or fixed to a
+// core) or one of the Hive's budded guns, drifting down.
+struct Sat {
+    bool  active = false;
+    float x = 0, y = 0;                 // top-left, a brick's 7x4
+    uint8_t pol = POL_NONE, hits = 1;
+    bool  gun = false;
+    int8_t core = -1;                   // the core it rides with, or -1 (drifting)
+    float angle = 0, ox = 0, oy = 0;    // orbit angle, or offset from its core
+    int16_t timer = 0;                  // a gun's ms to its next shot
+};
 
 inline float degToRad(float d) { return d * (float)PI / 180.0f; }
 inline float radToDeg(float r) { return r * 180.0f / (float)PI; }

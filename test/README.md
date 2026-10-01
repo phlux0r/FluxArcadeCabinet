@@ -67,10 +67,16 @@ Its bot is the game's own autopilot (`BrickFluxGame::autopilot()`, in
 | `wall` | A breakable brick past the danger line costs exactly one life, its row goes and the formation is pushed back three rows; steel there shatters and costs nothing; the step interval by level and loop |
 | `smash` | A ball dropping onto the bat with A released 20, 100 and 200ms before it arrives, and 30ms after: Perfect, Good, nothing (meter kept full), Good |
 | `tunnel` | Balls at near top speed, 50ms frames, at angles from 20 to 160 degrees, at a single row of steel: none gets through |
+| `polarity` | A ball off the other colour bounces (brick intact, chain broken); three of its own colour in a row score 20, 40, 60; neutral bricks break to either colour; smashes and lasers break either; the ball takes the bat's colour at the bat; B's 250ms cooldown |
+| `living` | A buried gun stays quiet, a clear one fires its colour; a bolt of the bat's colour is absorbed (+2 meter), one of the other stuns it for 0.75s; a magnet turns a passing ball; a portal carries the ball above the steel; the third spark caught is a life, the fourth isn't |
+| `levels [N]` | The autopilot, lives pinned, plays every regular level of the first loop; each must be cleared within N frames (default 12000), with no ball ever inside a brick. Prints the time and lives lost per level. This is what found a portal putting the ball out inside a brick |
+| `boss [N]` | The same for each of the four bosses (default 15000 frames) |
 | `idle [N]` | No input: title, how-to-play, scores, then the demo: silent, high score untouched, and it ends back at the title |
 | `demoexit` | A mid-demo starts a clean game (level 1, no score, three lives, a ball waiting to be served) |
 
-`DUMP_AT=20,400 test/build.sh brick play 401` writes `brick_000020.ppm` etc.
+`DUMP_AT=20,400 test/build.sh brick play 401` writes `brick_000020.ppm` etc.;
+with `levels` or `boss`, it writes those frames of every level
+(`brick_L05_001500.ppm` is the Warden 50 seconds in).
 
 ## Looking at frames
 
@@ -143,7 +149,7 @@ test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
-├── brickflux_harness.cpp       # Brick Flux: play, wall, smash timing, tunnelling, attract demo
+├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps

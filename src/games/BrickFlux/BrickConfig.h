@@ -84,6 +84,48 @@ inline constexpr long EXTRA_LIFE_FIRST = 30000, EXTRA_LIFE_EVERY = 50000;
 inline constexpr int MAX_LOOPS = 5;              // difficulty stops rising after this
 inline constexpr int LEVELS_PER_LOOP = 20;
 
+// ---- Polarity ---------------------------------------------------------------------
+// The bat is cyan or magenta (tap B); a ball takes the bat's colour when it
+// touches it, and breaks bricks of its own colour (and neutral ones).
+enum Pol : uint8_t { POL_NONE = 0, POL_CYAN = 1, POL_MAGENTA = 2, POL_ANY = 3 };
+inline constexpr unsigned long SWAP_COOLDOWN_MS = 250;
+inline constexpr int PTS_COLOURED = 20;          // x the chain
+inline constexpr int CHAIN_MAX = 8;
+
+// ---- Living bricks ------------------------------------------------------------------
+inline constexpr int PTS_GUN = 100, PTS_MAGNET = 50, PTS_PORTAL = 200, PTS_SPARK = 50, PTS_CRACK = 10;
+inline constexpr unsigned long GUN_MIN_MS = 3000, GUN_MAX_MS = 5000;   // between a gun's shots
+inline constexpr int   MAX_BOLTS = 10;
+inline constexpr float BOLT_SPEED = 60.0f;
+inline constexpr unsigned long STUN_MS = 750;   // a bolt of the other colour freezes the bat
+inline constexpr int   ABSORB_METER = 2;        // one of your colour charges the meter
+inline constexpr float MAGNET_RADIUS = 28.0f;
+inline constexpr float MAGNET_TURN_DEG = 150.0f; // per second, at the magnet, fading to 0 at the radius
+inline constexpr unsigned long PORTAL_COOLDOWN_MS = 250;
+inline constexpr int   MAX_SPARKS = 4;
+inline constexpr float SPARK_SPEED = 40.0f;
+inline constexpr int   PTS_SPARK_CATCH = 250;
+inline constexpr int   SPARKS_FOR_LIFE = 3;      // caught in one level: an extra life (once)
+
+// ---- Bosses -------------------------------------------------------------------------
+// Every fifth level. A core takes 1 from a ball, 4 from a Good smash, 6
+// from a Perfect; beaten, it scores BOSS_BONUS x the boss's number.
+enum BossKind : uint8_t { BOSS_NONE, BOSS_WARDEN, BOSS_HIVE, BOSS_TWINS, BOSS_ENGINE };
+inline constexpr int   BOSS_EVERY = 5;
+inline constexpr int   SMASH_DAMAGE = 4, PERFECT_DAMAGE = 6;
+inline constexpr long  BOSS_BONUS = 5000;
+inline constexpr int   PTS_CORE_HIT = 50;
+inline constexpr float BOSS_HP_LOOP_STEP = 0.2f;  // +20% a loop
+inline constexpr int   MAX_SATS = 16;
+inline constexpr unsigned long BOSS_INTRO_MS = 2400;
+inline constexpr int   WARDEN_HP = 16, HIVE_HP = 20, TWIN_HP = 14, ENGINE_HP = 30;
+inline constexpr unsigned long WARDEN_FIRE_MS = 2500, HIVE_BUD_MS = 6000, TWIN_FIRE_MS = 3000,
+                               TWIN_SWAP_MS = 8000, ENGINE_FIRE_MS = 3000;
+inline constexpr unsigned long CORE_IMMUNE_MS = 300;   // after a ball's hit, so it can't pinball one down
+inline constexpr unsigned long WARDEN_REGROW_MS = 5000; // its ring grows back a brick
+inline constexpr float HIVE_DRIFT = 2.5f;         // px/s, its budded guns creeping down
+inline constexpr int   HIVE_MAX_BUDS = 10;
+
 // ---- Phases and attract -------------------------------------------------------------
 inline constexpr unsigned long INTRO_MS = 1200;         // "LEVEL n", the rows dropping in
 inline constexpr unsigned long CLEAR_MS = 2500;         // the level-clear tally
@@ -105,6 +147,11 @@ inline constexpr uint16_t COL_DOTS = 0x0866;
 inline constexpr uint16_t COL_DANGER = 0x7800, COL_DANGER_HOT = 0xF800;
 inline constexpr uint16_t COL_STEEL = 0x8C71, COL_STEEL_HI = 0xCE79;
 inline constexpr uint16_t COL_PANEL = 0x0008;
+inline constexpr uint16_t COL_CYAN = 0x07FF, COL_MAGENTA = 0xF81F;
+inline constexpr uint16_t COL_CYAN_DIM = 0x0249, COL_MAGENTA_DIM = 0x4809;
+inline constexpr uint16_t COL_CYAN_HARD = 0x04B2, COL_MAGENTA_HARD = 0xA012;
+
+inline uint16_t polColour(uint8_t p) { return p == POL_CYAN ? COL_CYAN : p == POL_MAGENTA ? COL_MAGENTA : 0xFFFF; }
 
 }  // namespace brickflux
 

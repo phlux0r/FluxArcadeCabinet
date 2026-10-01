@@ -33,8 +33,16 @@ inline void BrickFluxGame::drawField(GFXcanvas16 &cv) {
     for (int y = FIELD_T + phase; y < H; y += 8)
         for (int x = FIELD_L + 4; x < FIELD_R; x += 8) cv.drawPixel(x, y, COL_DOTS);
 
-    cv.fillRect(0, HUD_H + 2, FIELD_L, H - HUD_H - 2, COL_WALL);
-    cv.fillRect(FIELD_R, HUD_H + 2, W - FIELD_R, H - HUD_H - 2, COL_WALL);
+    // The side walls show the bat's colour, so it's always in view.
+    const uint16_t wc = _batPol == POL_MAGENTA ? COL_MAGENTA_DIM : COL_CYAN_DIM;
+    cv.fillRect(0, HUD_H + 2, FIELD_L, H - HUD_H - 2, wc);
+    cv.fillRect(FIELD_R, HUD_H + 2, W - FIELD_R, H - HUD_H - 2, wc);
+    // A boss's health, under the meter.
+    if (_boss) {
+        int hp = 0, maxHp = 0;
+        for (const auto &c : _cores) { hp += max(0, c.hp); maxHp += c.maxHp; }
+        if (maxHp > 0) cv.fillRect(FIELD_L, FIELD_T - 1, (FIELD_R - FIELD_L) * hp / maxHp, 1, ArcadeConfig::COLOR_RED);
+    }
 
     // The danger line: brighter as the formation nears it, flashing as a
     // step comes.
@@ -48,7 +56,11 @@ inline void BrickFluxGame::drawField(GFXcanvas16 &cv) {
     if (_phase != PHASE_ATTRACT || _slide == SLIDE_DEMO) {
         if (_round == ROUND_INTRO) rows = 1 + (int)((millis() - _roundAt) * ROWS * 3 / (INTRO_MS * 2));
     }
-    _board.draw(cv, rows, ox, oy);
+    const unsigned long now = millis();
+    _board.draw(cv, rows, ox, oy, now);
+    drawBoss(cv, ox, oy);
+    for (const auto &f : _flashes)
+        if (f.until > now) cv.drawRect((int)f.x + ox - 1, (int)f.y + oy - 1, f.w + 2, f.h + 2, ArcadeConfig::COLOR_WHITE);
 
     if (_capsule.active) {
         static const uint16_t CAP_COLS[CAP_COUNT] = { ArcadeConfig::COLOR_ION_BLUE, ArcadeConfig::COLOR_ORANGE,
@@ -63,6 +75,20 @@ inline void BrickFluxGame::drawField(GFXcanvas16 &cv) {
     }
     for (const auto &s : _shots)
         if (s.active) cv.drawFastVLine((int)s.x, (int)s.y, 3, ArcadeConfig::COLOR_ORANGE);
+    // Bolts: a short streak in their colour with a white tip.
+    for (const auto &b : _bolts) {
+        if (!b.active) continue;
+        cv.drawLine((int)b.x, (int)b.y - 4, (int)b.x, (int)b.y, polColour(b.pol));
+        cv.drawPixel((int)b.x, (int)b.y + 1, ArcadeConfig::COLOR_WHITE);
+    }
+    // Sparks: a twinkling yellow cross.
+    for (const auto &s : _sparks) {
+        if (!s.active) continue;
+        const int x = (int)(s.x0 + 3.0f * sinf((now - s.at) / 160.0f)), y = (int)s.y;
+        const uint16_t sc = (now / 100) % 2 ? ArcadeConfig::COLOR_YELLOW : ArcadeConfig::COLOR_WHITE;
+        cv.drawFastHLine(x - 2, y, 5, sc);
+        cv.drawFastVLine(x, y - 2, 5, sc);
+    }
 
     for (const auto &b : _balls) {
         if (!b.active) continue;
@@ -75,7 +101,8 @@ inline void BrickFluxGame::drawField(GFXcanvas16 &cv) {
                 cv.drawLine(x + w, y, tx + w, ty, sc);
             cv.fillRect(x - 2, y - 2, 5, 5, ArcadeConfig::COLOR_WHITE);
         } else {
-            cv.fillRect(x - 1, y - 1, 3, 3, ArcadeConfig::COLOR_WHITE);
+            cv.fillRect(x - 1, y - 1, 3, 3, polColour(b.pol));
+            cv.drawPixel(x, y, ArcadeConfig::COLOR_WHITE);
         }
     }
 
@@ -95,8 +122,8 @@ inline void BrickFluxGame::drawField(GFXcanvas16 &cv) {
     }
 }
 
-// The bat: a thick line at its tilt, ends marked. Charging, it glows
-// white; with the meter full, its ends pulse.
+// The bat: a thick line at its tilt, its ends in its colour. Charging, it
+// glows white; with the meter full, its ends pulse; stunned, it's grey.
 inline void BrickFluxGame::drawBat(GFXcanvas16 &cv) {
     const float half = batW() * 0.5f, t = degToRad(_tilt);
     const float cx = _batX, cy = BAT_Y + 1.0f;
@@ -105,8 +132,10 @@ inline void BrickFluxGame::drawBat(GFXcanvas16 &cv) {
     const unsigned long now = millis();
     uint16_t body = _effect == CAP_WIDE ? 0x9DFF : 0xBDF7;
     if (_charging) body = (now / 60) % 2 ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_YELLOW;
+    const bool stunned = now < _stunUntil;
+    if (stunned) body = (now / 80) % 2 ? 0x4208 : 0x630C;
     for (int d = -1; d <= 1; ++d) cv.drawLine(x0, y0 + d, x1, y1 + d, body);
-    uint16_t ends = ArcadeConfig::COLOR_ION_BLUE;
+    uint16_t ends = stunned ? 0x630C : polColour(_batPol);
     if (_meter >= METER_FULL && !_charging) ends = (now / 150) % 2 ? ArcadeConfig::COLOR_YELLOW : ArcadeConfig::COLOR_WHITE;
     if (_effect == CAP_LASER) ends = ArcadeConfig::COLOR_RED;
     cv.fillRect(x0 - 1, y0 - 1, 3, 3, ends);
@@ -121,9 +150,16 @@ inline void BrickFluxGame::drawHud(GFXcanvas16 &cv) {
     cv.setCursor(1, 1);
     snprintf(buf, sizeof(buf), "%ld", _score);
     cv.print(buf);
+    // The chain, beside the score, in the colour it's running in.
+    if (_chain > 1) {
+        cv.setTextColor(polColour(_batPol));
+        cv.setCursor(1 + (int)strlen(buf) * 6 + 3, 1);
+        snprintf(buf, sizeof(buf), "x%d", _chain);
+        cv.print(buf);
+    }
     snprintf(buf, sizeof(buf), "L%d", _level);
     cv.setTextColor(ArcadeConfig::COLOR_CYAN);
-    cv.setCursor(W / 2 - (int)strlen(buf) * 3, 1);
+    cv.setCursor(W / 2 + 8 - (int)strlen(buf) * 3, 1);
     cv.print(buf);
     // Lives as small bats, right to left.
     for (int i = 0; i < _lives && i < MAX_LIVES; ++i)
@@ -155,6 +191,18 @@ inline void BrickFluxGame::drawRoundOverlay(GFXcanvas16 &cv) {
     const unsigned long now = millis();
     switch (_round) {
         case ROUND_INTRO:
+            if (_boss) {
+                // WARNING twice, then the boss's name.
+                panel(cv, 14, 78, 100, 24);
+                if (now - _roundAt < BOSS_INTRO_MS / 2) {
+                    if ((now - _roundAt) % 600 < 400) hiscore::printCentred(cv, "WARNING", 84, ArcadeConfig::COLOR_RED, 2);
+                } else {
+                    hiscore::printCentred(cv, bossName(), 82, ArcadeConfig::COLOR_YELLOW);
+                    snprintf(buf, sizeof(buf), "LEVEL %d", _level);
+                    hiscore::printCentred(cv, buf, 92, ArcadeConfig::COLOR_GREY);
+                }
+                break;
+            }
             panel(cv, 24, 80, 80, 20);
             snprintf(buf, sizeof(buf), "LEVEL %d", _level);
             hiscore::printCentred(cv, buf, 86, ArcadeConfig::COLOR_CYAN);
@@ -169,6 +217,16 @@ inline void BrickFluxGame::drawRoundOverlay(GFXcanvas16 &cv) {
             break;
         case ROUND_CLEAR:
             panel(cv, 10, 56, 108, 58);
+            if (_boss) {
+                hiscore::printCentred(cv, "BOSS DOWN!", 61, ArcadeConfig::COLOR_YELLOW);
+                hiscore::printCentred(cv, bossName(), 74, ArcadeConfig::COLOR_WHITE);
+                snprintf(buf, sizeof(buf), "BONUS %ld", BOSS_BONUS * _boss);
+                hiscore::printCentred(cv, buf, 84, ArcadeConfig::COLOR_WHITE);
+                if (!_lostThisLevel) hiscore::printCentred(cv, "NO LIFE LOST 2000", 94, ArcadeConfig::COLOR_YELLOW);
+                snprintf(buf, sizeof(buf), "+%ld", _clearBonus);
+                hiscore::printCentred(cv, buf, 104, ArcadeConfig::COLOR_CYAN);
+                break;
+            }
             hiscore::printCentred(cv, "LEVEL CLEAR", 61, ArcadeConfig::COLOR_GREEN);
             snprintf(buf, sizeof(buf), "CLEAR %d", CLEAR_BONUS);
             hiscore::printCentred(cv, buf, 74, ArcadeConfig::COLOR_WHITE);
@@ -218,19 +276,21 @@ inline void BrickFluxGame::renderTitle(GFXcanvas16 &cv) {
     hiscore::printCentred(cv, _scores.bestLine(buf, sizeof(buf)), 151, ArcadeConfig::COLOR_YELLOW);
 }
 
-// Two how-to-play slides: the bat, then the smash and the wall. The first
-// has a small bat tilting to and fro, the ball leaving it at its aim.
-inline void BrickFluxGame::renderInfo(GFXcanvas16 &cv, bool second) {
+// Three how-to-play slides: the bat (a small one tilting to and fro, the
+// ball leaving it at its aim); colour and the smash; the bricks and the
+// wall.
+inline void BrickFluxGame::renderInfo(GFXcanvas16 &cv, int page) {
     cv.fillScreen(ArcadeConfig::COLOR_BLACK);
     const uint16_t WH = ArcadeConfig::COLOR_WHITE, GR = ArcadeConfig::COLOR_GREY;
-    if (!second) {
+    const unsigned long now = millis();
+    if (page == 0) {
         hiscore::printCentred(cv, "HOW TO PLAY", 8, ArcadeConfig::COLOR_CYAN);
         hiscore::printCentred(cv, "STICK L/R: MOVE BAT", 24, WH);
         hiscore::printCentred(cv, "STICK U/D: TILT BAT", 34, WH);
         hiscore::printCentred(cv, "THE TILT AIMS", 46, GR);
         hiscore::printCentred(cv, "THE REBOUND", 56, GR);
-        const float tilt = TILT_MAX_DEG * sinf(millis() / 600.0f);
-        const float t = degToRad(tilt), cx = 64, cy = 112, half = 14;
+        const float tilt = TILT_MAX_DEG * sinf(now / 600.0f);
+        const float t = degToRad(tilt), cx = 64, cy = 104, half = 14;
         for (int d = -1; d <= 1; ++d)
             cv.drawLine((int)(cx - half * cosf(t)), (int)(cy + half * sinf(t)) + d,
                         (int)(cx + half * cosf(t)), (int)(cy - half * sinf(t)) + d, 0xBDF7);
@@ -238,23 +298,49 @@ inline void BrickFluxGame::renderInfo(GFXcanvas16 &cv, bool second) {
         dirFromAngle(batAimDeg(tilt), dx, dy);
         for (int k = 1; k <= 5; ++k)
             cv.fillRect((int)(cx + dx * k * 7) - 1, (int)(cy - 3 + dy * k * 7) - 1, 2, 2, k == 5 ? WH : GR);
-        hiscore::printCentred(cv, "A: SERVE / LASERS", 128, WH);
-        hiscore::printCentred(cv, "HOLD B: QUIT", 140, GR);
+        hiscore::printCentred(cv, "A: SERVE / LASERS", 116, WH);
+        hiscore::printCentred(cv, "B: SWAP COLOUR", 126, WH);
+        hiscore::printCentred(cv, "HOLD B: QUIT", 138, GR);
+    } else if (page == 1) {
+        hiscore::printCentred(cv, "COLOUR", 6, ArcadeConfig::COLOR_MAGENTA);
+        hiscore::printCentred(cv, "THE BALL TAKES THE", 18, WH);
+        hiscore::printCentred(cv, "BAT'S COLOUR. IT", 28, WH);
+        hiscore::printCentred(cv, "BREAKS BRICKS OF", 38, WH);
+        hiscore::printCentred(cv, "ITS OWN COLOUR", 48, WH);
+        cv.fillRect(40, 58, 15, 5, COL_CYAN);
+        cv.fillRect(57, 58, 15, 5, COL_MAGENTA);
+        cv.fillRect(74, 58, 15, 5, 0xFFE0);
+        hiscore::printCentred(cv, "IN A ROW: x2...x8", 68, GR);
+        hiscore::printCentred(cv, "FLUX SMASH", 86, ArcadeConfig::COLOR_YELLOW);
+        hiscore::printCentred(cv, "METER FULL? HOLD A,", 98, WH);
+        hiscore::printCentred(cv, "LET GO AS THE BALL", 108, WH);
+        hiscore::printCentred(cv, "MEETS THE BAT", 118, WH);
+        hiscore::printCentred(cv, "IT SMASHES THROUGH!", 130, GR);
     } else {
-        hiscore::printCentred(cv, "FLUX SMASH", 8, ArcadeConfig::COLOR_YELLOW);
-        hiscore::printCentred(cv, "BREAK BRICKS TO FILL", 22, WH);
-        hiscore::printCentred(cv, "THE METER. HOLD A,", 32, WH);
-        hiscore::printCentred(cv, "LET GO AS THE BALL", 42, WH);
-        hiscore::printCentred(cv, "MEETS THE BAT", 52, WH);
-        hiscore::printCentred(cv, "IT SMASHES THROUGH!", 64, GR);
-        hiscore::printCentred(cv, "THE WALL", 84, ArcadeConfig::COLOR_RED);
-        hiscore::printCentred(cv, "THE BRICKS CREEP", 98, WH);
-        hiscore::printCentred(cv, "DOWN. ONE ON THE", 108, WH);
-        hiscore::printCentred(cv, "RED LINE COSTS", 118, WH);
-        hiscore::printCentred(cv, "A LIFE", 128, WH);
-        for (int x = FIELD_L; x < FIELD_R; x += 3) cv.drawFastHLine(x, 140, 2, COL_DANGER_HOT);
+        hiscore::printCentred(cv, "BRICKS", 6, ArcadeConfig::COLOR_GREEN);
+        // A sample of each living brick, drawn as in play, with its name.
+        const int x = 14;
+        auto label = [&](int y, const char* t) {
+            cv.setTextSize(1); cv.setTextColor(WH); cv.setCursor(x + 14, y - 2); cv.print(t);
+        };
+        cv.drawRect(x, 22, 7, 4, 0xF800); cv.fillRect(x + 1, 23, 5, 2, 0x8000); cv.fillRect(x + 2, 23, 3, 2, COL_MAGENTA);
+        label(22, "GUN: ITS COLOUR");
+        label(32, "  CHARGES YOU");
+        cv.fillRect(x, 44, 7, 4, 0x2156); cv.drawRect(x, 44, 7, 4, (now / 200) % 2 ? 0x041F : 0xFFFF);
+        label(44, "MAGNET: BENDS");
+        cv.drawRect(x, 56, 7, 4, 0x780F); cv.drawPixel(x + 1 + (int)(now / 90 % 4), 56, WH);
+        label(56, "PORTAL: IN, OUT");
+        cv.fillRect(x, 68, 7, 4, 0xFFE0);
+        label(68, "SPARK: CATCH 3");
+        cv.fillRect(x, 80, 7, 4, COL_STEEL); cv.drawFastHLine(x, 80, 7, COL_STEEL_HI);
+        label(80, "STEEL: SMASH IT");
+        hiscore::printCentred(cv, "THE WALL", 96, ArcadeConfig::COLOR_RED);
+        hiscore::printCentred(cv, "THE BRICKS CREEP", 108, WH);
+        hiscore::printCentred(cv, "DOWN. ONE ON THE RED", 118, WH);
+        hiscore::printCentred(cv, "LINE COSTS A LIFE", 128, WH);
+        for (int lx = FIELD_L; lx < FIELD_R; lx += 3) cv.drawFastHLine(lx, 140, 2, COL_DANGER_HOT);
     }
-    if (millis() % 1000 < 600) hiscore::printCentred(cv, "PRESS A TO START", 150, ArcadeConfig::COLOR_CYAN);
+    if (now % 1000 < 600) hiscore::printCentred(cv, "PRESS A TO START", 150, ArcadeConfig::COLOR_CYAN);
 }
 
 inline void BrickFluxGame::renderScores(GFXcanvas16 &cv) {
