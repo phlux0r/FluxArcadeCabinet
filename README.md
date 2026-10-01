@@ -366,7 +366,7 @@ At once it can play:
 
 - one music track (`loopWAV`) and one jingle (`playWAVThenLoop`'s intro, or
   any effect too long to cache), both streamed from SD
-- four effects (`playWAV`, PROGMEM fallbacks); a fifth replaces the oldest
+- six effects (`playWAV`, PROGMEM fallbacks); a seventh replaces the oldest
 - the tone/melody synth (`playTone`, `playMelody`)
 
 Music and effects are separate buses, each switchable in the launcher's
@@ -381,7 +381,8 @@ commands to them through lock-free queues, so it never blocks):
   is queued ahead of the speaker, so sounds start promptly.
 - **loader** (priority 3) does all SD access. Effects are decoded into PSRAM
   the first time they play (or at `preload()`) and then play from memory;
-  the cache is 768KB, least-recently-used first out. Music streams through
+  the cache is 1MB, least-recently-used first out (Star Flux's whole set,
+  ~900KB, fits, so its explosion is never re-read from SD mid-game). Music streams through
   a ~743ms ring buffer (it rides out the SD card stalling while the
   display holds the shared bus, seen at up to 400ms).
 

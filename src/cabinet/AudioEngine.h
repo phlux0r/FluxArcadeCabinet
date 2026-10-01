@@ -77,7 +77,7 @@ namespace audiocfg {
 constexpr int      MIX_BLOCK       = 256;          // frames per mix (~5.8ms)
 constexpr int      DMA_BUF_LEN     = 256;          // frames
 constexpr int      DMA_BUF_COUNT   = 6;            // ~35ms queued ahead of the speaker
-constexpr uint32_t CACHE_BUDGET    = 768 * 1024;   // decoded effects, in PSRAM
+constexpr uint32_t CACHE_BUDGET    = 1024 * 1024;  // decoded effects, in PSRAM: holds a busy game's whole set
 constexpr uint32_t CACHE_MAX_ENTRY = 320 * 1024;   // ~3.7s at 44.1kHz mono; longer plays as a jingle
 constexpr int      MIXER_PRIO      = 5, LOADER_PRIO = 3, AUDIO_CORE = 0;
 constexpr int      MIXER_STACK     = 4096, LOADER_STACK = 8192;
