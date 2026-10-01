@@ -93,12 +93,15 @@ inline constexpr int   BOMB_BOSS_DAMAGE = 6;
 inline constexpr unsigned long BLAST_MS = 650;
 
 // --- Fighters -----------------------------------------------------------------
-inline constexpr int   FIGHTER_POOL    = 10;
+inline constexpr int   FIGHTER_POOL    = 18;    // two overlapping waves of the biggest (WAVE_MAX) launch whole
 inline constexpr float FIGHTER_SCALE   = 75.0f;     // model units to world
 inline constexpr float FIGHTER_R       = 95.0f;     // hit radius
 inline constexpr int   FIGHTER_POINTS  = 100;
 inline constexpr int   WAVE_PERFECT_POINTS = 500;
+inline constexpr long  ALL_PERFECT_POINTS  = 5000;   // every wave of a stage perfect
 inline constexpr unsigned long FORMATION_STAGGER_MS = 330;
+inline constexpr float VDIVE_TIGHT_X   = 340.0f;    // a V's outer fighters, closed up for its dive
+inline constexpr float VDIVE_TIGHT_Y   = 220.0f;
 // A wave waits this long at most for slots the last one's fighters hold.
 inline constexpr unsigned long WAVE_LAUNCH_MS = 10000;
 inline constexpr int   FIRE_PCT        = 70;        // chance a fighter takes a shot it's due, loop 1
@@ -110,6 +113,7 @@ inline constexpr int   FIRE_PCT_PER_LOOP = 8;
 inline constexpr int   LOOP_CAP          = 5;
 inline constexpr int   WAVE_EXTRA_PER_LOOP = 1;     // fighters added to every wave
 inline constexpr int   WAVE_MAX          = 9;
+static_assert(FIGHTER_POOL >= 2 * WAVE_MAX, "two of the biggest waves must fit the fighter pool");
 inline constexpr int   FIGHTER_PACE_PER_LOOP = 6;   // % faster along their paths
 inline constexpr int   BURST_FROM_LOOP   = 3;       // fighters can fire pairs from here
 inline constexpr int   BURST_PCT         = 15;      // chance a shot is a pair, at BURST_FROM_LOOP...

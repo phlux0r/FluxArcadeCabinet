@@ -94,6 +94,7 @@ private:
         uint8_t wave = 0;             // the segment that launched it
         unsigned long startAt = 0;    // when it starts its path (staggered per slot)
         float ox = 0, oy = 0;         // formation offset
+        float tight = 1;              // a V's offsets are scaled to this mid-dive (whole formation alike)
         float x = 0, y = 0, z = 0;
     };
     struct Shot  { bool active = false; float x = 0, y = 0, z = 0, pz = 0; };   // pz: last frame's z
@@ -184,6 +185,9 @@ private:
     int   _fightersSeen = 0, _fightersDowned = 0, _targetsDowned = 0, _ringsCaught = 0;
     long  _stageStartScore = 0;
     long  _shieldBonus = 0;
+    int   _wavesPerfect = 0;             // this stage's waves shot down whole
+    long  _allPerfectBonus = 0;
+    int   wavesInStage() const;
     // Banners: one line under the HUD.
     unsigned long _bannerUntil = 0;
     const char*   _banner = "";
@@ -327,7 +331,8 @@ private:
     void setFlash(Renderer::Object* o, bool flash, Renderer::Material* normalA, Renderer::Material* normalB);
 
     // --- StarFluxPlay.cpp ------------------------------------------------------
-    const Segment& segment() const;
+    const Segment& segmentAt(int stage, int seg) const;
+    const Segment& segment() const { return segmentAt(_stageNum, _seg); }
     int   segmentCount() const;
     void  startSegment(int index);
     void  updateStage(AudioEngine &audio);

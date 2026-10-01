@@ -177,19 +177,29 @@ void StarFluxGame::renderResults(GFXcanvas16 &canvas) {
     char buf[28];
     if (t > 400) {
         snprintf(buf, sizeof(buf), "ENEMIES DOWNED %d/%d", _fightersDowned, _fightersSeen);
-        drawCentred(canvas, buf, 44, ArcadeConfig::COLOR_WHITE);
+        drawCentred(canvas, buf, 41, ArcadeConfig::COLOR_WHITE);
     }
     if (t > 800) {
         snprintf(buf, sizeof(buf), "TARGETS %d  RINGS %d", _targetsDowned, _ringsCaught);
-        drawCentred(canvas, buf, 54, ArcadeConfig::COLOR_GREY);
+        drawCentred(canvas, buf, 50, ArcadeConfig::COLOR_GREY);
     }
     if (t > 1200) {
-        snprintf(buf, sizeof(buf), "SHIELD BONUS %ld", _shieldBonus);
-        drawCentred(canvas, buf, 64, ArcadeConfig::COLOR_GREEN);
+        // Every wave perfect: the bonus, flashing.
+        if (_allPerfectBonus) {
+            snprintf(buf, sizeof(buf), "ALL WAVES PERFECT +%ld", _allPerfectBonus);
+            drawCentred(canvas, buf, 59, (millis() / 200) & 1 ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_WHITE);
+        } else {
+            snprintf(buf, sizeof(buf), "PERFECT WAVES %d/%d", _wavesPerfect, wavesInStage());
+            drawCentred(canvas, buf, 59, ArcadeConfig::COLOR_CYAN);
+        }
     }
     if (t > 1600) {
+        snprintf(buf, sizeof(buf), "SHIELD BONUS %ld", _shieldBonus);
+        drawCentred(canvas, buf, 68, ArcadeConfig::COLOR_GREEN);
+    }
+    if (t > 2000) {
         snprintf(buf, sizeof(buf), "SCORE %ld", _score);
-        drawCentred(canvas, buf, 76, ArcadeConfig::COLOR_YELLOW);
+        drawCentred(canvas, buf, 79, ArcadeConfig::COLOR_YELLOW);
     }
     if (t > RESULTS_MIN_MS && ((millis() / 400) & 1)) drawCentred(canvas, _stageNum + 1 < STAGE_COUNT ? "A: NEXT STAGE" : "A: NEXT LOOP", 99, ArcadeConfig::COLOR_WHITE);
     drawQuitHint(canvas);

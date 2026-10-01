@@ -110,6 +110,8 @@ void StarFluxGame::startStage() {
     _fightersSeen = _fightersDowned = _targetsDowned = _ringsCaught = 0;
     _stageStartScore = _score;
     _shieldBonus = 0;
+    _wavesPerfect = 0;
+    _allPerfectBonus = 0;
     _stage = STAGE_INTRO;
     _stageAt = millis();
     _invulnUntil = millis() + INTRO_MS + SPAWN_INVULN_MS;
@@ -145,12 +147,14 @@ void StarFluxGame::enterGameOver(AudioEngine &audio) {
     audio.playMelody(n, d, 4);
 }
 
-// The boss is down: tally the stage. The shield you kept is the bonus.
+// The boss is down: tally the stage. The shield you kept is a bonus, and
+// so is every wave of the stage shot down whole.
 void StarFluxGame::enterResults(AudioEngine &audio) {
     _phase = PHASE_RESULTS;
     _phaseEnteredMs = millis();
     _shieldBonus = (long)_shield * SHIELD_BONUS_PER_POINT;
-    _score += _shieldBonus;
+    _allPerfectBonus = _wavesPerfect >= wavesInStage() ? ALL_PERFECT_POINTS : 0;
+    _score += _shieldBonus + _allPerfectBonus;
     static const int n[] = { 784, 988, 1175, 1568, 1319, 1568 };
     static const int d[] = { 110, 110, 110, 220, 110, 380 };
     if (!_silent) audio.playMelody(n, d, 6);

@@ -68,8 +68,18 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
     const Key &k0 = d.keys[i > 0 ? i - 1 : 0];
     const Key &k3 = d.keys[i + 2 < d.count ? i + 2 : d.count - 1];
     float t = clampf((float)((long)ms - (long)k1.ms) / (float)(k2.ms - k1.ms), 0.0f, 1.0f);
-    x = catmull(k0.x, k1.x, k2.x, k3.x, t) * (float)f.mirror + f.ox;
-    y = catmull(k0.y, k1.y, k2.y, k3.y, t) + f.oy;
+    // A V closes up as it dives at you, so its outer fighters come within
+    // reach (|x| VDIVE_TIGHT_X, y VDIVE_TIGHT_Y off the leader at most), and
+    // opens out again as it breaks away.
+    float k = 1.0f;
+    if (f.pattern == PAT_VDIVE && f.tight < 1.0f) {
+        const float tight = f.tight;
+        const float in = clampf(((float)ms - 700.0f) / 1300.0f, 0.0f, 1.0f);    // closing, 0.7-2s
+        const float out = clampf(((float)ms - 5400.0f) / 900.0f, 0.0f, 1.0f);   // opening, 5.4-6.3s
+        k = 1.0f + (tight - 1.0f) * (in - out);
+    }
+    x = catmull(k0.x, k1.x, k2.x, k3.x, t) * (float)f.mirror + f.ox * k;
+    y = catmull(k0.y, k1.y, k2.y, k3.y, t) + f.oy * k;
     z = catmull(k0.z, k1.z, k2.z, k3.z, t);
     // In the trench, paths are squeezed between the walls and kept off
     // the floor; they still dive in from above it.
@@ -109,8 +119,12 @@ void StarFluxGame::spawnWaveFighters() {
         f.mirror = s.mirror != 0 ? s.mirror : ((n & 1) ? -1 : 1);
         f.startAt = when((unsigned long)n * d.stagger);
         f.ox = f.oy = 0;
+        f.tight = 1.0f;
         switch (s.pattern) {
             case PAT_VDIVE: {
+                // The V closes up mid-dive so its last rank is within reach.
+                const float last = (float)(count / 2);
+                f.tight = fminf(1.0f, fminf(VDIVE_TIGHT_X / (last * 170.0f + 1.0f), VDIVE_TIGHT_Y / (last * 110.0f + 1.0f)));
                 int rank = (n + 1) / 2;
                 f.ox = (n & 1 ? -1.0f : 1.0f) * (float)rank * 170.0f;
                 f.oy = (float)rank * 110.0f;
@@ -214,6 +228,7 @@ void StarFluxGame::fighterGone(Fighter &f, bool downed, AudioEngine &audio) {
     if (_waveLeft[w] == 0) return;
     if (--_waveLeft[w] == 0 && _waveClean[w] && _waveToCome[w] == 0) {
         _score += WAVE_PERFECT_POINTS;
+        ++_wavesPerfect;
         setBanner("PERFECT WAVE +500", ArcadeConfig::COLOR_CYAN, 1600);
         sfxTone(audio, 1568, 90);
     }

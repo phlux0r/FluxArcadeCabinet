@@ -15,7 +15,7 @@ inline float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ?
 
 // Each stage around 90 seconds: fighter waves between hazard fields, three
 // shield rings, then the boss.
-const StarFluxGame::Segment& StarFluxGame::segment() const {
+const StarFluxGame::Segment& StarFluxGame::segmentAt(int stage, int seg) const {
     static const Segment scripts[STAGE_COUNT][SEGMENTS] = {
         {   // 1, Aurora Belt: rock fields in space; the dreadnought.
             //  type       pattern     count mirror  ms    ring
@@ -79,10 +79,16 @@ const StarFluxGame::Segment& StarFluxGame::segment() const {
             { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
         },
     };
-    return scripts[_stageNum][_seg];
+    return scripts[stage][seg];
 }
 
 int StarFluxGame::segmentCount() const { return SEGMENTS; }
+
+int StarFluxGame::wavesInStage() const {
+    int n = 0;
+    for (int i = 0; i < SEGMENTS; ++i) n += segmentAt(_stageNum, i).type == SEG_WAVE;
+    return n;
+}
 
 void StarFluxGame::startSegment(int index) {
     _seg = index;

@@ -96,7 +96,11 @@ overcharge first, it carries into the next stage, and a lost life resets
 the shield to plain full. Rings and pods never appear inside an obstacle.
 Two sights
 show your line of fire, red when a target is on it. Shooting down a whole
-wave scores a 500 bonus.
+wave scores a 500 bonus (smart-bomb kills count; a fighter that escapes or
+rams you spoils it), and every wave of a stage perfect scores 5,000 more
+at the results, which show PERFECT WAVES x/y. Every fighter of every wave
+is within your reach for over a second: V formations close up as they
+dive, and two whole waves can always be in the air at once.
 
 Flight aids on stages 2 and 3: the next pillar, arch, tower or barrier has
 its front face outlined, and a diamond on it marks where the ship will pass
