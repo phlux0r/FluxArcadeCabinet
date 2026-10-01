@@ -50,7 +50,9 @@ float StarFluxGame::threatAt(float x, float y) const {
             if (!gateOn(b, at) && !gateOn(b, out)) continue;
         }
         const float pad = SHIP_HIT_R * 0.7f + 25.0f;
-        float dx = x < b.x0 - pad ? b.x0 - pad - x : x > b.x1 + pad ? x - b.x1 - pad : 0.0f;
+        float bx0, bx1;   // a door: where it'll be as you pass
+        boxXAt(b, millis() + (unsigned long)((t > 0 ? t : 0) * (float)REFERENCE_FRAME_MS), bx0, bx1);
+        float dx = x < bx0 - pad ? bx0 - pad - x : x > bx1 + pad ? x - bx1 - pad : 0.0f;
         float dy = y < b.y0 - pad ? b.y0 - pad - y : y > b.y1 + pad ? y - b.y1 - pad : 0.0f;
         threat += 3.0f * expf(-(dx * dx + dy * dy) / (2.0f * 50.0f * 50.0f)) * (1.0f + (70.0f - t) / 70.0f);
     }
@@ -96,7 +98,7 @@ bool StarFluxGame::pickAim(float &x, float &y) const {
     for (const auto &f : _fighters) {
         if (!f.active || !reached(f.startAt) || f.z < SHIP_Z + 300.0f || f.z > SHIP_Z + 5000.0f) continue;
         if (f.z >= best) continue;
-        unsigned long t = millis() - f.startAt;
+        unsigned long t = flightMs(f);
         unsigned long lead = (unsigned long)((f.z - SHIP_Z) / SHOT_SPEED * (float)REFERENCE_FRAME_MS);
         float lx, ly, lz;
         pathPoint(f, t + lead, lx, ly, lz);
@@ -129,7 +131,7 @@ bool StarFluxGame::pickAim(float &x, float &y) const {
             y = py;
             // The reactor's fan: through the middle of the gap, where
             // it'll be when the shot gets there.
-            if (p == 2 && _bossKind == STAGE_TRENCH) {
+            if (p == 2 && hasFan()) {
                 float a = radians(_fanAngle + FAN_SPIN * frames + FAN_GAP_DEG * 0.5f);
                 x += cosf(a) * CORE_R * 0.8f;
                 y += sinf(a) * CORE_R * 0.8f;

@@ -12,22 +12,25 @@
 // STAR FLUX: an on-rails space shooter, rendered with Jet like Tank and
 // Tube Flux. The camera sits behind the ship; the ship moves round a box on
 // screen while the stage flies at you: fighter waves in formation, hazard
-// fields, shield rings, then a boss. Three stages: an asteroid belt in
-// space, a planet's surface, and a trench run on a space station.
+// fields, shield rings, then a boss. Five stages: an asteroid belt in
+// space, a planet's surface, a trench run on a space station, an ice
+// canyon, and the mothership's hull.
 //
 // The ship is a 2D sprite (StarShipSprite.h, three bank frames), drawn
 // where its 3D position projects. Fighters, rocks, obstacles, turrets and
 // the bosses are Jet objects. The backdrops (space, the planet's ground
-// and sky, the trench), the lasers, enemy shots, rings, blasts and the
+// and sky, the trench, the canyon, the hull), mines, the lasers, enemy shots, rings, blasts and the
 // reticle are drawn straight into the canvas with Jet's projection
 // (project()): far cheaper than meshes for whole-screen fills and for
 // things that are only dots, lines and circles.
 //
 // A stage is a list of segments (StarFluxPlay.cpp): a wave, a hazard field
 // (rocks; pillars and turret towers; trench barriers, laser gates and
-// turrets), or the boss. Losing your shield costs a life and restarts the
-// segment you were in. Each boss ends its stage with a results screen;
-// after the third, the game loops back to stage 1, a little harder.
+// turrets; icicles, ice arches and pillars, and mines; gun towers, blast
+// doors, force fields and masts), or the boss.
+// Losing your shield costs a life and restarts the segment you were in.
+// Each boss ends its stage with a results screen; after the fifth, the
+// game loops back to stage 1, harder (StarFluxConfig.h's Loops block).
 //
 // Files: StarFluxGame.cpp (phases, update loop), StarFluxScene.cpp (scene,
 // meshes, space backdrop, 2D drawing), StarFluxWorld.cpp (the planet and
@@ -61,7 +64,7 @@ private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_RESULTS, PHASE_NAME, PHASE_GAMEOVER };
     enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_SCORES, SLIDE_DEMO };
     enum SegType : uint8_t { SEG_WAVE, SEG_FIELD, SEG_BOSS };
-    enum StageId : uint8_t { STAGE_BELT, STAGE_PLANET, STAGE_TRENCH, STAGE_COUNT };
+    enum StageId : uint8_t { STAGE_BELT, STAGE_PLANET, STAGE_TRENCH, STAGE_CANYON, STAGE_MOTHER, STAGE_COUNT };
     enum Pattern : uint8_t { PAT_VDIVE, PAT_SWEEP, PAT_HEADON, PAT_LOOP, PAT_WEAVE, PAT_COUNT };
     // INTRO: the fly-in with the stage name. DOWN: you've been shot down
     // and the world flies on without you for a moment. BOSS_DEATH: the
@@ -80,7 +83,7 @@ private:
     // Optional sounds (see the list in README.md): each is played if it's on
     // the card, else its fallback (another WAV, or a tone).
     enum Sfx : uint8_t { SFX_POP, SFX_HIT, SFX_ARMOR, SFX_BOSS_WARN, SFX_BOSS_FIRE, SFX_BURST,
-                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_POWER, SFX_COUNT };
+                         SFX_PART_DOWN, SFX_CORE_OPEN, SFX_BOSS_DIE, SFX_BOMB, SFX_RING, SFX_POWER, SFX_EXTRA, SFX_COUNT };
 
     struct Fighter {
         Renderer::Object* obj = nullptr;
@@ -96,14 +99,18 @@ private:
     struct Shot  { bool active = false; float x = 0, y = 0, z = 0, pz = 0; };   // pz: last frame's z
     // Enemy fire, v per frame. A homing one is a missile: it steers at you
     // for a while and can be shot down.
-    struct EShot { bool active = false, homing = false; float x = 0, y = 0, z = 0, vx = 0, vy = 0, vz = 0; };
+    // A frost one (the walker's) also slows your steering when it hits.
+    struct EShot { bool active = false, homing = false, frost = false; float x = 0, y = 0, z = 0, vx = 0, vy = 0, vz = 0; };
     // An obstacle: an axis-aligned block (a pillar, a turret tower, a trench
     // barrier), or a laser gate, which is drawn in 2D and blinks.
     struct Box {
         Renderer::Object* obj = nullptr;   // null for gates
         bool  active = false, hit = false, gate = false;
         float x0 = 0, x1 = 0, y0 = 0, y1 = 0, z = 0, depth = 0;
-        unsigned long phase = 0;           // gates: offset into the blink
+        unsigned long phase = 0;           // gates: offset into the blink; doors: into the cycle
+        // A blast door slides: x0, x1 are rx0, rx1 moved by slide times how
+        // closed it is (0 open .. 1 shut, doorShut()). slide 0: it doesn't.
+        float slide = 0, rx0 = 0, rx1 = 0;
     };
     // A gun emplacement on a tower: shoots at you, takes TURRET_HP hits.
     struct Turret {
@@ -113,9 +120,11 @@ private:
         float x = 0, y = 0, z = 0;
         unsigned long fireAt = 0, flashUntil = 0;
     };
+    // A mine (the canyon's) is a small rock's slot drawn in 2D, steering at you.
     struct Rock {
         Renderer::Object* obj = nullptr;
         bool  active = false;
+        bool  mine = false;
         int   hp = 1;
         float r = ROCK_SMALL_R;
         float x = 0, y = 0, z = 0, vx = 0, vy = 0;
@@ -145,7 +154,8 @@ private:
     int   _loop = 1;                 // times round all the stages, from 1: difficulty
     int   _stageNum = STAGE_BELT;    // which stage
     int   _lives = LIVES;
-    int   _shield = SHIELD_MAX;
+    int   _shield = SHIELD_MAX;          // up to SHIELD_CAP: past SHIELD_MAX is overcharge
+    long  _nextLifeAt = EXTRA_LIFE_FIRST;
     int   _bombs = BOMBS_START;
     long  _score = 0;
     StageState _stage = STAGE_INTRO;
@@ -166,6 +176,7 @@ private:
     bool  _retrying = false;         // restarting a segment after losing a life
     unsigned long _invulnUntil = 0;
     unsigned long _hitFlashUntil = 0;
+    unsigned long _frozenUntil = 0;     // frost shard hit: steering slowed
     unsigned long _lastShotAt = 0;
     bool  _prevA = false;
     unsigned long _btnBDownAt = 0;   // for telling a bomb tap from a quit hold
@@ -243,7 +254,11 @@ private:
     Renderer::Material _turretMat{ 0xFFFF }, _turretMat2{ 0xFFFF };
     Renderer::Material _crawlerMat{ 0xFFFF }, _crawlerDarkMat{ 0xFFFF };
     Renderer::Material _reactorMat{ 0xFFFF }, _reactorDarkMat{ 0xFFFF };
-    Renderer::Object*  _bossHulls[STAGE_COUNT] = { nullptr, nullptr, nullptr };
+    Renderer::Material _walkerMat{ 0xFFFF }, _walkerDarkMat{ 0xFFFF };
+    Renderer::Material _motherMat{ 0xFFFF }, _motherDarkMat{ 0xFFFF };
+    uint8_t _skyline[64] = {};          // the mothership's towers on the horizon
+    int     _volley = 0;                // the mothership core's attacks take turns
+    Renderer::Object*  _bossHulls[STAGE_COUNT] = {};
     Renderer::Object*  _bossHull = nullptr;   // this stage's, one of _bossHulls
     Renderer::Object*  _cannonObj[2] = { nullptr, nullptr };
     Renderer::Object*  _coreObj = nullptr;
@@ -289,6 +304,8 @@ private:
     Renderer::Object* buildShieldPlate();
     Renderer::Object* buildCrawler();
     Renderer::Object* buildReactor();
+    Renderer::Object* buildWalker();
+    Renderer::Object* buildMothership();
     Renderer::Object* buildTurret();
     Renderer::Object* buildObstacleBox();
     void placeCamera();
@@ -299,6 +316,9 @@ private:
     void drawStars(GFXcanvas16 &canvas);
     void drawRings(GFXcanvas16 &canvas);
     void drawPod(GFXcanvas16 &canvas);
+    void drawMines(GFXcanvas16 &canvas);
+    void drawCanyon(GFXcanvas16 &canvas);
+    void drawHull(GFXcanvas16 &canvas);
     void drawFlightAids(GFXcanvas16 &canvas);
     void drawShots(GFXcanvas16 &canvas);
     void drawBlasts(GFXcanvas16 &canvas);
@@ -324,9 +344,16 @@ private:
     void  spawnRock(bool aimed);
     void  updateRocks(AudioEngine &audio);
     void  destroyRock(Rock &r, bool byPlayer, AudioEngine &audio);
-    void  spawnRing();
+    bool  spawnRing();
     void  updateRings(AudioEngine &audio);
-    void  spawnPod();
+    bool  spawnPod();
+    void  spawnMine();
+    void  spawnCanyonHazard();
+    void  spawnMotherHazard();
+    void  spawnDoors(float gx, float z);
+    float doorShut(const Box &b, unsigned long at) const;
+    void  boxXAt(const Box &b, unsigned long at, float &x0, float &x1) const;
+    bool  hasFan() const { return _bossKind == STAGE_TRENCH || _bossKind == STAGE_MOTHER; }    float canyonHalfW(float y) const { return CANYON_HALF_W + CANYON_SLOPE * (y - CANYON_FLOOR); }
     void  updatePod(AudioEngine &audio);
     bool  nextObstacle(float &front) const;
     bool  passClear(float front) const;
@@ -376,7 +403,7 @@ private:
     void  startBoss();
     void  updateBoss(AudioEngine &audio);
     void  placeBoss();
-    void  ringBurst(float x, float y, float z);
+    void  ringBurst(float x, float y, float z, bool frost = false);
     void  bossAttacks(AudioEngine &audio);
     bool  fanBlocks(float x, float y) const;
     float bossZ() const;
@@ -386,8 +413,23 @@ private:
     void  bossPartPos(int part, float &x, float &y, float &z) const;
     bool  bossPartAlive(int part) const;
     void  hideBoss();
-    int   firePct() const { return FIRE_PCT + FIRE_PCT_PER_LOOP * (_loop - 1); }
-    float eshotSpeed() const { return ESHOT_SPEED + ESHOT_SPEED_PER_LOOP * (float)(_loop - 1); }
+    // Difficulty by loop (see StarFluxConfig.h's Loops block).
+    int   steps() const { return (_loop < LOOP_CAP ? _loop : LOOP_CAP) - 1; }
+    int   firePct() const { return FIRE_PCT + FIRE_PCT_PER_LOOP * steps(); }
+    float eshotSpeed() const { return ESHOT_SPEED + ESHOT_SPEED_PER_LOOP * (float)steps(); }
+    int   leadPct() const { return LEAD_PCT + LEAD_PCT_PER_LOOP * steps(); }
+    int   burstPct() const { return _loop < BURST_FROM_LOOP ? 0 : BURST_PCT + BURST_PCT_PER_LOOP * (steps() + 1 - BURST_FROM_LOOP); }
+    int   waveCount(int base) const { int n = base + WAVE_EXTRA_PER_LOOP * steps(); return n > WAVE_MAX ? WAVE_MAX : n; }
+    // A fighter's time along its path: quicker each loop.
+    unsigned long flightMs(const Fighter &f) const {
+        return (millis() - f.startAt) * (unsigned long)(100 + FIGHTER_PACE_PER_LOOP * steps()) / 100;
+    }
+    unsigned long bossMs(unsigned long ms) const { return ms * 100 / (unsigned long)(100 + BOSS_PACE_PER_LOOP * steps()); }
+    unsigned long fieldMs(unsigned long ms) const { return ms * (unsigned long)(100 - FIELD_DENSER_PER_LOOP * steps()) / 100; }
+    bool  pickupClear(float x, float y, float z) const;
+    bool  pickupNear(float z) const;
+    bool  placePickup(float &x, float &y, float z) const;
+    void  checkExtraLife(AudioEngine &audio);
 
     // --- StarFluxDemo.cpp ------------------------------------------------------
     bool inDemo() const { return _phase == PHASE_ATTRACT && _attractSlide == SLIDE_DEMO; }

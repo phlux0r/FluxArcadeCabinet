@@ -47,8 +47,9 @@ const SfxDef SFX[] = {
     { "/audio/star_bomb.wav",      "/audio/explosion.wav", 0, 0 },     // SFX_BOMB
     { "/audio/star_ring.wav",      "/audio/powerup.wav", 0, 0 },       // SFX_RING
     { "/audio/star_power.wav",     "/audio/powerup.wav", 0, 0 },       // SFX_POWER
+    { "/audio/star_extra.wav",     nullptr, 1320, 220 },               // SFX_EXTRA
 };
-static_assert(sizeof(SFX) / sizeof(SFX[0]) == 12, "one SfxDef per Sfx");
+static_assert(sizeof(SFX) / sizeof(SFX[0]) == 13, "one SfxDef per Sfx");
 }  // namespace
 
 // Which optional sounds are on the card, checked once: a missing file
@@ -87,6 +88,8 @@ void StarFluxGame::startNewGame(AudioEngine &audio) {
 void StarFluxGame::resetRun() {
     _loop = 1;
     _rapid = false;
+    _nextLifeAt = EXTRA_LIFE_FIRST;
+    _shield = SHIELD_MAX;
     _stageNum = STAGE_BELT;
     _lives = LIVES;
     _score = 0;
@@ -99,7 +102,7 @@ void StarFluxGame::startStage() {
     clearField();
     applyStagePalette();
     _groundScroll = 0;
-    _shield = SHIELD_MAX;
+    _shield = max(_shield, SHIELD_MAX);   // overcharge carries over
     if (_bombs < BOMBS_START) _bombs = BOMBS_START;
     _shipX = 0; _shipY = BOX_Y_MIN; _shipVX = _shipVY = 0; _bank = 0;
     _fightersSeen = _fightersDowned = _targetsDowned = _ringsCaught = 0;
@@ -124,6 +127,7 @@ void StarFluxGame::clearField() {
     for (auto &b : _blasts) b.active = false;
     for (auto &p : _particles.pool) p.active = false;
     _bombActive = false;
+    _frozenUntil = 0;
     hideWorld();
     hideBoss();
 }
@@ -291,6 +295,7 @@ void StarFluxGame::stepRun(const InputState &input, AudioEngine &audio) {
     updateBoxes(audio);
     updateTurrets(audio);
     updateRings(audio);
+    checkExtraLife(audio);
     updatePod(audio);
 }
 
@@ -319,6 +324,7 @@ void StarFluxGame::renderWorld(GFXcanvas16 &canvas) {
     _particles.update((1.0f / 60.0f) * _frameScale);
     _particles.render(_scene, &_camera, canvas.width(), canvas.height());
     drawGates(canvas);
+    drawMines(canvas);   // over the meshes, as the gates: they're mostly the nearer
     drawFlightAids(canvas);
     drawFan(canvas);
     drawShots(canvas);

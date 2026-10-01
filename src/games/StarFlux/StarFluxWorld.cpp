@@ -99,7 +99,8 @@ void setBoxSize(Renderer::Object* o, float w, float h, float d) {
 }  // namespace
 
 const char* StarFluxGame::stageName() const {
-    static const char* const names[STAGE_COUNT] = { "AURORA BELT", "EMBER REACH", "TRENCH RUN" };
+    static const char* const names[STAGE_COUNT] = { "AURORA BELT", "EMBER REACH", "TRENCH RUN", "FROST CANYON",
+                                                    "MOTHERSHIP" };
     return names[_stageNum];
 }
 
@@ -107,6 +108,8 @@ float StarFluxGame::floorY() const {
     switch (_stageNum) {
         case STAGE_PLANET: return GROUND_Y;
         case STAGE_TRENCH: return TRENCH_FLOOR;
+        case STAGE_CANYON: return CANYON_FLOOR;
+        case STAGE_MOTHER: return HULL_Y;
         default:           return -1e9f;
     }
 }
@@ -117,6 +120,8 @@ bool StarFluxGame::starVisible(float x, float y) const {
     switch (_stageNum) {
         case STAGE_PLANET: return false;
         case STAGE_TRENCH: return y > TRENCH_TOP || fabsf(x) < TRENCH_HALF_W;
+        case STAGE_CANYON: return y > CANYON_TOP;
+        case STAGE_MOTHER: return y > HULL_Y;
         default:           return true;
     }
 }
@@ -124,7 +129,15 @@ bool StarFluxGame::starVisible(float x, float y) const {
 // Obstacle and turret colours to suit the stage: red rock on the planet,
 // steel and red lights in the trench.
 void StarFluxGame::applyStagePalette() {
-    if (_stageNum == STAGE_TRENCH) {
+    if (_stageNum == STAGE_MOTHER) {   // dark steel, red guns
+        _boxMat.color = rgb(120, 126, 156);
+        _turretMat.color = rgb(255, 60, 90);
+        _turretMat2.color = rgb(130, 20, 40);
+    } else if (_stageNum == STAGE_CANYON) {   // ice; no turrets here
+        _boxMat.color = rgb(60, 220, 210);   // turquoise: stands out from the blue walls
+        _turretMat.color = rgb(120, 220, 255);
+        _turretMat2.color = rgb(40, 110, 170);
+    } else if (_stageNum == STAGE_TRENCH) {
         _boxMat.color = rgb(196, 156, 70);
         _turretMat.color = rgb(255, 70, 60);
         _turretMat2.color = rgb(140, 30, 30);
@@ -142,6 +155,13 @@ void StarFluxGame::buildMountains() {
         float a = (float)i * (2.0f * PI / 64.0f);
         float h = 0.55f + 0.25f * sinf(a * 2.0f + 1.3f) + 0.15f * sinf(a * 5.0f + 0.4f) + 0.08f * sinf(a * 11.0f + 2.1f);
         _mountains[i] = (uint8_t)(clampf(h, 0.0f, 1.0f) * 255.0f);
+    }
+    // The mothership's skyline: blocks of towers, flat-topped, in steps.
+    uint32_t r = 0x51C0FFEEu;
+    for (int i = 0; i < 64;) {
+        r = r * 1664525u + 1013904223u;
+        const int width = 1 + (int)((r >> 24) & 3), height = (int)((r >> 16) & 255);
+        for (int k = 0; k < width && i < 64; ++k, ++i) _skyline[i] = (uint8_t)(height < 60 ? 0 : height);
     }
 }
 
@@ -391,6 +411,217 @@ void StarFluxGame::drawTrench(GFXcanvas16 &canvas) {
     }
 }
 
+// The canyon: a frozen river between two walls of ice that lean outwards
+// (half width canyonHalfW(y)), under a night sky. Walls in strata, blue
+// below and snow at the top, split by crevices; the river in ice slabs with
+// snow banks at its edges; a pale mist far off. The walls are planes, so
+// each surface's region of the screen is convex: where both ends of a span
+// are on the same surface, its ends are worked out exactly and the pattern
+// stepped across in fixed point, as drawTrench() does.
+void StarFluxGame::drawCanyon(GFXcanvas16 &canvas) {
+    const int w = canvas.width(), h = canvas.height();
+    uint16_t* buf = canvas.getBuffer();
+    const float invF = 1.0f / _camera.fovFactor;
+    const float cx = w * 0.5f, cy = h * 0.5f;
+    const float c = _rollCos, s = _rollSin;
+
+    const uint16_t mist = rgb(150, 178, 210);
+    static uint16_t skyLut[32];
+    static Fogged iceA, iceB, snow, wallDeep, wallMid, wallSnow, crevice;
+    static bool built = false;
+    if (!built) {
+        for (int i = 0; i < 32; ++i) {
+            float t = (float)i / 31.0f;
+            skyLut[i] = t < 0.25f ? mix565(mist, rgb(60, 90, 150), t / 0.25f)
+                                  : mix565(rgb(60, 90, 150), rgb(6, 10, 34), (t - 0.25f) / 0.75f);
+        }
+        iceA     = fogged(rgb(120, 170, 214), mist);
+        iceB     = fogged(rgb(96, 146, 196), mist);
+        snow     = fogged(rgb(226, 236, 248), mist);
+        wallDeep = fogged(rgb(54, 92, 150), mist);
+        wallMid  = fogged(rgb(88, 132, 190), mist);
+        wallSnow = fogged(rgb(214, 228, 244), mist);
+        crevice  = fogged(rgb(24, 40, 80), mist);
+        built = true;
+    }
+    const float k = CANYON_SLOPE, F = CANYON_FLOOR;
+    const float drop = F - _camY;
+    const float numR = CANYON_HALF_W + k * (_camY - F) - _camX;    // right wall: z = numR / (dx - k dy)
+    const float numL = -CANYON_HALF_W - k * (_camY - F) - _camX;   // left: z = numL / (dx + k dy)
+    const int scroll = (int)_groundScroll;
+    const int top = (int)(CANYON_TOP - F);
+    const int bank = (int)CANYON_HALF_W - 70;   // snow banks past this across the river
+
+    // Which surface a ray meets first: 0 sky, 1 floor, 2 left wall, 3 right
+    // wall; its depth; and its pattern coordinates (floor: across, along;
+    // walls: along, height above the floor).
+    struct Hit { int s; float z, u, v; };
+    auto hitAt = [&](float dx, float dy) -> Hit {
+        Hit r{ 0, 1e9f, 0, 0 };
+        if (dy < 0.0f) { r.s = 1; r.z = drop / dy; }
+        const float dr = dx - k * dy, dl = dx + k * dy;
+        if (dr > 1e-4f) {
+            const float z = numR / dr;
+            if (z > 0.0f && z < r.z && _camY + dy * z <= CANYON_TOP) { r.s = 3; r.z = z; }
+        }
+        if (dl < -1e-4f) {
+            const float z = numL / dl;
+            if (z > 0.0f && z < r.z && _camY + dy * z <= CANYON_TOP) { r.s = 2; r.z = z; }
+        }
+        if (r.s == 1) { r.u = _camX + dx * r.z + 4096.0f; r.v = r.z + (float)scroll; }
+        else if (r.s >= 2) { r.u = r.z + (float)scroll; r.v = _camY + dy * r.z - F; }
+        else r.u = dy * 60.0f;
+        return r;
+    };
+    auto floorPx = [&](int gx, int gz, int step) -> uint16_t {
+        if (gx < 4096 - bank || gx > 4096 + bank) return snow.c[step];
+        return ((((gx + (gz >> 3)) >> 9) + (gz >> 9)) & 1 ? iceA : iceB).c[step];
+    };
+    auto wallPx = [&](int gz, int wy, int step) -> uint16_t {
+        if ((gz & 1023) < 40) return crevice.c[step];
+        if (wy > top - 80) return wallSnow.c[step];
+        return (((wy + ((gz >> 5) & 63)) >> 7) & 1 ? wallMid : wallDeep).c[step];
+    };
+    auto colourOf = [&](const Hit &r) -> uint16_t {
+        if (r.s == 0) { int si = (int)r.u; return skyLut[si > 31 ? 31 : si < 0 ? 0 : si]; }
+        if (r.z > FOG_FAR) return mist;
+        if (r.s == 1) return floorPx((int)r.u, (int)r.v, fogStep(r.z));
+        return wallPx((int)r.u, (int)r.v, fogStep(r.z));
+    };
+
+    // Spans of SPAN pixels, each from its first pixel's ray to the next
+    // span's: one ray worked out per span, the end shared.
+    constexpr int SPAN = 16;
+    const float sx = invF * c, sy = -invF * s;
+    for (int y = 0; y < h; ++y) {
+        const float v = (cy - ((float)y + 0.5f)) * invF;
+        uint16_t* row = buf + y * w;
+        const float u0 = (0.5f - cx) * invF;
+        float dxA = u0 * c + v * s, dyA = -u0 * s + v * c;
+        Hit a = hitAt(dxA, dyA);
+        for (int x0 = 0; x0 < w; x0 += SPAN) {
+            const int n = (x0 + SPAN <= w ? SPAN : w - x0);
+            const float dxB = dxA + sx * (float)n, dyB = dyA + sy * (float)n;
+            uint16_t* out = row + x0;
+            const Hit b = hitAt(dxB, dyB);
+            if (n > 1 && a.s == b.s && (a.s == 0 || (a.z < FOG_FAR && b.z < FOG_FAR))) {
+                if (a.s == 0) {
+                    int32_t fi = (int32_t)(a.u * 65536.0f);
+                    const int32_t st = (int32_t)((b.u - a.u) * 65536.0f) / n;
+                    for (int i = 0; i < n; ++i, fi += st) {
+                        int si = fi >> 16;
+                        out[i] = skyLut[si > 31 ? 31 : si < 0 ? 0 : si];
+                    }
+                } else {
+                    const int step = fogStep((a.z + b.z) * 0.5f);
+                    int32_t pu = (int32_t)(a.u * 256.0f), pv = (int32_t)(a.v * 256.0f);
+                    const int32_t su = ((int32_t)(b.u * 256.0f) - pu) / n, sv = ((int32_t)(b.v * 256.0f) - pv) / n;
+                    if (a.s == 1) {
+                        for (int i = 0; i < n; ++i, pu += su, pv += sv) out[i] = floorPx(pu >> 8, pv >> 8, step);
+                    } else {
+                        for (int i = 0; i < n; ++i, pu += su, pv += sv) out[i] = wallPx(pu >> 8, pv >> 8, step);
+                    }
+                }
+            } else {
+                out[0] = colourOf(a);
+                float dx = dxA + sx, dy = dyA + sy;
+                for (int i = 1; i < n; ++i, dx += sx, dy += sy) out[i] = colourOf(hitAt(dx, dy));
+            }
+            dxA = dxB; dyA = dyB; a = b;
+        }
+    }
+}
+
+// The mothership: skimming its hull. Plating in big panels with seams,
+// rows of chase lights running at you, vents; on the horizon the dark
+// blocks of its towers with red beacons, and space above. Spans as
+// drawPlanet(): wholly-hull spans step the plating in fixed point.
+void StarFluxGame::drawHull(GFXcanvas16 &canvas) {
+    const int w = canvas.width(), h = canvas.height();
+    uint16_t* buf = canvas.getBuffer();
+    const float invF = 1.0f / _camera.fovFactor;
+    const float cx = w * 0.5f, cy = h * 0.5f;
+    const float c = _rollCos, s = _rollSin;
+
+    const uint16_t haze = rgb(26, 22, 44), space = rgb(4, 3, 16);
+    static Fogged plateA, plateB, seam, vent, light, dim;
+    static bool built = false;
+    if (!built) {
+        plateA = fogged(rgb(84, 90, 112), haze);
+        plateB = fogged(rgb(70, 74, 96), haze);
+        seam   = fogged(rgb(34, 36, 50), haze);
+        vent   = fogged(rgb(160, 60, 40), haze);
+        light  = fogged(rgb(255, 210, 120), haze);
+        dim    = fogged(rgb(110, 80, 50), haze);
+        built = true;
+    }
+    const float drop = HULL_Y - _camY;
+    const int scroll = (int)_groundScroll;
+    const int chase = (int)(millis() / 90);
+    const float TOWER_MAX = 0.09f;                     // tan of the tallest tower
+    const float skyShift = _camX * 0.00004f;
+
+    // Plating at (gx, gz): seams every 512, a light every 256 along rows
+    // 1024 apart, chasing; now and then a glowing vent panel.
+    auto plate = [&](int gx, int gz, int step) -> uint16_t {
+        const int px = gx & 511, pz = gz & 511;
+        if (px < 14 || pz < 14) return seam.c[step];
+        const int lane = gx & 1023;   // a row of lights down every other panel's middle
+        if ((lane > 236 && lane < 276) && (gz & 255) < 50) {
+            return (((gz >> 8) + chase) & 7) == 0 ? light.c[step] : dim.c[step];
+        }
+        const int cell = (gx >> 9) * 7 + (gz >> 9) * 13;
+        if ((cell & 15) == 3 && px > 120 && px < 390 && ((pz >> 5) & 1)) return vent.c[step];
+        return ((gx >> 9) + (gz >> 9)) & 1 ? plateA.c[step] : plateB.c[step];
+    };
+    auto pixelAt = [&](float dx, float dy) -> uint16_t {
+        if (dy < 0.0f) {
+            const float z = drop / dy;
+            if (z > FOG_FAR) return haze;
+            return plate((int)(_camX + dx * z) + 4096 * 64, (int)z + scroll, fogStep(z));
+        }
+        float a = (dx + skyShift + 2.0f) * 12.0f;
+        const int i0 = (int)a;
+        const float hgt = (float)_skyline[i0 & 63] * (TOWER_MAX / 255.0f);
+        if (dy < hgt) {
+            const bool beacon = hgt - dy < 0.006f && (i0 & 1) && ((chase >> 2) & 1);
+            return beacon ? rgb(255, 40, 40) : rgb(18, 18, 30);
+        }
+        return dy < 0.02f ? haze : space;
+    };
+
+    constexpr int SPAN = 16;
+    const float sx = invF * c, sy = -invF * s;
+    for (int y = 0; y < h; ++y) {
+        const float v = (cy - ((float)y + 0.5f)) * invF;
+        uint16_t* row = buf + y * w;
+        for (int x0 = 0; x0 < w; x0 += SPAN) {
+            const int n = (x0 + SPAN <= w ? SPAN : w - x0);
+            const float uA = ((float)x0 + 0.5f - cx) * invF;
+            const float dxA = uA * c + v * s, dyA = -uA * s + v * c;
+            const float dxB = dxA + sx * (float)(n - 1), dyB = dyA + sy * (float)(n - 1);
+            uint16_t* out = row + x0;
+            if (n > 1 && dyA < -0.03f && dyB < -0.03f) {
+                const float zA = drop / dyA, zB = drop / dyB;
+                if (zA < FOG_FAR && zB < FOG_FAR) {
+                    const int step = fogStep((zA + zB) * 0.5f);
+                    int32_t gx = (int32_t)((_camX + dxA * zA + 4096.0f * 64.0f) * 256.0f);
+                    int32_t gz = (int32_t)((zA + (float)scroll) * 256.0f);
+                    const int32_t sgx = ((int32_t)((_camX + dxB * zB + 4096.0f * 64.0f) * 256.0f) - gx) / (n - 1);
+                    const int32_t sgz = ((int32_t)((zB + (float)scroll) * 256.0f) - gz) / (n - 1);
+                    for (int k = 0; k < n; ++k, gx += sgx, gz += sgz) out[k] = plate(gx >> 8, gz >> 8, step);
+                    continue;
+                }
+            } else if (n > 1 && dyA > TOWER_MAX && dyB > TOWER_MAX) {
+                for (int k = 0; k < n; ++k) out[k] = space;
+                continue;
+            }
+            float dx = dxA, dy = dyA;
+            for (int k = 0; k < n; ++k, dx += sx, dy += sy) out[k] = pixelAt(dx, dy);
+        }
+    }
+}
+
 // The ship's shadow on the ground or the trench floor: the pixels under it
 // at a quarter brightness, with a dotted drop line up to the ship, so how
 // high you are over the ground (and short pillars and towers) reads at a
@@ -438,16 +669,20 @@ void StarFluxGame::drawGates(GFXcanvas16 &canvas) {
             if (!on && i == 1) continue;
             float x0, y0, x1, y1;
             if (!project(b.x0, ys[i], b.z, x0, y0) || !project(b.x1, ys[i], b.z, x1, y1)) continue;
-            uint16_t col = on ? ((millis() / 60) & 1 ? rgb(255, 60, 60) : rgb(255, 170, 170)) : rgb(90, 20, 30);
+            // Red lasers in the trench; cyan force fields on the mothership.
+            const bool field = _stageNum == STAGE_MOTHER;
+            uint16_t col = on ? ((millis() / 60) & 1 ? (field ? rgb(60, 230, 255) : rgb(255, 60, 60))
+                                                     : (field ? rgb(190, 250, 255) : rgb(255, 170, 170)))
+                              : (field ? rgb(20, 60, 90) : rgb(90, 20, 30));
             canvas.drawLine((int)x0, (int)y0, (int)x1, (int)y1, col);
-            if (on) canvas.drawLine((int)x0, (int)y0 + 1, (int)x1, (int)y1 + 1, rgb(200, 30, 40));
+            if (on) canvas.drawLine((int)x0, (int)y0 + 1, (int)x1, (int)y1 + 1, field ? rgb(30, 140, 200) : rgb(200, 30, 40));
         }
     }
 }
 
 // The reactor's shield fan, over its core: four steel blades and a gap.
 void StarFluxGame::drawFan(GFXcanvas16 &canvas) {
-    if (!_bossActive || _bossKind != STAGE_TRENCH || !coreOpen() || _coreHp <= 0) return;
+    if (!_bossActive || !hasFan() || !coreOpen() || _coreHp <= 0) return;
     float cx, cy, cz;
     bossPartPos(2, cx, cy, cz);
     const float R = CORE_R * 1.7f, z = cz - 70.0f;
@@ -474,6 +709,7 @@ StarFluxGame::Box* StarFluxGame::spawnBox(float x0, float x1, float y0, float y1
         b.active = true;
         b.hit = false;
         b.gate = false;
+        b.slide = 0;
         b.x0 = x0; b.x1 = x1; b.y0 = y0; b.y1 = y1; b.z = z; b.depth = depth;
         setBoxSize(b.obj, x1 - x0, y1 - y0, depth);
         b.obj->setPosition((int32_t)((x0 + x1) * 0.5f), (int32_t)((y0 + y1) * 0.5f), (int32_t)z);
@@ -490,6 +726,7 @@ StarFluxGame::Box* StarFluxGame::spawnGate(float y0, float y1, float z) {
         b.active = true;
         b.hit = false;
         b.gate = true;
+        b.slide = 0;
         b.x0 = -TRENCH_HALF_W; b.x1 = TRENCH_HALF_W; b.y0 = y0; b.y1 = y1; b.z = z; b.depth = 60.0f;
         b.phase = (unsigned long)random(0, (long)(GATE_MS * 2));
         if (b.obj) b.obj->enabled = false;
@@ -569,6 +806,95 @@ void StarFluxGame::spawnTrenchHazard() {
     if (random(0, 100) < 35) spawnTower((float)random(-300, 301), z + 1000.0f, true);
 }
 
+// The canyon's fields: ice bridges overhead with icicles hanging down
+// (fly between them), low arches (over or under), pillars of ice from the
+// river (short ones to hop), and, later in the stage, mines.
+void StarFluxGame::spawnCanyonHazard() {
+    const float z = BOX_SPAWN_Z, F = CANYON_FLOOR, d = 170.0f;
+    const int r = (int)random(0, 100);
+    if (_seg >= 4 && r < 22) {
+        spawnMine();
+        if (random(0, 100) < 50) spawnMine();
+        return;
+    }
+    if (r < 50) {
+        // A bridge with three or four icicles: one gap at least twice the ship.
+        const float hw = canyonHalfW(BRIDGE_Y);
+        spawnBox(-hw, hw, BRIDGE_Y, BRIDGE_Y + 150.0f, z, d);
+        const int n = 3 + (int)random(0, 2);
+        const int gap = (int)random(0, n + 1);           // the slot left clear
+        const float pitch = (2.0f * BOX_X + 120.0f) / (float)(n + 1);
+        for (int i = 0, slot = 0; i < n + 1; ++i, ++slot) {
+            if (i == gap) continue;
+            const float x = -BOX_X - 60.0f + pitch * ((float)slot + 0.5f);
+            const float len = (float)random(380, 560);   // down past the ship's highest
+            spawnBox(x - 45.0f, x + 45.0f, BRIDGE_Y - len, BRIDGE_Y, z, 90.0f);
+        }
+    } else if (r < 75) {
+        // A low arch across the river: over or under.
+        const float gy = (float)random((long)BOX_Y_MIN + 120, (long)BOX_Y_MAX - 150);
+        const float hw = canyonHalfW(gy + 70.0f);
+        spawnBox(-hw, hw, gy, gy + 120.0f, z, d);
+    } else {
+        // Two pillars of ice, one tall, one short enough to hop.
+        const float x0 = (float)random(-(long)BOX_X, (long)BOX_X + 1);
+        const float x1 = x0 + (x0 < 0 ? 1.0f : -1.0f) * (float)random(260, 400);
+        spawnBox(x0 - 90.0f, x0 + 90.0f, F, 600.0f, z, 180.0f);
+        spawnBox(x1 - 110.0f, x1 + 110.0f, F, (float)random(-120, -40), z, 220.0f);
+    }
+}
+
+// How shut a blast door is at time `at`: 0 open, 1 shut. Most of the cycle
+// it's moving; it holds open a while and shut a moment.
+float StarFluxGame::doorShut(const Box &b, unsigned long at) const {
+    const float t = (float)((at + b.phase) % DOOR_CYCLE_MS) / (float)DOOR_CYCLE_MS;
+    const float k = 0.5f - 0.5f * cosf(t * 2.0f * PI);   // 0 at the ends, 1 half way
+    return clampf((k - 0.15f) / 0.75f, 0.0f, 1.0f);
+}
+
+// A box's sides at time `at`: where a sliding one will be, else where it is.
+void StarFluxGame::boxXAt(const Box &b, unsigned long at, float &x0, float &x1) const {
+    if (b.slide == 0) { x0 = b.x0; x1 = b.x1; return; }
+    const float k = doorShut(b, at) * b.slide;
+    x0 = b.rx0 + k; x1 = b.rx1 + k;
+}
+
+// Blast doors: two full-height leaves either side of gx that slide in to
+// leave DOOR_SHUT and back out to DOOR_OPEN, together.
+void StarFluxGame::spawnDoors(float gx, float z) {
+    const float travel = (DOOR_OPEN - DOOR_SHUT) * 0.5f, half = DOOR_OPEN * 0.5f;
+    const unsigned long phase = (unsigned long)random(0, (long)DOOR_CYCLE_MS);
+    for (int side = -1; side <= 1; side += 2) {
+        const float inner = gx + (float)side * half, outer = (float)side * 1400.0f;
+        Box* b = spawnBox(fminf(inner, outer), fmaxf(inner, outer), HULL_Y, 700.0f, z, 140.0f);
+        if (!b) return;
+        b->rx0 = b->x0; b->rx1 = b->x1;
+        b->slide = -(float)side * travel;   // inwards
+        b->phase = phase;
+    }
+}
+
+// The mothership's fields: gun towers, blast doors, force-field gates
+// (later in the stage), and antenna masts.
+void StarFluxGame::spawnMotherHazard() {
+    const float z = BOX_SPAWN_Z;
+    const int r = (int)random(0, 100);
+    if (r < 30) {
+        spawnTower((float)random(-320, 321), z, true);
+        if (random(0, 100) < 40) spawnTower((float)random(-320, 321), z + 900.0f, true);
+    } else if (r < 58) {
+        spawnDoors((float)random(-180, 181), z);
+    } else if (_seg >= 4 && r < 78) {
+        float y0 = (float)random((long)BOX_Y_MIN - 40, (long)BOX_Y_MAX - 200);
+        spawnGate(y0, y0 + 200.0f, z);
+    } else {
+        for (int i = 0; i < 2; ++i) {
+            const float x = (float)random(-(long)BOX_X - 60, (long)BOX_X + 61);
+            spawnBox(x - 50.0f, x + 50.0f, HULL_Y, (float)random(100, 700), z + (float)i * 500.0f, 100.0f);
+        }
+    }
+}
+
 void StarFluxGame::updateBoxes(AudioEngine &audio) {
     const float dz = FLY_SPEED * _frameScale;
     for (auto &b : _boxes) {
@@ -579,6 +905,7 @@ void StarFluxGame::updateBoxes(AudioEngine &audio) {
             if (b.obj) b.obj->enabled = false;
             continue;
         }
+        if (b.slide != 0) boxXAt(b, millis(), b.x0, b.x1);
         if (b.obj) b.obj->setPosition((int32_t)((b.x0 + b.x1) * 0.5f), (int32_t)((b.y0 + b.y1) * 0.5f), (int32_t)b.z);
         if (b.hit || _stage != STAGE_RUN || fabsf(b.z - SHIP_Z) > b.depth * 0.5f + 20.0f) continue;
         if (b.gate && !gateOn(b, millis())) continue;
@@ -624,11 +951,12 @@ bool StarFluxGame::passClear(float front) const {
     const float r = SHIP_HIT_R * 0.7f;
     for (const auto &b : _boxes) {
         if (!b.active || fabsf(b.z - b.depth * 0.5f - front) > 60.0f) continue;
-        if (b.gate) {
-            const float ms = (b.z - SHIP_Z) / FLY_SPEED * (float)REFERENCE_FRAME_MS;
-            if (!gateOn(b, millis() + (unsigned long)max(0.0f, ms))) continue;
-        }
-        float nx = clampf(_shipX, b.x0, b.x1), ny = clampf(_shipY, b.y0, b.y1);
+        const float ms = (b.z - SHIP_Z) / FLY_SPEED * (float)REFERENCE_FRAME_MS;
+        const unsigned long arrive = millis() + (unsigned long)max(0.0f, ms);
+        if (b.gate && !gateOn(b, arrive)) continue;
+        float bx0, bx1;
+        boxXAt(b, arrive, bx0, bx1);   // a door where it'll be when you get there
+        float nx = clampf(_shipX, bx0, bx1), ny = clampf(_shipY, b.y0, b.y1);
         float dx = _shipX - nx, dy = _shipY - ny;
         if (dx * dx + dy * dy < r * r) return false;
     }
@@ -693,7 +1021,7 @@ void StarFluxGame::updateTurrets(AudioEngine &audio) {
                 ty += _shipVY * frames;
             }
             fireAt(t.x, t.y + 40.0f, t.z - 40.0f, tx, ty);
-            unsigned long gap = TURRET_FIRE_MS - (unsigned long)min(500, 100 * (_loop - 1));
+            unsigned long gap = TURRET_FIRE_MS - 100UL * (unsigned long)steps();
             t.fireAt = millis() + gap + (unsigned long)random(0, 400);
         }
     }
@@ -750,6 +1078,38 @@ Renderer::Object* StarFluxGame::buildReactor() {
 }
 
 // An obstacle slot: a unit box, resized by spawnBox().
+// The ice walker: a body on two long legs, a cockpit at the front, its
+// knee cannons (parts 0, 1) and core (part 2) are separate objects.
+Renderer::Object* StarFluxGame::buildWalker() {
+    auto* o = new Renderer::Object();
+    addBox(o, -330, 200, 0, 150, 400, 200, &_walkerDarkMat);    // legs
+    addBox(o, 330, 200, 0, 150, 400, 200, &_walkerDarkMat);
+    addBox(o, -330, 20, -40, 240, 40, 340, &_walkerMat);        // feet
+    addBox(o, 330, 20, -40, 240, 40, 340, &_walkerMat);
+    addBox(o, 0, 560, 0, 900, 300, 560, &_walkerMat);           // body
+    addBox(o, 0, 760, 60, 520, 110, 360, &_walkerDarkMat);      // back
+    addBox(o, 0, 470, -330, 300, 120, 120, &_walkerDarkMat);    // chin, under the core
+    addBox(o, 0, 660, -285, 820, 22, 8, &_boxLightMat);         // running light
+    return finishSolid(o);
+}
+
+// The mothership's core: a tower rising from a broad deck, with two pylons
+// carrying its shield generators (parts 0, 1); the core (part 2) sits in
+// the tower's face, behind the fan once it opens.
+Renderer::Object* StarFluxGame::buildMothership() {
+    auto* o = new Renderer::Object();
+    addBox(o, 0, 80, 100, 1700, 160, 900, &_motherDarkMat);     // deck
+    addBox(o, 0, 560, 100, 620, 800, 520, &_motherMat);         // tower
+    addBox(o, 0, 1030, 100, 380, 140, 380, &_motherDarkMat);    // crown
+    addBox(o, -450, 330, 0, 170, 500, 220, &_motherMat);        // pylons
+    addBox(o, 450, 330, 0, 170, 500, 220, &_motherMat);
+    addBox(o, -650, 260, 60, 260, 200, 520, &_motherDarkMat);   // shoulders
+    addBox(o, 650, 260, 60, 260, 200, 520, &_motherDarkMat);
+    addBox(o, 0, 780, -165, 560, 22, 8, &_boxLightMat);         // lights across the tower
+    addBox(o, 0, 170, -355, 1500, 20, 8, &_boxLightMat);        // and the deck's edge
+    return finishSolid(o);
+}
+
 Renderer::Object* StarFluxGame::buildObstacleBox() {
     auto* o = new Renderer::Object();
     addBox(o, 0, 0, 0, 100, 100, 100, &_boxMat);

@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
-| Star Flux | Star | Landscape | 3D on-rails space shooter: three stages of fighter waves, hazards and bosses (see below) |
+| Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
@@ -46,8 +46,11 @@ head-on pairs, a wing overtaking from behind, a weaving snake) that swoop,
 fire and break away, hazard fields between them, silver rings that restore
 40 shield, and a boss. Each stage runs 70-100 seconds and ends with a
 results screen (fighters downed, targets, rings, and a bonus for the
-shield you kept); after the third, the game loops back to the first with
-faster fire and tougher bosses.
+shield you kept); after the fifth, the game loops back to the first,
+harder each loop up to the fifth: a fighter more in every wave, fighters
+6% quicker, more of their shots fired and aimed ahead of you, pairs of
+shots from loop 3, bosses with 20% more health attacking 8% quicker, and
+fields 8% denser, each loop.
 
 1. **Aurora Belt** (space): rock fields (big rocks take three hits and
    split). The dreadnought: two wing cannons firing aimed shots; lose one
@@ -66,9 +69,32 @@ faster fire and tougher bosses.
    reactor at the trench's end: two emitters; then spiral streams; then a
    rotating shield fan over its core, which only shots through the gap
    reach.
+4. **Frost Canyon** (an ice canyon under a night sky): ice bridges with
+   icicles hanging down (fly between them), low ice arches (over or
+   under), ice pillars (short ones to hop), and mines that drift in,
+   steering gently at you (shoot them, 80 points). The ice walker, striding
+   across the canyon: two knee cannons; lose one and it fires fans of
+   frost shards, which slow your steering for 1.5s when they hit; lose
+   both and its core fires frost spreads between rings of shards closing
+   round you.
+5. **Mothership** (skimming the hull of a vast ship, its towers on the
+   horizon): gun towers with turrets, blast doors whose gap slides shut to
+   barely a ship's width and open again (time it, or thread the middle),
+   cyan force fields that blink like the trench's laser gates, and antenna
+   masts. The finale, the mothership's core: two shield generators; lose
+   one and it fires homing missiles and ring bursts by turns; lose both
+   and its core opens behind the reactor's rotating fan, firing five-way
+   spreads with pairs of missiles between. The flight-aid marker judges a
+   blast door where it'll be when you reach it.
 
-A shield bar and 3 lives: an empty shield costs a life and restarts the
-wave (or field) you were in; a boss keeps the damage you'd done. Two sights
+A shield bar and 3 lives, with an extra life at 75,000 points and every
+50,000 after (up to 9): an empty shield costs a life and restarts the
+wave (or field) you were in; a boss keeps the damage you'd done. Rings
+picked up at full shield overcharge it, up to three times full: the bar
+fills orange over the green, then red over the orange. Damage takes the
+overcharge first, it carries into the next stage, and a lost life resets
+the shield to plain full. Rings and pods never appear inside an obstacle.
+Two sights
 show your line of fire, red when a target is on it. Shooting down a whole
 wave scores a 500 bonus.
 
@@ -428,6 +454,7 @@ the last column says. Mono 16-bit 44.1kHz, short (they're cached).
 | `star_bomb.wav` | a smart bomb goes off | ~1s | `explosion.wav` |
 | `star_ring.wav` | a shield ring collected | ~0.4s | `powerup.wav` |
 | `star_power.wav` | the rapid-fire pod collected | ~0.5s | `powerup.wav` |
+| `star_extra.wav` | an extra life | ~1s | a tone |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,

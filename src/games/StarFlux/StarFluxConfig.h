@@ -56,6 +56,8 @@ inline constexpr float FLY_SPEED   = 45.0f;     // the world's speed past you, p
 
 // --- Shield and lives ---------------------------------------------------------------
 inline constexpr int SHIELD_MAX        = 100;
+// Rings overcharge past full, up to this: shown orange, then red, on the bar.
+inline constexpr int SHIELD_CAP        = 3 * SHIELD_MAX;
 inline constexpr int SHOT_DAMAGE       = 14;
 inline constexpr int ROCK_DAMAGE       = 22;
 inline constexpr int RAM_DAMAGE        = 20;
@@ -100,7 +102,28 @@ inline constexpr unsigned long FORMATION_STAGGER_MS = 330;
 // A wave waits this long at most for slots the last one's fighters hold.
 inline constexpr unsigned long WAVE_LAUNCH_MS = 10000;
 inline constexpr int   FIRE_PCT        = 70;        // chance a fighter takes a shot it's due, loop 1
-inline constexpr int   FIRE_PCT_PER_LOOP = 12;
+inline constexpr int   FIRE_PCT_PER_LOOP = 8;
+
+// --- Loops ----------------------------------------------------------------------
+// Each loop round the stages is harder, up to LOOP_CAP; after that it stays
+// as hard as loop LOOP_CAP. "Steps" below are loops past the first, capped.
+inline constexpr int   LOOP_CAP          = 5;
+inline constexpr int   WAVE_EXTRA_PER_LOOP = 1;     // fighters added to every wave
+inline constexpr int   WAVE_MAX          = 9;
+inline constexpr int   FIGHTER_PACE_PER_LOOP = 6;   // % faster along their paths
+inline constexpr int   BURST_FROM_LOOP   = 3;       // fighters can fire pairs from here
+inline constexpr int   BURST_PCT         = 15;      // chance a shot is a pair, at BURST_FROM_LOOP...
+inline constexpr int   BURST_PCT_PER_LOOP = 10;     // ...and up this much each loop after
+inline constexpr int   LEAD_PCT_PER_LOOP = 6;
+inline constexpr int   BOSS_PACE_PER_LOOP = 8;      // % quicker boss attacks
+inline constexpr int   BOSS_HP_PER_LOOP  = 20;      // % more boss health
+inline constexpr int   FIELD_DENSER_PER_LOOP = 8;   // % shorter gaps between field hazards
+inline constexpr int   ROCK_AIMED_PER_LOOP = 6;
+
+// --- Extra lives ----------------------------------------------------------------
+inline constexpr long  EXTRA_LIFE_FIRST  = 75000;
+inline constexpr long  EXTRA_LIFE_EVERY  = 50000;
+inline constexpr int   LIVES_MAX         = 9;
 
 // --- Enemy shots --------------------------------------------------------------
 inline constexpr int   ESHOT_POOL      = 18;
@@ -137,6 +160,10 @@ inline constexpr int   POD_SEG_A       = 2;
 inline constexpr int   POD_SEG_B       = 6;
 inline constexpr unsigned long POD_AFTER_MS = 2500; // into the segment
 inline constexpr float POD_R           = 80.0f;
+// Rings and pods are placed clear of any obstacle within this much depth,
+// and no obstacle is put within it while one is on its way.
+inline constexpr float PICKUP_CLEAR_Z  = 900.0f;
+inline constexpr float PICKUP_CLEAR_R  = 110.0f;
 inline constexpr float POD_CATCH_R     = 140.0f;
 inline constexpr int   POD_POINTS      = 500;
 
@@ -158,6 +185,31 @@ inline constexpr float TRENCH_TOP      = 440.0f;    // top of the walls
 inline constexpr unsigned long TRENCH_FIELD_MS = 1400;
 inline constexpr float BARRIER_GAP     = 300.0f;    // the way through a barrier
 inline constexpr unsigned long GATE_MS = 1100;      // laser gates: on this long, then off as long
+
+// --- Stage 4: the canyon -----------------------------------------------------------
+// A V of ice walls leaning outwards: half width CANYON_HALF_W at the floor,
+// growing by CANYON_SLOPE per unit of height, up to CANYON_TOP.
+inline constexpr float CANYON_FLOOR    = -380.0f;
+inline constexpr float CANYON_HALF_W   = 520.0f;
+inline constexpr float CANYON_SLOPE    = 0.45f;
+inline constexpr float CANYON_TOP      = 700.0f;
+inline constexpr unsigned long CANYON_FIELD_MS = 1250;
+inline constexpr float BRIDGE_Y        = 380.0f;    // ice bridges' undersides: icicles hang from here
+// Mines: drifting spheres that steer gently at you until MISSILE_STOP_Z.
+inline constexpr float MINE_DRIFT      = 7.0f;      // most sideways speed, per frame
+inline constexpr float MINE_TURN       = 0.03f;
+inline constexpr int   MINE_POINTS     = 80;
+inline constexpr float MINE_R          = 60.0f;     // drawn body, and with the ship's for a hit
+// The walker's frost shards: a hit also slows your steering for FREEZE_MS.
+inline constexpr unsigned long FREEZE_MS = 1500;
+inline constexpr float FREEZE_STEER    = 0.4f;      // share of normal speed while frozen
+
+// --- Stage 5: the mothership -------------------------------------------------------
+inline constexpr float HULL_Y          = -400.0f;   // the hull's plating
+inline constexpr unsigned long HULL_FIELD_MS = 1150;
+inline constexpr float DOOR_OPEN       = 380.0f;    // blast doors' gap, open...
+inline constexpr float DOOR_SHUT       = 110.0f;    // ...and closed: room only dead centre
+inline constexpr unsigned long DOOR_CYCLE_MS = 2600;
 
 // --- Obstacles and turrets ----------------------------------------------------------
 inline constexpr int   BOX_POOL        = 14;
