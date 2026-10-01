@@ -45,6 +45,7 @@ Scenarios (every game has the first four):
 | `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent | Same |
 | `demoexit` | | Presses A mid-demo: the real game must start clean. Prints PASS/FAIL and fails the build script | Same |
 | `passive` | | | Shield pinned and the bot never fires: waves must still end on their own. Any non-boss segment over 40s prints STALL and fails |
+| `loops` | | | Extra lives at 75k/125k/175k, shield overcharge (cap, carried, reset), difficulty by loop and its cap, rings never inside an obstacle (including a forced gapped wall). PASS/FAIL |
 | `rapid` | | | No pod in loop 1; in loop 2 the pod comes, catching it doubles the fire rate, a lost life takes it away; the flight-aid marker against a barrier and a gate. PASS/FAIL |
 
 `profile` reports Jet's per-frame triangle counts and host render time,

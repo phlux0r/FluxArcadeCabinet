@@ -70,8 +70,14 @@ fields 8% denser, each loop.
    rotating shield fan over its core, which only shots through the gap
    reach.
 
-A shield bar and 3 lives: an empty shield costs a life and restarts the
-wave (or field) you were in; a boss keeps the damage you'd done. Two sights
+A shield bar and 3 lives, with an extra life at 75,000 points and every
+50,000 after (up to 9): an empty shield costs a life and restarts the
+wave (or field) you were in; a boss keeps the damage you'd done. Rings
+picked up at full shield overcharge it, up to three times full: the bar
+fills orange over the green, then red over the orange. Damage takes the
+overcharge first, it carries into the next stage, and a lost life resets
+the shield to plain full. Rings and pods never appear inside an obstacle.
+Two sights
 show your line of fire, red when a target is on it. Shooting down a whole
 wave scores a 500 bonus.
 
@@ -431,6 +437,7 @@ the last column says. Mono 16-bit 44.1kHz, short (they're cached).
 | `star_bomb.wav` | a smart bomb goes off | ~1s | `explosion.wav` |
 | `star_ring.wav` | a shield ring collected | ~0.4s | `powerup.wav` |
 | `star_power.wav` | the rapid-fire pod collected | ~0.5s | `powerup.wav` |
+| `star_extra.wav` | an extra life | ~1s | a tone |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
