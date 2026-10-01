@@ -274,6 +274,7 @@ void StarFluxGame::drawBackdrop(GFXcanvas16 &canvas) {
         case STAGE_PLANET: drawPlanet(canvas); break;
         case STAGE_TRENCH: drawTrench(canvas); break;
         case STAGE_CANYON: drawCanyon(canvas); break;
+        case STAGE_MOTHER: drawHull(canvas); break;
         default:           drawSpace(canvas); break;
     }
 }
@@ -545,7 +546,7 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _rockMat[1].color = rgb(120, 126, 145);
     for (auto &m : _rockMat) m.shadingMode = Renderer::ShadingMode::FLAT;
     for (Renderer::Material* m : { &_boxMat, &_crawlerMat, &_crawlerDarkMat, &_reactorMat, &_reactorDarkMat,
-                                   &_walkerMat, &_walkerDarkMat }) {
+                                   &_walkerMat, &_walkerDarkMat, &_motherMat, &_motherDarkMat }) {
         m->shadingMode = Renderer::ShadingMode::FLAT;
     }
     _crawlerMat.color     = rgb(120, 110, 84);
@@ -554,6 +555,8 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _reactorDarkMat.color = rgb(48, 52, 70);
     _walkerMat.color      = rgb(150, 170, 196);
     _walkerDarkMat.color  = rgb(56, 66, 90);
+    _motherMat.color      = rgb(108, 112, 140);
+    _motherDarkMat.color  = rgb(44, 46, 64);
     _boxLightMat.color    = rgb(255, 70, 70);
     applyStagePalette();
     buildMountains();
@@ -582,6 +585,7 @@ void StarFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
     _bossHulls[STAGE_PLANET] = buildCrawler();
     _bossHulls[STAGE_TRENCH] = buildReactor();
     _bossHulls[STAGE_CANYON] = buildWalker();
+    _bossHulls[STAGE_MOTHER] = buildMothership();
     for (auto* h : _bossHulls) _scene->addObject(h);
     _bossHull = _bossHulls[STAGE_BELT];
     for (auto &b : _boxes) {

@@ -204,6 +204,13 @@ inline constexpr float MINE_R          = 60.0f;     // drawn body, and with the 
 inline constexpr unsigned long FREEZE_MS = 1500;
 inline constexpr float FREEZE_STEER    = 0.4f;      // share of normal speed while frozen
 
+// --- Stage 5: the mothership -------------------------------------------------------
+inline constexpr float HULL_Y          = -400.0f;   // the hull's plating
+inline constexpr unsigned long HULL_FIELD_MS = 1150;
+inline constexpr float DOOR_OPEN       = 380.0f;    // blast doors' gap, open...
+inline constexpr float DOOR_SHUT       = 110.0f;    // ...and closed: room only dead centre
+inline constexpr unsigned long DOOR_CYCLE_MS = 2600;
+
 // --- Obstacles and turrets ----------------------------------------------------------
 inline constexpr int   BOX_POOL        = 14;
 inline constexpr int   BOX_DAMAGE      = 25;

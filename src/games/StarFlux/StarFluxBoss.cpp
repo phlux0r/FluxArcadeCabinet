@@ -13,6 +13,10 @@
 //   Reactor (stage 3): the end of the trench. Emitters; then spiral
 //     streams; then the core is shielded by a rotating fan, and only shots
 //     through its gap reach it (line up off-centre, where the gap's coming).
+//   Mothership core (stage 5): the finale, mixing the others' attacks.
+//     Shield generators; then homing missiles and ring bursts by turns;
+//     then the core opens behind the reactor's fan and fires five-way
+//     spreads, with missiles between.
 //   Ice walker (stage 4): strides across the canyon. Knee cannons; then
 //     fans of frost shards (a hit slows your steering); then its core
 //     fires frost spreads between rings of shards closing round you.
@@ -23,11 +27,12 @@ namespace {
 // Per boss: depth it holds at, hull sphere (for soaking up shots and the
 // death explosions), relative to the boss's position.
 struct BossDef { float z, hullY, hullR; const char* name; const char* downBanner; };
-const BossDef BOSSES[4] = {
+const BossDef BOSSES[5] = {
     { 2000.0f,   0.0f, 330.0f, "DREADNOUGHT", "DREADNOUGHT DESTROYED" },
     { 2300.0f, 300.0f, 480.0f, "CRAWLER",     "CRAWLER DESTROYED" },
     { 2700.0f,   0.0f, 560.0f, "REACTOR",     "REACTOR DESTROYED" },
     { 2500.0f, 560.0f, 480.0f, "ICE WALKER",  "ICE WALKER DESTROYED" },
+    { 2900.0f, 560.0f, 520.0f, "MOTHERSHIP CORE", "MOTHERSHIP DESTROYED" },
 };
 
 inline uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -52,7 +57,8 @@ void StarFluxGame::startBoss() {
     _bossZ = BOSS_ENTER_Z;
     _bossX = 0;
     _bossY = _bossKind == STAGE_PLANET ? GROUND_Y : _bossKind == STAGE_TRENCH ? 40.0f
-           : _bossKind == STAGE_CANYON ? CANYON_FLOOR : BOSS_BASE_Y;
+           : _bossKind == STAGE_CANYON ? CANYON_FLOOR : _bossKind == STAGE_MOTHER ? HULL_Y : BOSS_BASE_Y;
+    _volley = 0;
     _bossAlarms = 0;
     _fanAngle = 0;
     if (!_retrying || (_cannonHp[0] <= 0 && _cannonHp[1] <= 0 && _coreHp <= 0)) {
@@ -67,10 +73,14 @@ void StarFluxGame::startBoss() {
     _coreFireAt = start + 900;
     _cannonFlash[0] = _cannonFlash[1] = _coreFlash = 0;
     // Weak points in the boss's own colours.
-    static const uint16_t partA[4] = { rgb(255, 150, 30), rgb(170, 255, 60), rgb(80, 220, 255), rgb(255, 120, 40) };
-    static const uint16_t partB[4] = { rgb(200, 80, 10),  rgb(90, 170, 20),  rgb(20, 120, 200), rgb(170, 60, 10) };
-    static const uint16_t coreA[4] = { rgb(255, 60, 200), rgb(255, 70, 50),  rgb(240, 250, 255), rgb(120, 255, 255) };
-    static const uint16_t coreB[4] = { rgb(160, 20, 130), rgb(170, 20, 20),  rgb(120, 160, 255), rgb(30, 140, 200) };
+    static const uint16_t partA[5] = { rgb(255, 150, 30), rgb(170, 255, 60), rgb(80, 220, 255), rgb(255, 120, 40),
+                                       rgb(255, 80, 200) };
+    static const uint16_t partB[5] = { rgb(200, 80, 10),  rgb(90, 170, 20),  rgb(20, 120, 200), rgb(170, 60, 10),
+                                       rgb(150, 20, 110) };
+    static const uint16_t coreA[5] = { rgb(255, 60, 200), rgb(255, 70, 50),  rgb(240, 250, 255), rgb(120, 255, 255),
+                                       rgb(255, 230, 80) };
+    static const uint16_t coreB[5] = { rgb(160, 20, 130), rgb(170, 20, 20),  rgb(120, 160, 255), rgb(30, 140, 200),
+                                       rgb(200, 120, 20) };
     _cannonMat.color = partA[_bossKind];
     _cannonMat2.color = partB[_bossKind];
     _coreMat.color = coreA[_bossKind];
@@ -91,6 +101,10 @@ void StarFluxGame::bossPartPos(int part, float &x, float &y, float &z) const {
         case STAGE_TRENCH:
             if (part < 2) { x = _bossX + side * 400.0f; y = _bossY + 170.0f; z = _bossZ - 260.0f; }
             else          { x = _bossX;                 y = _bossY - 10.0f;  z = _bossZ - 300.0f; }
+            break;
+        case STAGE_MOTHER:   // generators atop the pylons; the core in the tower's face
+            if (part < 2) { x = _bossX + side * 450.0f; y = _bossY + 600.0f; z = _bossZ - 160.0f; }
+            else          { x = _bossX;                 y = _bossY + 400.0f; z = _bossZ - 220.0f; }
             break;
         case STAGE_CANYON:   // knee cannons on the legs' fronts; the core under the cockpit
             if (part < 2) { x = _bossX + side * 330.0f; y = _bossY + 250.0f; z = _bossZ - 160.0f; }
@@ -157,7 +171,7 @@ void StarFluxGame::ringBurst(float x, float y, float z, bool frost) {
 // The reactor's shield fan: four blades of 60 degrees round the core, and
 // a 120-degree gap, turning. Does it stop a shot at (x, y)?
 bool StarFluxGame::fanBlocks(float x, float y) const {
-    if (_bossKind != STAGE_TRENCH || !coreOpen()) return false;
+    if (!hasFan() || !coreOpen()) return false;
     float cx, cy, cz;
     bossPartPos(2, cx, cy, cz);
     float dx = x - cx, dy = y - cy;
@@ -185,7 +199,7 @@ void StarFluxGame::updateBoss(AudioEngine &audio) {
         }
     } else if (_stage == STAGE_BOSS_DEATH) {
         _bossZ += 6.0f * _frameScale;   // sinking away as it breaks up
-        if (_bossKind != STAGE_PLANET && _bossKind != STAGE_CANYON) _bossY -= 3.0f * _frameScale;
+        if (_bossKind == STAGE_BELT || _bossKind == STAGE_TRENCH) _bossY -= 3.0f * _frameScale;
     } else {
         _bossZ = hold;
     }
@@ -200,6 +214,9 @@ void StarFluxGame::updateBoss(AudioEngine &audio) {
                 _bossX = 60.0f * sinf((float)t * 0.0007f);
                 _bossY = 40.0f + 40.0f * sinf((float)t * 0.0011f);
                 break;
+            case STAGE_MOTHER:   // vast: it barely shifts
+                _bossX = 70.0f * sinf((float)t * 0.0004f * pace);
+                break;
             case STAGE_CANYON: {   // strides from side to side, bobbing with each step
                 const float phase = (float)t * 0.0005f * pace;
                 _bossX = 220.0f * sinf(phase);
@@ -213,7 +230,7 @@ void StarFluxGame::updateBoss(AudioEngine &audio) {
         }
     }
     _bossVX = _frameScale > 0 ? (_bossX - lastX) / _frameScale : 0;
-    if (_bossKind == STAGE_TRENCH && coreOpen()) _fanAngle = fmodf(_fanAngle + FAN_SPIN * _frameScale, 360.0f);
+    if (hasFan() && coreOpen()) _fanAngle = fmodf(_fanAngle + FAN_SPIN * _frameScale, 360.0f);
     placeBoss();
     if (t < BOSS_ENTER_MS || _stage != STAGE_RUN) return;
     bossAttacks(audio);
@@ -273,6 +290,30 @@ void StarFluxGame::bossAttacks(AudioEngine &audio) {
             }
             if (coreOpen() && reached(_coreFireAt)) {
                 for (int i = -1; i <= 1; ++i) fireAt(cx, cy, cz, _shipX + (float)i * 130.0f, _shipY, 1.15f);
+                sfx(audio, SFX_BOSS_FIRE);
+                _coreFireAt = millis() + bossMs(1500);
+            }
+            break;
+
+        case STAGE_MOTHER:
+            // Missiles and ring bursts by turns; with the core open (and
+            // the fan over it), five-way spreads, and missiles between.
+            if (oneLost && reached(_burstAt)) {
+                float x, y, z;
+                bossPartPos(_cannonHp[0] > 0 ? 0 : _cannonHp[1] > 0 ? 1 : 2, x, y, z);
+                if (coreOpen()) {   // a pair, from either side of the tower
+                    fireMissile(cx - 350.0f, cy + 200.0f, cz);
+                    fireMissile(cx + 350.0f, cy + 200.0f, cz);
+                } else if ((_volley++ & 1) == 0) {
+                    fireMissile(x, y, z);
+                } else {
+                    ringBurst(cx, cy, cz);
+                }
+                sfx(audio, SFX_BURST);
+                _burstAt = millis() + bossMs(coreOpen() ? 3000 : 2300);
+            }
+            if (coreOpen() && reached(_coreFireAt)) {
+                for (int i = -2; i <= 2; ++i) fireAt(cx, cy, cz, _shipX + (float)i * 150.0f, _shipY, 1.1f);
                 sfx(audio, SFX_BOSS_FIRE);
                 _coreFireAt = millis() + bossMs(1500);
             }
@@ -341,7 +382,8 @@ void StarFluxGame::hitBossPart(int part, int damage, AudioEngine &audio) {
             bossPartPos(2, cx, cy, cz);
             addBlast(cx, cy, cz - 40.0f, 260.0f, ArcadeConfig::COLOR_WHITE);
         } else {
-            static const char* const lost[4] = { "CANNON DOWN", "POD DOWN", "EMITTER DOWN", "LEG CANNON DOWN" };
+            static const char* const lost[5] = { "CANNON DOWN", "POD DOWN", "EMITTER DOWN", "LEG CANNON DOWN",
+                                                 "GENERATOR DOWN" };
             setBanner(lost[_bossKind], ArcadeConfig::COLOR_YELLOW, 1400);
             _burstAt = millis() + 1200;
         }

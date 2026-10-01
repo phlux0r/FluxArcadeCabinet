@@ -109,10 +109,11 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
     // with a barrier, a gate and a tower; the canyon with icicles, an arch,
     // pillars and mines; then their bosses, whole and with the core open
     // (the reactor's fan showing, the walker's frost shards in flight).
-    static const char* const scene[3] = { "pose_planet", "pose_trench", "pose_canyon" };
-    static const char* const boss[3] = { "pose_boss_crawler", "pose_boss_reactor", "pose_boss_walker" };
-    static const char* const bossOpen[3] = { "pose_boss_crawler_open", "pose_boss_reactor_open", "pose_boss_walker_open" };
-    for (int st = 1; st <= 3; ++st) {
+    static const char* const scene[4] = { "pose_planet", "pose_trench", "pose_canyon", "pose_mother" };
+    static const char* const boss[4] = { "pose_boss_crawler", "pose_boss_reactor", "pose_boss_walker", "pose_boss_mother" };
+    static const char* const bossOpen[4] = { "pose_boss_crawler_open", "pose_boss_reactor_open", "pose_boss_walker_open",
+                                             "pose_boss_mother_open" };
+    for (int st = 1; st <= 4; ++st) {
         g._stageNum = st;
         g.applyStagePalette();
         g.hideWorld();
@@ -124,6 +125,15 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
             g.spawnBox(-150, -30, GROUND_Y, 420, 4200, 150);
             g.spawnBox(330, 450, GROUND_Y, 420, 4200, 150);
             g.spawnBox(-150, 450, 170, 420, 4200, 150);
+        } else if (st == 4) {
+            g.spawnTower(-250, 1800, true);
+            g.spawnDoors(60, 3000);
+            for (auto &b : g._boxes) if (b.active && b.slide != 0) b.phase = DOOR_CYCLE_MS / 4;   // half shut
+            g.spawnBox(250, 350, HULL_Y, 500, 4400, 100);
+            auto* gate = g.spawnGate(-50, 150, 5600);
+            gate->phase = 0;
+            g_fakeMillis = (g_fakeMillis / (GATE_MS * 2)) * GATE_MS * 2 + 10;   // on
+            g._shipX = 40; g._shipY = 0; g._bank = 0.1f;
         } else if (st == 3) {
             const float hw = g.canyonHalfW(BRIDGE_Y);
             g.spawnBox(-hw, hw, BRIDGE_Y, BRIDGE_Y + 150, 3200, 170);
@@ -383,6 +393,37 @@ int main(int argc, char** argv) {
         const float far1 = mine ? hypotf(mine->x - g._shipX, mine->y - g._shipY) : 0;
         printf("mine off your line: %.0f, then %.0f\n", far0, far1);
         check(mine && far1 < far0 * 0.7f, "a mine steers at you");
+        // Stage 5's blast doors: the gap closes to DOOR_SHUT and opens to
+        // DOOR_OPEN, and the marker judges them where they'll be.
+        g._stageNum = StarFluxGame::STAGE_MOTHER;
+        g.startStage();
+        for (auto &b : g._boxes) { b.active = false; if (b.obj) b.obj->enabled = false; }
+        g.spawnDoors(0, SHIP_Z + 2000.0f);
+        StarFluxGame::Box* doors[2] = {};
+        for (auto &b : g._boxes) if (b.active && b.slide != 0) doors[doors[0] ? 1 : 0] = &b;
+        float minGap = 1e9f, maxGap = 0;
+        for (unsigned long t = 0; t < DOOR_CYCLE_MS; t += 20) {
+            float l0, l1, r0, r1;
+            g.boxXAt(*doors[0], t, l0, l1); g.boxXAt(*doors[1], t, r0, r1);
+            const float gap = std::max(r0, l0) - std::min(r1, l1);
+            minGap = std::min(minGap, gap); maxGap = std::max(maxGap, gap);
+        }
+        printf("blast door gap: %.0f to %.0f\n", minGap, maxGap);
+        check(fabsf(minGap - DOOR_SHUT) < 2 && fabsf(maxGap - DOOR_OPEN) < 2, "doors close to DOOR_SHUT, open to DOOR_OPEN");
+        float front = 0;
+        g.nextObstacle(front);
+        g._shipX = 120; g._shipY = 0;
+        const unsigned long arrive = g_fakeMillis + (unsigned long)((doors[0]->z - SHIP_Z) / FLY_SPEED * REFERENCE_FRAME_MS);
+        unsigned long ph = 0;
+        doors[0]->phase = doors[1]->phase = 0;
+        auto shutAt = [&](unsigned long p) { StarFluxGame::Box b = *doors[0]; b.phase = p; return g.doorShut(b, arrive); };
+        while (shutAt(ph) < 0.99f) ph += 10;   // shut when you get there
+        doors[0]->phase = doors[1]->phase = ph;
+        const bool shutHit = !g.passClear(front);
+        while (shutAt(ph) > 0.01f) ph += 10;   // open when you get there
+        doors[0]->phase = doors[1]->phase = ph;
+        const bool openClear = g.passClear(front);
+        check(shutHit && openClear, "marker: a door counts where it'll be when you get there");
         check(rings >= 10 && blocked == 0, "every ring reachable");
         g.onExit();
         printf("%s\n", ok ? "PASS" : "FAIL");

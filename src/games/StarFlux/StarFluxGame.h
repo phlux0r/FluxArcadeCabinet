@@ -12,23 +12,24 @@
 // STAR FLUX: an on-rails space shooter, rendered with Jet like Tank and
 // Tube Flux. The camera sits behind the ship; the ship moves round a box on
 // screen while the stage flies at you: fighter waves in formation, hazard
-// fields, shield rings, then a boss. Four stages: an asteroid belt in
-// space, a planet's surface, a trench run on a space station, and an ice
-// canyon.
+// fields, shield rings, then a boss. Five stages: an asteroid belt in
+// space, a planet's surface, a trench run on a space station, an ice
+// canyon, and the mothership's hull.
 //
 // The ship is a 2D sprite (StarShipSprite.h, three bank frames), drawn
 // where its 3D position projects. Fighters, rocks, obstacles, turrets and
 // the bosses are Jet objects. The backdrops (space, the planet's ground
-// and sky, the trench, the canyon), mines, the lasers, enemy shots, rings, blasts and the
+// and sky, the trench, the canyon, the hull), mines, the lasers, enemy shots, rings, blasts and the
 // reticle are drawn straight into the canvas with Jet's projection
 // (project()): far cheaper than meshes for whole-screen fills and for
 // things that are only dots, lines and circles.
 //
 // A stage is a list of segments (StarFluxPlay.cpp): a wave, a hazard field
 // (rocks; pillars and turret towers; trench barriers, laser gates and
-// turrets; icicles, ice arches and pillars, and mines), or the boss.
+// turrets; icicles, ice arches and pillars, and mines; gun towers, blast
+// doors, force fields and masts), or the boss.
 // Losing your shield costs a life and restarts the segment you were in.
-// Each boss ends its stage with a results screen; after the fourth, the
+// Each boss ends its stage with a results screen; after the fifth, the
 // game loops back to stage 1, harder (StarFluxConfig.h's Loops block).
 //
 // Files: StarFluxGame.cpp (phases, update loop), StarFluxScene.cpp (scene,
@@ -63,7 +64,7 @@ private:
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_RESULTS, PHASE_NAME, PHASE_GAMEOVER };
     enum AttractSlide { SLIDE_TITLE, SLIDE_INFO, SLIDE_SCORES, SLIDE_DEMO };
     enum SegType : uint8_t { SEG_WAVE, SEG_FIELD, SEG_BOSS };
-    enum StageId : uint8_t { STAGE_BELT, STAGE_PLANET, STAGE_TRENCH, STAGE_CANYON, STAGE_COUNT };
+    enum StageId : uint8_t { STAGE_BELT, STAGE_PLANET, STAGE_TRENCH, STAGE_CANYON, STAGE_MOTHER, STAGE_COUNT };
     enum Pattern : uint8_t { PAT_VDIVE, PAT_SWEEP, PAT_HEADON, PAT_LOOP, PAT_WEAVE, PAT_COUNT };
     // INTRO: the fly-in with the stage name. DOWN: you've been shot down
     // and the world flies on without you for a moment. BOSS_DEATH: the
@@ -106,7 +107,10 @@ private:
         Renderer::Object* obj = nullptr;   // null for gates
         bool  active = false, hit = false, gate = false;
         float x0 = 0, x1 = 0, y0 = 0, y1 = 0, z = 0, depth = 0;
-        unsigned long phase = 0;           // gates: offset into the blink
+        unsigned long phase = 0;           // gates: offset into the blink; doors: into the cycle
+        // A blast door slides: x0, x1 are rx0, rx1 moved by slide times how
+        // closed it is (0 open .. 1 shut, doorShut()). slide 0: it doesn't.
+        float slide = 0, rx0 = 0, rx1 = 0;
     };
     // A gun emplacement on a tower: shoots at you, takes TURRET_HP hits.
     struct Turret {
@@ -251,6 +255,9 @@ private:
     Renderer::Material _crawlerMat{ 0xFFFF }, _crawlerDarkMat{ 0xFFFF };
     Renderer::Material _reactorMat{ 0xFFFF }, _reactorDarkMat{ 0xFFFF };
     Renderer::Material _walkerMat{ 0xFFFF }, _walkerDarkMat{ 0xFFFF };
+    Renderer::Material _motherMat{ 0xFFFF }, _motherDarkMat{ 0xFFFF };
+    uint8_t _skyline[64] = {};          // the mothership's towers on the horizon
+    int     _volley = 0;                // the mothership core's attacks take turns
     Renderer::Object*  _bossHulls[STAGE_COUNT] = {};
     Renderer::Object*  _bossHull = nullptr;   // this stage's, one of _bossHulls
     Renderer::Object*  _cannonObj[2] = { nullptr, nullptr };
@@ -298,6 +305,7 @@ private:
     Renderer::Object* buildCrawler();
     Renderer::Object* buildReactor();
     Renderer::Object* buildWalker();
+    Renderer::Object* buildMothership();
     Renderer::Object* buildTurret();
     Renderer::Object* buildObstacleBox();
     void placeCamera();
@@ -310,6 +318,7 @@ private:
     void drawPod(GFXcanvas16 &canvas);
     void drawMines(GFXcanvas16 &canvas);
     void drawCanyon(GFXcanvas16 &canvas);
+    void drawHull(GFXcanvas16 &canvas);
     void drawFlightAids(GFXcanvas16 &canvas);
     void drawShots(GFXcanvas16 &canvas);
     void drawBlasts(GFXcanvas16 &canvas);
@@ -340,7 +349,11 @@ private:
     bool  spawnPod();
     void  spawnMine();
     void  spawnCanyonHazard();
-    float canyonHalfW(float y) const { return CANYON_HALF_W + CANYON_SLOPE * (y - CANYON_FLOOR); }
+    void  spawnMotherHazard();
+    void  spawnDoors(float gx, float z);
+    float doorShut(const Box &b, unsigned long at) const;
+    void  boxXAt(const Box &b, unsigned long at, float &x0, float &x1) const;
+    bool  hasFan() const { return _bossKind == STAGE_TRENCH || _bossKind == STAGE_MOTHER; }    float canyonHalfW(float y) const { return CANYON_HALF_W + CANYON_SLOPE * (y - CANYON_FLOOR); }
     void  updatePod(AudioEngine &audio);
     bool  nextObstacle(float &front) const;
     bool  passClear(float front) const;

@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
-| Star Flux | Star | Landscape | 3D on-rails space shooter: four stages of fighter waves, hazards and bosses (see below) |
+| Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
 
@@ -46,7 +46,7 @@ head-on pairs, a wing overtaking from behind, a weaving snake) that swoop,
 fire and break away, hazard fields between them, silver rings that restore
 40 shield, and a boss. Each stage runs 70-100 seconds and ends with a
 results screen (fighters downed, targets, rings, and a bonus for the
-shield you kept); after the fourth, the game loops back to the first,
+shield you kept); after the fifth, the game loops back to the first,
 harder each loop up to the fifth: a fighter more in every wave, fighters
 6% quicker, more of their shots fired and aimed ahead of you, pairs of
 shots from loop 3, bosses with 20% more health attacking 8% quicker, and
@@ -77,6 +77,15 @@ fields 8% denser, each loop.
    frost shards, which slow your steering for 1.5s when they hit; lose
    both and its core fires frost spreads between rings of shards closing
    round you.
+5. **Mothership** (skimming the hull of a vast ship, its towers on the
+   horizon): gun towers with turrets, blast doors whose gap slides shut to
+   barely a ship's width and open again (time it, or thread the middle),
+   cyan force fields that blink like the trench's laser gates, and antenna
+   masts. The finale, the mothership's core: two shield generators; lose
+   one and it fires homing missiles and ring bursts by turns; lose both
+   and its core opens behind the reactor's rotating fan, firing five-way
+   spreads with pairs of missiles between. The flight-aid marker judges a
+   blast door where it'll be when you reach it.
 
 A shield bar and 3 lives, with an extra life at 75,000 points and every
 50,000 after (up to 9): an empty shield costs a life and restarts the

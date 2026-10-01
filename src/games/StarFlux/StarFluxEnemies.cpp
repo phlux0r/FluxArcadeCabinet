@@ -79,6 +79,8 @@ void StarFluxGame::pathPoint(const Fighter &f, unsigned long ms, float &x, float
     } else if (_stageNum == STAGE_CANYON) {   // the canyon's a little wider, and opens upwards
         x *= 0.7f;
         y = y * 0.8f + 40.0f;
+    } else if (_stageNum == STAGE_MOTHER) {   // kept up off the hull
+        y = y * 0.8f + 60.0f;
     }
 }
 

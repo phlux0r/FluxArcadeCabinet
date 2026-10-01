@@ -102,7 +102,7 @@ void StarFluxGame::drawOverlays(GFXcanvas16 &canvas) {
         }
         if (t > 900) drawCentred(canvas, stageName(), 56, ArcadeConfig::COLOR_CYAN);
         static const char* const calls[STAGE_COUNT] = { "ALL WINGS, ENGAGE!", "MIND THE TOWERS!", "THREAD THE NEEDLE!",
-                                                        "WATCH THE ICE!" };
+                                                        "WATCH THE ICE!", "THIS IS IT. TAKE IT DOWN!" };
         if (t > 1800 && ((millis() / 200) & 1)) drawCentred(canvas, calls[_stageNum], 68, ArcadeConfig::COLOR_YELLOW);
     }
     if (before(_bannerUntil) && ((millis() / 200) & 1)) {

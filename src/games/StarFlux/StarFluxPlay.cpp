@@ -66,6 +66,18 @@ const StarFluxGame::Segment& StarFluxGame::segment() const {
             { SEG_WAVE,  PAT_WEAVE,   6, -1,     0,    false },
             { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
         },
+        {   // 5, Mothership: gun towers, blast doors, force fields, masts; its core.
+            { SEG_WAVE,  PAT_VDIVE,   7,  1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  7000,    true  },
+            { SEG_WAVE,  PAT_LOOP,    6,  1,     0,    false },
+            { SEG_WAVE,  PAT_HEADON,  6, -1,     0,    false },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    true  },
+            { SEG_WAVE,  PAT_SWEEP,   7,  0,     0,    false },
+            { SEG_WAVE,  PAT_WEAVE,   6,  1,     0,    true  },
+            { SEG_FIELD, PAT_VDIVE,   0,  0,  8000,    false },
+            { SEG_WAVE,  PAT_VDIVE,   7, -1,     0,    true  },
+            { SEG_BOSS,  PAT_VDIVE,   0,  0,     0,    false },
+        },
     };
     return scripts[_stageNum][_seg];
 }
@@ -128,6 +140,11 @@ void StarFluxGame::spawnField(AudioEngine &audio) {
             if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
             spawnPlanetHazard();
             _nextFieldAt = millis() + fieldMs(PLANET_FIELD_MS);
+            break;
+        case STAGE_MOTHER:
+            if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
+            spawnMotherHazard();
+            _nextFieldAt = millis() + fieldMs(HULL_FIELD_MS);
             break;
         case STAGE_CANYON:
             if (pickupNear(BOX_SPAWN_Z)) { _nextFieldAt = millis() + 100; break; }
@@ -579,7 +596,10 @@ void StarFluxGame::destroyRock(Rock &r, bool byPlayer, AudioEngine &audio) {
 bool StarFluxGame::pickupClear(float x, float y, float z) const {
     for (const auto &b : _boxes) {
         if (!b.active || fabsf(b.z - z) > PICKUP_CLEAR_Z + b.depth * 0.5f) continue;
-        float nx = clampf(x, b.x0, b.x1), ny = clampf(y, b.y0, b.y1);
+        // A door counts everywhere it slides to.
+        const float bx0 = b.slide != 0 ? fminf(b.rx0, b.rx0 + b.slide) : b.x0;
+        const float bx1 = b.slide != 0 ? fmaxf(b.rx1, b.rx1 + b.slide) : b.x1;
+        float nx = clampf(x, bx0, bx1), ny = clampf(y, b.y0, b.y1);
         float dx = x - nx, dy = y - ny;
         if (dx * dx + dy * dy < PICKUP_CLEAR_R * PICKUP_CLEAR_R) return false;
     }
