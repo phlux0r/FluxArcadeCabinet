@@ -180,6 +180,9 @@ void RollFluxGame::respawn() {
     _fellOut = false;
     _charging = false;
     _dashUntil = 0;
+    _dashBrakeDue = false;
+    _braking = false;
+    _camHold = false;
     _yaw = _respawnYaw;
     _leanRoll = _leanPitch = 0;
     _holdUntil = millis() + RESPAWN_HOLD_MS;
@@ -225,9 +228,9 @@ void RollFluxGame::banner(const char* text, uint16_t colour, unsigned long ms) {
 }
 
 // The Flux Dash: press A with a step on the meter to charge (the ball
-// held back and glowing), let go to dash, by how long it charged. Let go
-// too soon and nothing happens, the step kept. The way: the stick's, or
-// the ball's own with the stick centred (or the camera's, standing still).
+// held back and glowing, a line on the floor showing the way it'll go),
+// let go to dash, by how long it charged. Let go too soon and nothing
+// happens, the step kept.
 void RollFluxGame::updateDash(const InputState &in) {
     const bool pressed = in.btnA && !_prevA;
     _prevA = in.btnA;
@@ -239,22 +242,30 @@ void RollFluxGame::updateDash(const InputState &in) {
         }
         return;
     }
+    float dx, dz;
+    dashDirection(in, dx, dz);
+    const float len = sqrtf(dx * dx + dz * dz) + 1e-6f;
+    _aimX = dx / len;
+    _aimZ = dz / len;
     if (in.btnA) return;
     _charging = false;
     const unsigned long held = millis() - _chargeAt;
     if (held < DASH_MIN_CHARGE_MS) return;
     const float t = held >= DASH_CHARGE_MS ? 1.0f : (float)held / DASH_CHARGE_MS;
-    float dx, dz;
+    startDash(dx, dz, DASH_SPEED_MIN + (DASH_SPEED_MAX - DASH_SPEED_MIN) * t);
+    _dashGems -= DASH_GEMS_PER_STEP;
+    ++_dashes;
+    sfx(SFX_DASH);
+}
+
+// The way a dash goes: the stick's, or the ball's own with the stick
+// centred (or the camera's, standing still).
+void RollFluxGame::dashDirection(const InputState &in, float &dx, float &dz) const {
     stickToWorld(in, dx, dz);
     if (dx * dx + dz * dz < (0.3f * BALL_ACCEL) * (0.3f * BALL_ACCEL)) {
         if (_vx * _vx + _vz * _vz > 50.0f * 50.0f) { dx = _vx; dz = _vz; }
         else { dx = sinf(_yaw); dz = cosf(_yaw); }
     }
-    startDash(dx, dz, DASH_SPEED_MIN + (DASH_SPEED_MAX - DASH_SPEED_MIN) * t);
-    _dashGems -= DASH_GEMS_PER_STEP;
-    ++_dashes;
-    _dashUntil = millis() + DASH_FADE_MS;
-    sfx(SFX_DASH);
 }
 
 // The clock, falls, gems, checkpoints and the goal, after the ball's moved.
@@ -361,12 +372,21 @@ void RollFluxGame::updateLean(const InputState &in) {
 // Behind and above the ball, turning slowly to the way it's rolling (not
 // while it's nearly still, falling, or rolling back towards the camera,
 // down a ramp say, when it holds its heading so the stick keeps its
-// sense), and looking a little ahead of it. While the ball falls the
+// sense; nor while it's been turned by hand, until the ball sets off a
+// new way), and looking a little ahead of it. While the ball falls the
 // camera stays put, watching it go.
 void RollFluxGame::updateCamera(bool snap) {
     if (!(_falling && !snap)) {
         const float speed = sqrtf(_vx * _vx + _vz * _vz);
-        if (speed > YAW_FOLLOW_SPEED && !snap) {
+        if (_camHold && speed > YAW_FOLLOW_SPEED) {
+            const float heading = atan2f(_vx, _vz);
+            if (!_camHoldMoving) { _camHoldMoving = true; _camHoldDir = heading; }
+            float off = heading - _camHoldDir;
+            while (off > (float)PI) off -= 2.0f * (float)PI;
+            while (off < -(float)PI) off += 2.0f * (float)PI;
+            if (fabsf(off) > CAMERA_HOLD_TURN) _camHold = false;
+        }
+        if (speed > YAW_FOLLOW_SPEED && !snap && !_camHold) {
             float diff = atan2f(_vx, _vz) - _yaw;
             while (diff > (float)PI) diff -= 2.0f * (float)PI;
             while (diff < -(float)PI) diff += 2.0f * (float)PI;
@@ -418,9 +438,19 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 }
 
 bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    updateDash(input);
-    stepBall(input);
-    updateLean(input);
+    // B held: the stick turns the camera instead of the course.
+    InputState in = input;
+    if (input.btnB) {
+        _yaw += input.joyY * CAMERA_TURN_SPEED * _dt;
+        if (_yaw > (float)PI) _yaw -= 2.0f * (float)PI;
+        if (_yaw < -(float)PI) _yaw += 2.0f * (float)PI;
+        in.joyX = in.joyY = 0;
+        _camHold = true;
+        _camHoldMoving = false;
+    }
+    updateDash(in);
+    stepBall(in);
+    updateLean(in);
     updateCamera(false);
     stepRules(audio);
     if (_phase == PHASE_ATTRACT) {       // the demo's last ball: back to the title

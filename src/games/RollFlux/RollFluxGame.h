@@ -67,6 +67,7 @@ private:
     void collectGems(AudioEngine &audio);
     void reachGoal(AudioEngine &audio);
     void updateDash(const InputState &in);
+    void dashDirection(const InputState &in, float &dx, float &dz) const;
     void updateLean(const InputState &in);
     void updateCamera(bool snap);
     void enterGameOver(AudioEngine &audio);
@@ -126,6 +127,7 @@ private:
     void drawBall(uint16_t* buf, int w, int h);
     void drawShadow(uint16_t* buf, int w, int h, float floorY);
     void drawGem(uint16_t* buf, int w, int h, int c, int r);
+    void drawAim(uint16_t* buf, int w, int h);
     void renderFrame(GFXcanvas16 &canvas, bool withBall = true);
     uint16_t fog(uint16_t col, float depth) const;
     float gemY(int c, int r) const;
@@ -179,6 +181,7 @@ private:
     // Past the usual top speed, from a boost pad or a dash, fading at
     // _extraFade a second.
     float _extraSpeed = 0, _extraFade = 0;
+    unsigned long _extraHoldUntil = 0;   // a dash's extra holds until then, then fades
     bool  _falling = false;
     bool  _fellOut = false;           // set by stepBall: below the course
     float _bump = 0;                  // the hardest knock this frame (wall or rail)
@@ -190,7 +193,12 @@ private:
     bool  _charging = false;
     bool  _prevA = false;             // so a held A doesn't charge again
     unsigned long _chargeAt = 0;
-    unsigned long _dashUntil = 0;     // the ball glows while dashing
+    unsigned long _dashUntil = 0;     // the burst (the ball glows) lasts until then
+    float _dashReturn = 0;            // the speed the brake after it settles to
+    bool  _dashBrakeDue = false;
+    bool  _braking = false;
+    unsigned long _brakeAt = 0;       // when the brake began
+    float _aimX = 0, _aimZ = 1;       // which way a dash would go, shown while charging
     long  _dashes = 0;
 
     // --- Score ---
@@ -209,6 +217,10 @@ private:
     // --- The camera, eased after the ball ---
     float _camX = 0, _camY = 0, _camZ = 0, _yaw = 0;
     float _leanRoll = 0, _leanPitch = 0;
+    // Turned by hand (B and the stick): held until the ball sets off a new
+    // way, the way it was rolling then in _camHoldDir.
+    bool  _camHold = false, _camHoldMoving = false;
+    float _camHoldDir = 0;
     float _orbit = 0;                 // the attract screens' view, round course 1
     float _m[9] = {};                 // Jet's camera matrix this frame
     Renderer::Camera _camera;

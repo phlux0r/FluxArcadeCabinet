@@ -120,7 +120,7 @@ void RollFluxGame::renderHowTo(GFXcanvas16 &canvas, bool dash) {
         drawCentred(canvas, "BEFORE TIME RUNS OUT", 50, ArcadeConfig::COLOR_WHITE);
         drawCentred(canvas, "GEMS: +2 SECONDS", 62, ArcadeConfig::COLOR_YELLOW);
         drawCentred(canvas, "DARK ROW: CHECKPOINT", 72, ArcadeConfig::COLOR_CYAN);
-        drawCentred(canvas, "DON'T FALL OFF!", 84, ArcadeConfig::COLOR_ORANGE);
+        drawCentred(canvas, "B+STICK: TURN CAMERA", 84, ArcadeConfig::COLOR_ORANGE);
     } else {
         drawCentred(canvas, "FLUX DASH", 18, ArcadeConfig::COLOR_CYAN);
         drawCentred(canvas, "5 GEMS FILL A STEP", 30, ArcadeConfig::COLOR_YELLOW);

@@ -168,6 +168,20 @@ static bool scenarioPhysics() {
     check("a full dash clears a two-cell gap", jump(4, 9, true), ok);
     check("but not a three-cell one", !jump(7, 12, true), ok);
     check("and rolling at top speed doesn't clear the two", !jump(4, 9, false), ok);
+    // But it doesn't fling the ball on: on open floor (1-2's long row 18,
+    // east from its west end) a full dash from a standstill is over within
+    // about three and a half cells, braked back to a steady roll.
+    g.loadCourse(1);
+    at(g, 1, 18);
+    const float dashX0 = g._bx;
+    g.startDash(1, 0, DASH_SPEED_MAX);
+    for (int f = 0; f < 45 && g._dashBrakeDue; ++f) run(g, 0, 0, 1);
+    char dashLine[96];
+    snprintf(dashLine, sizeof(dashLine), "a dash on open floor is over within 3.5 cells (%.1f), braked (to %.0f)",
+             (g._bx - dashX0) / CELL, g._vx);
+    check(dashLine, !g._falling && !g._dashBrakeDue && g._bx - dashX0 < 3.5f * CELL &&
+          g._vx <= DASH_RETURN_MIN + 60, ok);
+    g.loadCourse(0);
     // Turning as it rolls: rolled east, the top of the ball has gone east;
     // rolled south, south; by the distance over the radius.
     at(g, 5.5f, 33);
@@ -358,6 +372,24 @@ static bool scenarioRules() {
     const int taken = g._courseGemsTaken;
     for (int f = 0; f < 60 && g._courseGemsTaken == taken; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
     check("a gem goes on the dash meter", g._dashGems == meter + 1, ok);
+
+    // B and the stick turn the camera, not the course: the ball isn't
+    // pushed. Let go, and the camera stays turned until the ball rolls off
+    // a new way; rolling the way it now faces, it stays put.
+    at(g, 5.5f, 33);
+    g._yaw = 0;
+    g.updateCamera(true);
+    InputState camRight{}; camRight.btnB = true; camRight.joyY = 1.0f;
+    for (int f = 0; f < 15; ++f) frame(g, audio, canvas, camRight);
+    const float turned = g._yaw;
+    snprintf(line, sizeof(line), "B + stick right turns the camera right (%.2f rad), the ball left alone", turned);
+    check(line, turned > 0.8f && sqrtf(g._vx * g._vx + g._vz * g._vz) < 1.0f, ok);
+    for (int f = 0; f < 30; ++f) frame(g, audio, canvas);
+    check("let go: the camera stays turned", fabsf(g._yaw - turned) < 0.01f, ok);
+    for (int f = 0; f < 30; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    snprintf(line, sizeof(line), "stick up rolls it the camera's new way (heading %.2f, camera %.2f)",
+             atan2f(g._vx, g._vz), g._yaw);
+    check(line, fabsf(atan2f(g._vx, g._vz) - turned) < 0.15f && fabsf(g._yaw - turned) < 0.1f, ok);
 
     // The last ball gone: game over; A (after its delay) starts again.
     at(g, 5.5f, 22);
@@ -639,12 +671,16 @@ static void scenarioPose() {
         { "climb",    3, 5.5f, 24.5f, 0,    0,  0, 0, false },
         { "icerelay", 4, 5.5f, 10.5f, 0,    0,  0, 0, true },
         { "frost",    7, 5.5f, 21.5f, 0,    0,  0, 0, false },
+        // Charging a dash: the aim line ahead, a little to the right.
+        { "aim",      0, 5.5f, 23.5f, 0,    0,  0, 0, false },
     };
     for (const Spot &s : spots) {
         g.loadCourse(s.course);
         g._course = s.course;
         at(g, s.c, s.r);
         g._dashUntil = s.glow ? g_fakeMillis + 1000 : 0;
+        g._charging = !strcmp(s.name, "aim");
+        g._aimX = 0.38f; g._aimZ = 0.92f;
         g._yaw = s.yawDeg * (float)PI / 180.0f;
         g._leanRoll = s.joyY * LEAN_ROLL;
         g._leanPitch = -s.joyX * LEAN_PITCH;
@@ -668,6 +704,7 @@ static void scenarioPose() {
         d.maybeDump(0, canvas);
     }
     // The title, over the orbiting course 1.
+    g._charging = false;
     g.enterAttract();
     for (int f = 0; f < 60; ++f) frame(g, audio, canvas);
     FrameDumper d("roll_title");

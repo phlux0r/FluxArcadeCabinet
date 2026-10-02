@@ -87,10 +87,17 @@ void RollFluxGame::stepBall(const InputState &in) {
         _vx *= keep > 0 ? keep : 0;
         _vz *= keep > 0 ? keep : 0;
     }
-    _extraSpeed -= _extraFade * dt;
+    if ((long)(millis() - _extraHoldUntil) >= 0) _extraSpeed -= _extraFade * dt;
     if (_extraSpeed < 0) _extraSpeed = 0;
-    // Charging a dash holds the ball back.
-    const float cap = _charging ? BALL_MAX_SPEED * DASH_CHARGE_HOLD : BALL_MAX_SPEED + _extraSpeed;
+    // Charging a dash holds the ball back; after a dash's burst, once it's
+    // on the floor, it brakes back to the speed it had before.
+    float cap = _charging ? BALL_MAX_SPEED * DASH_CHARGE_HOLD : BALL_MAX_SPEED + _extraSpeed;
+    if (!_charging && _dashBrakeDue && (long)(millis() - _dashUntil) >= 0 && !_falling) {
+        if (!_braking) { _braking = true; _brakeAt = millis(); }
+        const float t = (float)(millis() - _brakeAt) / DASH_BRAKE_MS;
+        if (t >= 1.0f) { cap = _dashReturn; _dashBrakeDue = false; _braking = false; }
+        else cap = BALL_MAX_SPEED + (_dashReturn - BALL_MAX_SPEED) * t;
+    }
     const float speed = sqrtf(_vx * _vx + _vz * _vz);
     if (speed > cap) { _vx *= cap / speed; _vz *= cap / speed; }
 
@@ -132,7 +139,8 @@ void RollFluxGame::stepBall(const InputState &in) {
             else _by = gy;
         }
         if (_falling) {
-            _vy -= GRAVITY * sdt;
+            // A dash carries the ball: less gravity during its burst.
+            _vy -= GRAVITY * ((long)(millis() - _dashUntil) < 0 ? DASH_GRAVITY : 1.0f) * sdt;
             _by += _vy * sdt;
             // Landing: onto the floor from above, not from under its edge.
             if (ground && _by <= gy && gy - _by < LAND_LIP) { _by = gy; _vy = 0; _falling = false; }
@@ -143,11 +151,17 @@ void RollFluxGame::stepBall(const InputState &in) {
 }
 
 // A dash: the ball's speed jumps to `strength` times its usual top speed
-// along (dx, dz), the extra fading over DASH_FADE_MS.
+// along (dx, dz), the extra held for DASH_HOLD_MS and fading over
+// DASH_FADE_MS; then it brakes back (stepBall).
 void RollFluxGame::startDash(float dx, float dz, float strength) {
     const float len = sqrtf(dx * dx + dz * dz);
     if (len < 1e-3f) return;
     const float speed = BALL_MAX_SPEED * strength;
+    _dashReturn = fmaxf(DASH_RETURN_MIN, fminf(sqrtf(_vx * _vx + _vz * _vz), BALL_MAX_SPEED * DASH_CHARGE_HOLD));
+    _extraHoldUntil = millis() + DASH_HOLD_MS;
+    _dashUntil = _extraHoldUntil + DASH_FADE_MS;
+    _dashBrakeDue = true;
+    _braking = false;
     _vx = dx / len * speed;
     _vz = dz / len * speed;
     _extraSpeed = speed - BALL_MAX_SPEED;

@@ -55,7 +55,10 @@ inline constexpr float EXTRA_SPEED_DECAY = 700.0f;
 // gems a step. Hold A (with a step) to charge, the ball held to a fraction
 // of its top speed; let go to dash, a step used: the ball's speed jumps to
 // between DASH_SPEED_MIN and DASH_SPEED_MAX times its usual top speed (by
-// how long it charged) and fades back over DASH_FADE_MS. At full speed it
+// how long it charged), holds for DASH_HOLD_MS and falls away over
+// DASH_FADE_MS, gravity at DASH_GRAVITY meanwhile (it carries the ball). Then, once it's on the
+// floor, it brakes over DASH_BRAKE_MS to the speed it had before (at least
+// DASH_RETURN_MIN), so it doesn't fling the ball on. At full speed it
 // clears a two-cell gap, not a three.
 inline constexpr int   DASH_GEMS_PER_STEP = 5;
 inline constexpr int   DASH_STEPS         = 3;
@@ -63,8 +66,12 @@ inline constexpr unsigned long DASH_CHARGE_MS     = 400;
 inline constexpr unsigned long DASH_MIN_CHARGE_MS = 100;   // let go sooner: no dash, no step used
 inline constexpr float DASH_CHARGE_HOLD   = 0.6f;
 inline constexpr float DASH_SPEED_MIN     = 1.5f;
-inline constexpr float DASH_SPEED_MAX     = 2.2f;
-inline constexpr unsigned long DASH_FADE_MS = 600;
+inline constexpr float DASH_SPEED_MAX     = 2.0f;
+inline constexpr unsigned long DASH_HOLD_MS  = 170;
+inline constexpr unsigned long DASH_FADE_MS  = 60;
+inline constexpr unsigned long DASH_BRAKE_MS = 150;
+inline constexpr float DASH_GRAVITY    = 0.5f;
+inline constexpr float DASH_RETURN_MIN = 400.0f;
 
 // --- Rules -------------------------------------------------------------------
 inline constexpr int   START_LIVES    = 4;
@@ -104,6 +111,11 @@ inline constexpr float   CAMERA_LOOK_AHEAD = 120.0f;
 inline constexpr float   YAW_FOLLOW_SPEED = 120.0f;   // slower than this, the camera holds its heading
 inline constexpr float   YAW_FOLLOW_MAX = 1.75f;      // radians: rolling further round than this (back
                                                       // towards the camera), it holds its heading too
+// Hold B and the stick turns the camera (radians a second at full stick).
+// Let go and it keeps that heading until the ball sets off a way more than
+// CAMERA_HOLD_TURN from where it was heading.
+inline constexpr float   CAMERA_TURN_SPEED = 2.2f;
+inline constexpr float   CAMERA_HOLD_TURN  = 0.5f;
 // The course leans with the stick, so the tilt shows (radians at full stick).
 inline constexpr float   LEAN_ROLL  = 0.10f;
 inline constexpr float   LEAN_PITCH = 0.06f;

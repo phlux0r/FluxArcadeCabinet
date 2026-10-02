@@ -169,9 +169,11 @@ arrow) throw it along their arrow, past its usual top speed. Gems
 (spinning yellow diamonds) are 100 points and 2 more seconds, an extra
 ball every 100, and fill the **Flux Dash** meter along the bottom: 5 gems
 a step, 3 steps. With a step, hold A to charge (the ball held back,
-flickering) and let go to dash the way you're pushing: up to 2.2 times its
-top speed, fading over 0.6s, enough at a full charge to jump a two-cell
-gap (not a three). A checkpoint row (dark, lit once reached) is where a
+flickering, a dashed line on the floor showing the way it'll go) and let
+go to dash the way you're pushing: up to twice its top speed for a moment,
+with less gravity, enough at a full charge to jump a two-cell gap (not a
+three); then it brakes back to the speed it had, so a dash on open floor
+is over within about three cells. A checkpoint row (dark, lit once reached) is where a
 fall puts you back, with the time you had there; out of time, it's a ball
 gone and the course from the top. At the goal: 100 a second left, 2,000
 for no falls, 5,000 for every gem. Eight courses in two worlds: the Orbit
@@ -179,7 +181,9 @@ Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb) and the Ice
 Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash); after 2-4
 it goes round again with 15% less time, to 60%. The camera follows
 behind, turning slowly to the way you roll (but not round to face you
-when you roll back), and the course leans with the stick. Everything is
+when you roll back), and the course leans with the stick. Hold B and the
+stick turns the camera instead (the ball rolls on by itself); let go and
+it stays turned until you set off a new way. Everything is
 drawn straight into the canvas with Jet's camera maths (not its Scene):
 stage 0 measured that at ~55fps on the board against ~25 through Jet. The
 attract cycle orbits course 1 under the title (drawn live, not an image),
@@ -319,7 +323,8 @@ the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
 
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
-to charge the Flux Dash, let go to dash.
+to charge the Flux Dash, let go to dash. Hold B and the stick turns the
+camera left or right instead.
 
 Star Flux: the joystick flies the ship round the screen. A fires twin
 lasers, once per press as fast as you tap, or steadily while held. Press B

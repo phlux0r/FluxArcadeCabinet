@@ -548,7 +548,9 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
         if (s == items) break;
         const Item &it = _items[s];
         switch (it.type) {
-            case I_BALL:   drawBall(buf, w, h); break;
+            case I_BALL:   if (_charging) drawAim(buf, w, h);
+                           drawBall(buf, w, h);
+                           break;
             case I_SHADOW: drawShadow(buf, w, h, it.bottom); break;
             default:       drawGem(buf, w, h, it.c, it.r); break;
         }
@@ -561,6 +563,28 @@ void RollFluxGame::renderFrame(GFXcanvas16 &canvas, bool withBall) {
     drawSky(canvas);
     drawStars(canvas);
     drawWorld(canvas, withBall);
+}
+
+// While a dash charges: a dashed line on the floor ahead of the ball, the
+// way it'll go, flashing. Over the void it stays at the ball's height, so
+// it shows where a jump's heading too. Drawn just before the ball (so not
+// over it), with whatever's nearer still drawn over it.
+void RollFluxGame::drawAim(uint16_t* buf, int w, int h) {
+    const float px = -_aimZ * 12.0f, pz = _aimX * 12.0f;   // half its width, across it
+    const uint16_t col = ((millis() / 120) & 1) ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_YELLOW;
+    for (int i = 0; i < 4; ++i) {
+        const float d0 = BALL_RADIUS + 20.0f + i * 95.0f, d1 = d0 + 60.0f;
+        float q[4][3];
+        const float ds[2] = { d0, d1 };
+        for (int k = 0; k < 2; ++k) {
+            const float x = _bx + _aimX * ds[k], z = _bz + _aimZ * ds[k];
+            float y;
+            if (!floorAt(x, z, y) || y > _by + STEP_UP) y = _by;
+            toCam(x - px, y + 2.0f, z - pz, q[k == 0 ? 0 : 1]);
+            toCam(x + px, y + 2.0f, z + pz, q[k == 0 ? 3 : 2]);
+        }
+        drawPoly(buf, w, h, q, 4, col);
+    }
 }
 
 // The sky for this course's world.

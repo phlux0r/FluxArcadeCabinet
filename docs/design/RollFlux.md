@@ -129,6 +129,20 @@ the way or crossing an edge it can't roll over. The harness runs it on
 every course (`god`): all eight clear with no falls. Not yet: the
 rolling tone that follows speed (section 11).
 
+### After stage 1, on the board
+
+Over 55fps; ice about right (not meant to be easy); the courses good. The
+dash was a catapult: at 2.2x top speed fading over 0.6s it carried the
+ball well past where it was aimed, and off the platform. Now it's 2.0x,
+held for 0.17s and gone over 0.06s, with half gravity meanwhile (so it
+still jumps a two-cell gap, not a three), then braked back to the speed
+the ball had before (at least 400) over 0.15s once it's on the floor: a
+dash on open floor is over within about three cells. While it charges a
+dashed line on the floor shows its way. A camera stuck at a bad angle
+made the dash hard to aim, so B held turns the camera with the stick (the
+ball isn't pushed meanwhile), and it holds that heading until the ball
+sets off a new way. A quick tap of B stays free for stage 2's colour swap.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35
