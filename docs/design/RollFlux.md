@@ -104,6 +104,14 @@ striped, with a shadow; the starfield. Still to come in stage 1: the
 other courses of worlds 1-2, the Flux Dash, the attract cycle and demo,
 high scores and name entry, and the sounds (tones for now).
 
+On the board: over 55fps; rails and the boost pad good, 60s about right.
+Ice felt no different, so it now grips far less (28% of the stick's push,
+8% of the friction). Course 1's sideways ramp to the goal was two ramp
+cells in a row, a sawtooth (up, a drop, up again) that trapped the ball;
+it's one ramp now, and the harness checks every course for it. The camera
+no longer swings round to face the ball rolling back down a slope, which
+had swapped the stick's sense round under the player.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

@@ -72,7 +72,15 @@ struct Driver {
             dx = wx - g._bx; dz = wz - g._bz;
         }
         const float d = sqrtf(dx * dx + dz * dz);
-        if (d < 70.0f && next < ROUTE_N - 1) { ++next; routePoint(g, next, wx, wz); dx = wx - g._bx; dz = wz - g._bz; }
+        // Reached it, or gone past it (nearer the one after than it is).
+        bool passed = false;
+        if (next < ROUTE_N - 1) {
+            float ax, az;
+            routePoint(g, next + 1, ax, az);
+            passed = (ax - g._bx) * (ax - g._bx) + (az - g._bz) * (az - g._bz) <
+                     (ax - wx) * (ax - wx) + (az - wz) * (az - wz);
+        }
+        if ((d < 70.0f || passed) && next < ROUTE_N - 1) { ++next; routePoint(g, next, wx, wz); dx = wx - g._bx; dz = wz - g._bz; }
         const float dd = sqrtf(dx * dx + dz * dz) + 1e-3f;
         const float want = fminf(420.0f, dd * 2.5f);
         float ax = (dx / dd * want - g._vx) / 300.0f, az = (dz / dd * want - g._vz) / 300.0f;
@@ -174,6 +182,17 @@ static bool scenarioPhysics() {
     char line[96];
     snprintf(line, sizeof(line), "coasts further on ice (%.0f) than on floor (%.0f)", iceDist, floorDist);
     check(line, iceDist > floorDist * 1.3f, ok);
+    // And steers less: rolling north, full stick right for a third of a
+    // second turns it much less on ice (rows 15-16) than on floor.
+    auto turned = [&](float r) {
+        at(g, 5.5f, r);
+        g._vz = 500;
+        run(g, 0, 1.0f, 10);
+        return atan2f(g._vx, g._vz);
+    };
+    const float iceTurn = turned(16.4f), floorTurn = turned(24.5f);
+    snprintf(line, sizeof(line), "steers less on ice (%.2f rad) than on floor (%.2f)", iceTurn, floorTurn);
+    check(line, iceTurn < floorTurn * 0.4f, ok);
     // The boost pad (row 28, pushing north) speeds it up, past its usual top speed.
     auto peak = [&](float vz) {
         at(g, 5.5f, 29);
@@ -206,6 +225,47 @@ static bool scenarioPhysics() {
     run(g, 0, 0, 4);
     snprintf(line, sizeof(line), "rolled south, its top turns south (top z %.2f)", g._rot[7]);
     check(line, g._rot[7] < -0.3f && fabsf(g._rot[1]) < 0.01f, ok);
+    // The camera turns to follow the ball rolling sideways, but holds its
+    // heading while the ball rolls back towards it (down a ramp, say), so
+    // the stick doesn't swap round.
+    auto follow = [&](float vx, float vz) {
+        at(g, 5.5f, 33);
+        g._vx = vx; g._vz = vz;
+        g._dt = 0.033f;
+        for (int f = 0; f < 30; ++f) g.updateCamera(false);
+        return g._yaw;
+    };
+    const float backYaw = follow(-60, -600), sideYaw = follow(600, 0);
+    snprintf(line, sizeof(line), "camera holds while it rolls back (yaw %.2f), follows sideways (%.2f)",
+             backYaw, sideYaw);
+    check(line, fabsf(backYaw) < 0.05f && sideYaw > 1.0f, ok);
+    // Every course: no ramp whose high edge drops to a lower floor beyond
+    // it (a sawtooth: the ball tops it, falls, and meets a step back).
+    int saw = 0;
+    for (int k = 0; k < COURSE_COUNT; ++k) {
+        g.loadCourse(k);
+        for (int r = 0; r < g._h; ++r)
+            for (int c = 0; c < g._w; ++c) {
+                const uint8_t kind = g._cells[r][c].kind;
+                if (!RollFluxGame::isRamp(kind)) continue;
+                static const int DC[4] = { 0, 0, 1, -1 }, DR[4] = { -1, 1, 0, 0 };
+                const int d = kind - RollFluxGame::K_RAMP_N;
+                const int nc = c + DC[d], nr = r + DR[d];
+                if (!g.solid(nc, nr)) continue;
+                const float top = (g._cells[r][c].h + 1) * HEIGHT_STEP;
+                // The neighbour's height just past the shared edge.
+                const float ex = g.cellX0(c) + CELL * 0.5f + DC[d] * (CELL * 0.5f + 1.0f);
+                const float ez = g.cellZ0(r) + CELL * 0.5f - DR[d] * (CELL * 0.5f + 1.0f);
+                float ny = 0;
+                g.floorAt(ex, ez, ny);
+                if (ny < top - STEP_DOWN) {
+                    printf("    course %d: ramp at col %d row %d drops to %.0f beyond its top (%.0f)\n", k + 1, c, r, ny, top);
+                    ++saw;
+                }
+            }
+    }
+    g.loadCourse(0);
+    check("no course has a ramp that drops away at its top", saw == 0, ok);
     // Never inside the floor: fling it about at top speed with 100ms frames.
     int inside = 0;
     for (int trial = 0; trial < 40; ++trial) {

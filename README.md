@@ -164,14 +164,14 @@ half). The stick tilts the course and the ball rolls that way
 (camera-relative: up rolls it away from you), to the chequered goal before
 the clock runs out. Ramps roll it up or down a step; a bigger step is a
 wall; off an edge it falls, and that's a ball gone (4 to start). Rails
-(grey) keep it on narrow ways; ice (pale blue) is slippery; boost pads
+(grey) keep it on narrow ways; ice (pale blue) barely grips, so the ball drifts and is slow to turn; boost pads
 (orange, yellow arrow) throw it along their arrow, past its usual top
 speed. Gems (spinning yellow diamonds) are 100 points and 2 more seconds,
 and an extra ball every 100. A checkpoint row (blue, cyan once reached) is
 where a fall puts you back, with the time you had there; out of time, it's
 a ball gone and the course from the top. At the goal: 100 a second left,
 2,000 for no falls, 5,000 for every gem. The camera follows behind, turning
-slowly to the way you roll, and the course leans with the stick.
+slowly to the way you roll (but not round to face you when you roll back), and the course leans with the stick.
 Everything is drawn straight into the canvas with Jet's camera maths (not
 its Scene): stage 0 measured that at ~55fps on the board against ~25
 through Jet. For now there's one course, which loops (15% less time each

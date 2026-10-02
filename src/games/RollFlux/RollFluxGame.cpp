@@ -251,7 +251,9 @@ void RollFluxGame::updateLean(const InputState &in) {
 }
 
 // Behind and above the ball, turning slowly to the way it's rolling (not
-// while it's nearly still, or falling, when it holds its heading), and
+// while it's nearly still, falling, or rolling back towards the camera,
+// down a ramp say, when it holds its heading so the stick keeps its
+// sense), and
 // looking a little ahead of it. While the ball falls the camera stays put,
 // watching it go.
 void RollFluxGame::updateCamera(bool snap) {
@@ -261,7 +263,7 @@ void RollFluxGame::updateCamera(bool snap) {
             float diff = atan2f(_vx, _vz) - _yaw;
             while (diff > (float)PI) diff -= 2.0f * (float)PI;
             while (diff < -(float)PI) diff += 2.0f * (float)PI;
-            _yaw += diff * fminf(1.0f, CAMERA_YAW_EASE * _dt);
+            if (fabsf(diff) < YAW_FOLLOW_MAX) _yaw += diff * fminf(1.0f, CAMERA_YAW_EASE * _dt);
         }
         const float fx = sinf(_yaw), fz = cosf(_yaw);
         const float tx = _bx - fx * CAMERA_BACK, ty = _by + CAMERA_UP, tz = _bz - fz * CAMERA_BACK;

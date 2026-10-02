@@ -32,8 +32,8 @@ inline constexpr float BALL_RADIUS   = 60.0f;
 inline constexpr float BALL_ACCEL    = 1100.0f;   // full stick
 inline constexpr float BALL_MAX_SPEED = 1300.0f;
 inline constexpr float BALL_FRICTION = 1.1f;      // fraction of speed lost a second, about
-inline constexpr float ICE_FRICTION  = 0.25f;     // ice: this much of the friction
-inline constexpr float ICE_GRIP      = 0.55f;     // and this much of the stick's push
+inline constexpr float ICE_FRICTION  = 0.08f;     // ice: this much of the friction
+inline constexpr float ICE_GRIP      = 0.28f;     // and this much of the stick's push
 inline constexpr float SLOPE_GRAVITY = 900.0f;    // along a ramp's fall line
 inline constexpr float GRAVITY       = 2600.0f;   // falling
 inline constexpr float STEP_UP       = 30.0f;     // a rise bigger than this is a wall
@@ -75,6 +75,8 @@ inline constexpr float   CAMERA_YAW_EASE = 1.7f;  // per second, towards the dir
 inline constexpr float   CAMERA_POS_EASE = 9.0f;  // per second, after the ball
 inline constexpr float   CAMERA_LOOK_AHEAD = 120.0f;
 inline constexpr float   YAW_FOLLOW_SPEED = 120.0f;   // slower than this, the camera holds its heading
+inline constexpr float   YAW_FOLLOW_MAX = 1.75f;      // radians: rolling further round than this (back
+                                                      // towards the camera), it holds its heading too
 // The course leans with the stick, so the tilt shows (radians at full stick).
 inline constexpr float   LEAN_ROLL  = 0.10f;
 inline constexpr float   LEAN_PITCH = 0.06f;
