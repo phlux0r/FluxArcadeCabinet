@@ -208,24 +208,6 @@ void TankFluxGame::drawBossBonus(GFXcanvas16 &canvas) {
     centredText(canvas, buf, STRIP_Y);
 }
 
-// Shown once A+B have been held past QUIT_HINT_DELAY_MS; the bar fills over
-// the rest of the hold.
-void TankFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
-    if (_quitHoldStart == 0) return;
-    const unsigned long delay = QUIT_HINT_DELAY_MS;
-    const unsigned long total = QUIT_HOLD_MS;
-    unsigned long held = millis() - _quitHoldStart;
-    if (held < delay) return;
-    if (held > total) held = total;
-    int fillW = (int)((unsigned long)(W - 2) * (held - delay) / (total - delay));
-    canvas.fillRect(0, STRIP_Y - 2, W, 12, ArcadeConfig::COLOR_BLACK);
-    canvas.fillRect(1, STRIP_Y + 8, fillW, 2, ArcadeConfig::COLOR_AMBER);
-    canvas.setFont();
-    canvas.setTextSize(1);
-    canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-    centredText(canvas, "HOLD TO QUIT", STRIP_Y - 1);
-}
-
 // Title art with a blinking start prompt and the high score in the image's
 // black bottom strip.
 void TankFluxGame::renderAttractGame(GFXcanvas16 &canvas) {
@@ -264,7 +246,7 @@ void TankFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     canvas.setCursor(4, 38);
     canvas.print("[HOLD B]+JOY STRAFE");
     canvas.setCursor(4, 48);
-    canvas.print("[HOLD A+B] QUIT");
+    canvas.print("[HOLD BACK] QUIT");
 
     canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
     canvas.setCursor(4, 60);
@@ -320,7 +302,7 @@ void TankFluxGame::renderGameOver(GFXcanvas16 &canvas) {
     canvas.setCursor(20, 90);
     canvas.print("[BTN A] PLAY AGAIN");
     canvas.setCursor(20, 103);
-    canvas.print("[BTN B] QUIT");
+    canvas.print("[HOLD BACK] QUIT");
 }
 
 }  // namespace tankflux

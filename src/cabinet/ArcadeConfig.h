@@ -54,6 +54,14 @@ struct ArcadeConfig {
     static const int JOY_Y    = 17;
     static const int BUTTON_A = 4;
     static const int BUTTON_B = 21;
+    // Back: hold it BACK_HOLD_MS to quit a game to the launcher (main.cpp
+    // handles it for every game, so A and B are purely the game's). Wired
+    // GPIO -> button -> GND, internal pull-up, active LOW. GPIO 18 is free
+    // and nothing special: not a strapping pin (0, 3, 45, 46), USB (19/20),
+    // UART0 (43/44) or flash/PSRAM.
+    static const int BUTTON_BACK = 18;
+    static const unsigned long BACK_HOLD_MS = 1000;
+    static const unsigned long BACK_HINT_DELAY_MS = 150;   // a brush doesn't flash the bar
 
     static const int JOY_CENTER       = 2048;
     static const int JOY_DEADZONE     = 200;

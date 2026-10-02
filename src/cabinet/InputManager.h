@@ -6,7 +6,7 @@
 
 // =============================================================================
 // INPUT MANAGER
-// Reads the joystick and both buttons once per frame.
+// Reads the joystick and the buttons (A, B and Back) once per frame.
 // Applies deadzone, smoothing, and edge detection.
 // Games and the launcher receive a const InputState& — they never call
 // analogRead() or digitalRead() themselves.
@@ -26,14 +26,17 @@ struct InputState {
     // --- Button current state (true = held down this frame) ---
     bool btnA;
     bool btnB;
+    bool btnBack;       // the cabinet's quit button (main.cpp's; games needn't look)
 
     // --- Edge detection: true only on the frame the button was pressed ---
     bool btnAPressed;   // Rising edge (released → pressed)
     bool btnBPressed;
+    bool btnBackPressed;
 
     // --- Edge detection: true only on the frame the button was released ---
     bool btnAReleased;  // Falling edge (pressed → released)
     bool btnBReleased;
+    bool btnBackReleased;
 
     // --- Convenience: joystick direction as discrete booleans ---
     // These use ArcadeConfig::JOY_THRESHOLD so are suitable for menu navigation
@@ -48,6 +51,7 @@ private:
     // Previous button states for edge detection
     bool _prevBtnA = false;
     bool _prevBtnB = false;
+    bool _prevBtnBack = false;
 
     // Exponential moving average filter state for joystick smoothing
     float _filteredX = ArcadeConfig::JOY_CENTER;
@@ -80,6 +84,7 @@ public:
     void begin() {
         pinMode(ArcadeConfig::BUTTON_A, INPUT_PULLUP);
         pinMode(ArcadeConfig::BUTTON_B, INPUT_PULLUP);
+        pinMode(ArcadeConfig::BUTTON_BACK, INPUT_PULLUP);
         // Analogue pins need no pinMode on ESP32
     }
 
@@ -107,18 +112,23 @@ public:
         // --- Buttons (active LOW with INPUT_PULLUP) ---
         bool curA = (digitalRead(ArcadeConfig::BUTTON_A) == LOW);
         bool curB = (digitalRead(ArcadeConfig::BUTTON_B) == LOW);
+        bool curBack = (digitalRead(ArcadeConfig::BUTTON_BACK) == LOW);
 
         _state.btnA = curA;
         _state.btnB = curB;
+        _state.btnBack = curBack;
 
         // Edge detection
         _state.btnAPressed  = (curA && !_prevBtnA);
         _state.btnAReleased = (!curA && _prevBtnA);
         _state.btnBPressed  = (curB && !_prevBtnB);
         _state.btnBReleased = (!curB && _prevBtnB);
+        _state.btnBackPressed  = (curBack && !_prevBtnBack);
+        _state.btnBackReleased = (!curBack && _prevBtnBack);
 
         _prevBtnA = curA;
         _prevBtnB = curB;
+        _prevBtnBack = curBack;
     }
 
     // Immutable reference — games read this, never write to it

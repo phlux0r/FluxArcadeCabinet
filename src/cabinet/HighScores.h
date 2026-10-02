@@ -209,6 +209,10 @@ public:
         save(_key, _table);
     }
 
+    // Quitting during the name entry: the score is saved under the name as
+    // it stands, as when the entry times out.
+    void finishNow() { if (_entering) finish(); }
+
     // One frame of name entry; true once it's finished (and saved).
     bool update(const InputState &in, uint8_t rotation) {
         if (!_entering) return true;

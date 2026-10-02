@@ -42,6 +42,7 @@ public:
     // The Jet scene (meshes, render queue) is the bulk of this game's heap;
     // it's rebuilt by the next update() after init().
     void onExit() override { releaseScene(); }
+    void onQuit(AudioEngine &audio) override;
 
     uint8_t getRotation() const override { return 1; }
     const char* getName()  const override { return "Tank Flux"; }
@@ -96,9 +97,6 @@ private:
     GamePhase     _phase = PHASE_ATTRACT;
     AttractSlide  _attractSlide = SLIDE_GAME;
     unsigned long _attractSlideTimer = 0;
-    bool          _btnBWasHeld = false;     // B must be released before hold-to-exit counts
-    unsigned long _btnBHoldStart = 0;       // attract/game over: hold B to exit
-    unsigned long _quitHoldStart = 0;       // playing: hold A+B to quit; 0 = not held
     unsigned long _gameOverEnteredMs = 0;
     // See REFERENCE_FRAME_MS: multiplies every per-frame movement.
     float _frameScale = 1.0f;
@@ -198,7 +196,6 @@ private:
     Renderer::Material _enemyShellMat{ ArcadeConfig::COLOR_AMBER };
 
     // --- TankFluxGame.cpp ------------------------------------------------------
-    void recordQuit();
     void updateFrameScale();
     void resetGame();                       // a fresh game's world and state, silently
     void startNewGame(AudioEngine &audio);  // resetGame(), plus its start sound and music
@@ -279,7 +276,6 @@ private:
     void drawFlashes(GFXcanvas16 &canvas);
     void drawBossAlert(GFXcanvas16 &canvas);
     void drawBossBonus(GFXcanvas16 &canvas);
-    void drawQuitHint(GFXcanvas16 &canvas);
     void renderAttractGame(GFXcanvas16 &canvas);
     void renderAttractInfo(GFXcanvas16 &canvas);
     void renderAttractScores(GFXcanvas16 &canvas);

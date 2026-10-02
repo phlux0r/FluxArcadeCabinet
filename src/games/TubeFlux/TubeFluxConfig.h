@@ -274,8 +274,6 @@ inline constexpr unsigned long DEMO_REPLAN_MS = 140;
 // --- Menus ----------------------------------------------------------------------
 // The attract screen alternates the title image with a how-to-play slide.
 inline constexpr unsigned long ATTRACT_SLIDE_MS    = 8000;
-inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B
-inline constexpr unsigned long QUIT_HINT_DELAY_MS  = 650;
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 15000;
 
 // Looped during a run (not on the attract screen or in its demo).

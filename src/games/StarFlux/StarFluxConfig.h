@@ -82,10 +82,9 @@ inline constexpr float RETICLE_NEAR_Z  = SHIP_Z + 1300.0f;
 inline constexpr float RETICLE_FAR_Z   = SHIP_Z + 3000.0f;
 
 // --- Bombs --------------------------------------------------------------------
-// B tapped (released within BOMB_TAP_MS) drops one; held, B quits.
+// A press of B drops one.
 inline constexpr int   BOMBS_START     = 3;
 inline constexpr int   BOMBS_MAX       = 5;
-inline constexpr unsigned long BOMB_TAP_MS = 400;
 inline constexpr float BOMB_SPEED      = 70.0f;
 inline constexpr float BOMB_FUSE_Z     = SHIP_Z + 1700.0f;   // blows here, or on contact
 inline constexpr float BOMB_RADIUS     = 750.0f;
@@ -275,8 +274,6 @@ inline constexpr unsigned long DEMO_REPLAN_MS = 120;
 
 // --- Menus and music ----------------------------------------------------------
 inline constexpr unsigned long ATTRACT_SLIDE_MS    = 8000;
-inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B
-inline constexpr unsigned long QUIT_HINT_DELAY_MS  = 650;
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 15000;
 inline constexpr const char* STAR_MUSIC = "/audio/flux-star.wav";
 

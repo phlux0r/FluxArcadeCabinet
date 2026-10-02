@@ -58,9 +58,6 @@ private:
     unsigned long _phaseTimer   = 0;
     bool          _uiDirty      = true;
 
-    // Guards against instant exit on launch
-    bool _btnBWasHeld = false;
-
     // Game-over 30-second attract timeout
     unsigned long _gameOverEnteredMs = 0;
     static const unsigned long GAMEOVER_TIMEOUT_MS = 30000UL;
@@ -314,7 +311,6 @@ public:
         _phase             = PHASE_ATTRACT;
         _attractSlide      = SLIDE_SPLASH;
         _attractSlideTimer = millis();
-        _btnBWasHeld       = true;
         _shipXOffset       = 0.0f;
         _shipYOffset       = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
         _gameOverPending   = false;
@@ -330,30 +326,11 @@ public:
                 const InputState &input,
                 AudioEngine &audio) override {
 
-        // --- Button B: require release first, then hold 2s to exit ---
-        static unsigned long btnBHoldStart = 0;
-        if (_phase == PHASE_NAME) {
-            btnBHoldStart = 0;             // B steps back a letter there
-        } else if (_btnBWasHeld) {
-            if (!input.btnB) _btnBWasHeld = false;
-        } else if (input.btnB) {
-            if (btnBHoldStart == 0) btnBHoldStart = millis();
-            if (millis() - btnBHoldStart > 2000) {
-                btnBHoldStart = 0;
-                // Quitting mid-game: the score still goes on the table,
-                // under the last name entered.
-                if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_HIT)) _scores.record(_score);
-                audio.mute();
-                return false;
-            }
-        } else {
-            btnBHoldStart = 0;
-        }
+        // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
 
-        // ---- ATTRACT DEMO: A plays for real, B leaves, time's up ends it ----
+        // ---- ATTRACT DEMO: A plays for real, time's up ends it ----
         if (_demo) {
             if (input.btnAPressed) { endDemo(); startNewGame(audio); return true; }
-            if (input.btnBPressed) { endDemo(); audio.mute(); return false; }
             if (millis() >= _demoUntil && _phase == PHASE_PLAYING) endDemo();
         }
         Silence silence(audio, _demo);
@@ -374,11 +351,6 @@ public:
             if (_attractSlide == SLIDE_SPLASH)    renderSplash(canvas);
             else if (_attractSlide == SLIDE_INFO) renderInfoScreen(canvas);
             else                                  renderScoresScreen(canvas);
-
-            if (input.btnBPressed) {
-                audio.mute();
-                return false;
-            }
 
             if (input.btnAPressed) {
                 audio.stopLoop();
@@ -527,7 +499,6 @@ public:
                 _highScore         = (int)_scores.best();
                 _phase             = PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
-                _btnBWasHeld       = true;   // B from the entry isn't the start of a quit
             }
             return true;
         }
@@ -557,7 +528,7 @@ public:
             canvas.setCursor(20, 90);
             canvas.print("[BTN A] PLAY AGAIN");
             canvas.setCursor(20, 103);
-            canvas.print("[BTN B] QUIT");
+            canvas.print("[HOLD BACK] QUIT");
 
             // Show countdown in last 10 seconds before attract timeout
             unsigned long elapsed = millis() - _gameOverEnteredMs;
@@ -570,17 +541,12 @@ public:
 
             flushLandscape(canvas);
 
-            // A plays again, B exits (no hold needed from game over): both
-            // only after the input delay, so mashing at the end doesn't.
+            // A plays again, only after the input delay, so mashing at the
+            // end doesn't.
             const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
             if (inputOk && input.btnAPressed) {
                 startNewGame(audio);
                 return true;
-            }
-
-            if (inputOk && input.btnBPressed) {
-                audio.mute();
-                return false;
             }
 
             // 30-second timeout: return to attract mode
@@ -588,13 +554,20 @@ public:
                 _phase               = PHASE_ATTRACT;
                 _attractSlide        = SLIDE_SPLASH;
                 _attractSlideTimer   = millis();
-                _btnBWasHeld         = false;
             }
 
             return true;
         }
 
         return true;
+    }
+
+    // Quitting (the Back button): a game in progress still goes on the
+    // table, under the last name entered; a name being entered is kept.
+    void onQuit(AudioEngine &audio) override {
+        if (_phase == PHASE_NAME) _scores.finishNow();
+        else if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_HIT)) _scores.record(_score);
+        audio.mute();
     }
 
     uint8_t getRotation() const override { return 1; }

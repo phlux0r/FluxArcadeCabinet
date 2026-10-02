@@ -269,7 +269,7 @@ void StarFluxGame::endDemo() {
     _bannerUntil = _hitFlashUntil = 0;
     _stage = STAGE_RUN;
     _shipX = _shipY = _shipVX = _shipVY = _bank = 0;
-    _btnBDownAt = 0;
+    _bombBtnHeld = false;
     enterAttract();
 }
 

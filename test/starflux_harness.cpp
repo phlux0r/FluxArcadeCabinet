@@ -220,7 +220,9 @@ void poses(StarFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 // Scenarios:
 //   play     the autopilot plays; now and then it misjudges, so deaths and game over are covered
 //   god      shield pinned: every segment and the boss, loop after loop
-//   menus    attract exit, in-game hold-B quit (a tap is a bomb), game-over timeout
+//   menus    a Back quit from the attract screen and mid-game (as main.cpp
+//            does it: onQuit(), onExit(), init()), a B press (one bomb),
+//            game-over timeout
 //   profile  god, plus per-frame render cost by stage and segment
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
 //   idle     no input at all: the attract cycle (title, how-to-play, demo)
@@ -638,10 +640,9 @@ int main(int argc, char** argv) {
             in.btnA = (f % 40) == 0;
         }
         if (menus) {
-            if (f < 300)                  { in.btnA = false; b = (f >= 20 && f < 200); }   // attract: hold B to exit
+            if (f < 300)                  { in.btnA = false; b = false; }
             else if (f == 300)            { in.btnA = true; }                              // start
-            else if (f >= 400 && f < 403) { b = true; }                                    // playing: tap B, a bomb
-            else if (f >= 600 && f < 700) { b = true; }                                    // playing: hold B to quit
+            else if (f >= 400 && f < 403) { b = true; }                                    // playing: B, a bomb
             else if (f == 800 && g._phase == StarFluxGame::PHASE_PLAYING) {        // a life lost: the segment again
                 g._stage = StarFluxGame::STAGE_RUN; g._invulnUntil = 0; g._shield = 5;
                 retrySeg = g._seg; retryLives = g._lives;
@@ -660,6 +661,8 @@ int main(int argc, char** argv) {
                 g.damageShip(SHIELD_MAX, audio);
             }
         }
+        // Back (main.cpp's): from the attract screen, then mid-game.
+        const bool backQuit = menus && (f == 200 || f == 700);
         if (idle) { in = InputState{}; b = false; }
         in.btnB = b;
         in.btnAPressed = in.btnA;
@@ -681,7 +684,8 @@ int main(int argc, char** argv) {
             c.objs = objs; c.tris = tris;
         }
 
-        if (!keepRunning) {
+        if (!keepRunning || backQuit) {
+            if (backQuit) g.onQuit(audio);
             ++quits;
             printf("quit at f=%ld phase=%d\n", f, (int)g._phase);
             g.onExit();

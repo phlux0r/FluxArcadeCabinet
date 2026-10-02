@@ -31,6 +31,8 @@ public:
                               input);
     }
 
+    void onQuit(AudioEngine &audio) override { _engine.onQuit(audio); }
+
     uint8_t getRotation() const override { return 2; }
     const char* getName() const override { return "Lander Flux"; }
 };

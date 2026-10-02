@@ -99,17 +99,6 @@ void TubeFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     }
 }
 
-// Only once B has been held past QUIT_HINT_DELAY_MS, so a tap never flashes it.
-void TubeFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
-    if (_btnBHoldStart == 0) return;
-    unsigned long held = millis() - _btnBHoldStart;
-    if (held < QUIT_HINT_DELAY_MS) return;
-    canvas.fillRect(30, 12, 100, 13, PANEL);
-    drawCentred(canvas, "HOLD B TO QUIT", 13, ArcadeConfig::COLOR_WHITE);
-    int16_t fill = (int16_t)(96UL * (held > EXIT_HOLD_MS ? EXIT_HOLD_MS : held) / EXIT_HOLD_MS);
-    canvas.fillRect(32, 22, fill, 2, ArcadeConfig::COLOR_AMBER);
-}
-
 // The pre-rendered title (tools/tube_title_screen.py) with the start prompt
 // and high score in its black bottom strip, where Tank Flux puts them.
 void TubeFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
@@ -121,7 +110,6 @@ void TubeFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
     if (millis() % 1000 < 600) drawCentred(canvas, "[BTN A] TO PLAY", TITLE_STRIP_Y + 5, ArcadeConfig::COLOR_WHITE);
     char buf[24];
     drawCentred(canvas, _scores.bestLine(buf, sizeof(buf), "HI: "), TITLE_STRIP_Y + 14, ArcadeConfig::COLOR_YELLOW);
-    drawQuitHint(canvas);
 }
 
 void TubeFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
@@ -135,8 +123,7 @@ void TubeFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 86, ArcadeConfig::COLOR_WHITE);
     char buf[24];
     drawCentred(canvas, _scores.bestLine(buf, sizeof(buf)), 96, ArcadeConfig::COLOR_GREEN);
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 // The cabinet's table for this game, over the flowing tunnel.
@@ -144,8 +131,7 @@ void TubeFluxGame::renderAttractScores(GFXcanvas16 &canvas) {
     canvas.fillRect(22, 18, W - 44, 88, PANEL);
     hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 24);
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 96, ArcadeConfig::COLOR_WHITE);
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 void TubeFluxGame::renderGameOver(GFXcanvas16 &canvas) {
@@ -168,8 +154,7 @@ void TubeFluxGame::renderGameOver(GFXcanvas16 &canvas) {
     if (millis() - _phaseEnteredMs > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
         drawCentred(canvas, "A: AGAIN", 94, ArcadeConfig::COLOR_WHITE);
     }
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 }  // namespace tubeflux

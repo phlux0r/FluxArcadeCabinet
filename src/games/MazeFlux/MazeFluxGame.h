@@ -31,6 +31,8 @@ public:
         );
     }
 
+    void onQuit(AudioEngine &audio) override { _engine.onQuit(audio); }
+
     uint8_t getRotation() const override { return 2; }
     const char* getName() const override { return "Maze Flux"; }
     void setTFT(Adafruit_ST7735 &tft) override { _engine.setTFT(tft); }

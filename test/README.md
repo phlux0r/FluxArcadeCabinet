@@ -39,7 +39,7 @@ Scenarios (every game has the first four):
 |---|---|---|---|
 | `play` | Normal run: the bot dies and restarts, so game over is covered | Same; the bot looks only a short way ahead, so it gets caught | The autopilot with slow reactions and no bombs, so it takes hits and loses lives; prints each stage's results |
 | `god` | Health pinned: many bosses and arena resets | Shield pinned: climbs every tier; prints hits per tier | Shield pinned: every stage and boss, into the next loop |
-| `menus` | Attract exit, in-game A+B quit, game-over timeout | Attract exit, in-game hold-B quit, game-over timeout | Attract exit, a B tap (one bomb), hold-B quit, a life lost (the segment must restart: PASS/FAIL), last life lost, game over |
+| `menus` | A Back quit from the attract screen and mid-game (`onQuit()`, `onExit()`, `init()`, as `main.cpp` does), game-over timeout | Same | Same, plus a B press (one bomb), a life lost (the segment must restart: PASS/FAIL), last life lost, game over |
 | `profile` | `god`, plus render cost by tanks on screen | `god`, plus render cost by tier | `god`, plus render cost by stage and segment |
 | `pose` | | Renders fixed set-ups to `pose_*.ppm` (see below) | Same: fighters, rocks, banking, each stage's hazards (with the flight aids, the rapid-fire pod and the canyon's mines, the mothership's blast doors), the five bosses, the title |
 | `idle` | | No input: the attract cycle (title, how-to-play, demo); checks the demo is silent | Same |
@@ -150,7 +150,7 @@ test/
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
-├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling; idle score cycle
+├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
 ├── tankflux_harness.cpp        # Tank Flux: scripted bot, scenarios, profile

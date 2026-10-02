@@ -51,7 +51,7 @@ private:
     int _activeTeleports = 0;
 
     // NAME: entering a name for the high-score table, after the last life.
-    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_CONFIRM_EXIT, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
+    enum GameState { STATE_TITLE, STATE_INSTRUCTIONS, STATE_PLAYING, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
     GameState _state = STATE_TITLE;
 
     int  _level     = 1;
@@ -73,13 +73,7 @@ private:
     // GAMEOVER_INPUT_DELAY_MS. Title: B (exit) only once it has been up
     // since arriving, so mashing at game over can't quit to the menu.
     bool _endInputArmed    = false;
-    bool _titleBWasHeld    = true;
     int  _attractPage = 0;           // title, how to play, high scores
-
-    // Hold BTN B 2s during play to bring up an exit confirmation
-    unsigned long _btnBHoldStart   = 0;
-    bool          _confirmExitGuard = false;  // wait for release before the dialog reacts
-    static const unsigned long EXIT_HOLD_MS = 2000UL;
 
     int _camX = 0;
     int _camY = 0;
@@ -573,31 +567,6 @@ private:
         if (millis() % 1000 < 600) hiscore::printCentred(canvas, "A TO START", 130, ArcadeConfig::COLOR_WHITE);
     }
 
-    void renderConfirmExit(GFXcanvas16 &canvas) {
-        // Frozen game view behind the dialog
-        renderPlaying(canvas);
-
-        const int16_t boxX = 8, boxY = 60;
-        const int16_t boxW = ArcadeConfig::PORTRAIT_WIDTH - 16, boxH = 44;
-        canvas.fillRect(boxX, boxY, boxW, boxH, ArcadeConfig::COLOR_BLACK);
-        canvas.drawRect(boxX, boxY, boxW, boxH, ArcadeConfig::COLOR_RED);
-
-        canvas.setTextSize(1);
-        const char* q = "ARE YOU SURE?";
-        int16_t tbx, tby; uint16_t tbw, tbh;
-        canvas.getTextBounds(q, 0, 0, &tbx, &tby, &tbw, &tbh);
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(boxX + (boxW - (int16_t)tbw) / 2, boxY + 10);
-        canvas.print(q);
-
-        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(boxX + 12, boxY + 28);
-        canvas.print("[A] YES");
-        canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(boxX + 66, boxY + 28);
-        canvas.print("[B] NO");
-    }
-
     void renderGameOver(GFXcanvas16 &canvas) {
         canvas.fillScreen(ArcadeConfig::COLOR_RED);
         canvas.setTextSize(2);
@@ -644,10 +613,17 @@ public:
         _state        = STATE_TITLE;
         _attractTimer = millis();
         _btnAWasHeld  = true;
-        _titleBWasHeld = true;
 
         initLevel();
         _player.lives = 3;
+    }
+
+    // Quitting (the Back button): a game in progress still goes on the
+    // table, under the last name entered; a name being entered is kept.
+    void onQuit(AudioEngine &audio) {
+        if (_state == STATE_NAME) _scores.finishNow();
+        else if (_state == STATE_PLAYING || _state == STATE_LEVEL_COMPLETE) _scores.record(_score);
+        audio.mute();
     }
 
     // `input` is for the name entry (the rest of the game reads the flags).
@@ -672,13 +648,6 @@ public:
 
         // ---- TITLE ----
         if (_state == STATE_TITLE) {
-            if (_titleBWasHeld) {
-                if (!btnB) _titleBWasHeld = false;
-            } else if (btnB) {
-                audio.mute();
-                return false;
-            }
-
             if (millis() - _attractTimer > ATTRACT_INTERVAL_MS) {
                 _attractPage  = (_attractPage + 1) % 3;
                 _attractTimer = millis();
@@ -720,7 +689,6 @@ public:
                 _state         = STATE_TITLE;
                 _attractTimer  = millis();
                 _btnAWasHeld   = true;
-                _titleBWasHeld = true;
             }
             return true;
         }
@@ -736,47 +704,8 @@ public:
             return true;
         }
 
-        // ---- EXIT CONFIRMATION ----
-        if (_state == STATE_CONFIRM_EXIT) {
-            renderConfirmExit(canvas);
-            if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
-                ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
-
-            // The BTN B hold that opened this dialog is still down on the
-            // first frame or two — wait for both buttons to release before
-            // a press can confirm/cancel, so it can't be actioned by accident.
-            if (!btnA && !btnB) _confirmExitGuard = false;
-
-            if (!_confirmExitGuard) {
-                if (btnA) {
-                    // Quitting mid-game: the score still goes on the table,
-                    // under the last name entered.
-                    _scores.record(_score);
-                    audio.mute();
-                    return false;  // confirmed — back to launcher
-                }
-                if (btnB) {
-                    _state = STATE_PLAYING;  // cancelled — resume
-                }
-            }
-            return true;
-        }
-
         // ---- PLAYING ----
-        // Hold BTN B for EXIT_HOLD_MS to bring up the exit confirmation
-        if (btnB) {
-            if (_btnBHoldStart == 0) _btnBHoldStart = millis();
-            if (millis() - _btnBHoldStart >= EXIT_HOLD_MS) {
-                _btnBHoldStart    = 0;
-                _confirmExitGuard = true;
-                _state            = STATE_CONFIRM_EXIT;
-                audio.playTone(300, 150);
-                return true;
-            }
-        } else {
-            _btnBHoldStart = 0;
-        }
-
+        // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
         if (millis() - _lastSecondMs >= 1000UL) {
             _lastSecondMs = millis();
             _timeLeft--;

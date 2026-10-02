@@ -1,9 +1,10 @@
 // Host simulation of the whole cabinet: src/main.cpp itself (setup() and
 // loop()), with the real launcher, input handling and every game, driven
 // through the input pins the stubs expose. It launches each game from the
-// menu, lets it run, quits it by holding B, and checks the game was built
-// and freed again (ASan reports any leak or double free). Then it checks the
-// menu scrolls, with more games than fit.
+// menu, lets it run, quits it by holding Back, and checks the game was built
+// and freed again (ASan reports any leak or double free). Holding B, or a
+// short press of Back, must not quit: B is the games' own. Then it checks
+// the menu scrolls, with more games than fit.
 #include <new>
 #include <cstdio>
 #include <cstdint>
@@ -62,14 +63,48 @@ int main() {
         const long pushes0 = tft.frames;
         frames(900);                                     // ~15s: title, info, into a demo
         const long pushed = tft.frames - pushes0;
-        // Quit: hold B (Tank's attract screen and every title take it).
-        setPin(ArcadeConfig::BUTTON_B, true);  frames(160);
+        // B held for 3s, and Back for half its hold, don't quit...
+        setPin(ArcadeConfig::BUTTON_B, true);  frames(180);
         setPin(ArcadeConfig::BUTTON_B, false); frames(10);
+        setPin(ArcadeConfig::BUTTON_BACK, true);  frames(30);
+        setPin(ArcadeConfig::BUTTON_BACK, false); frames(10);
+        const bool stayed = cabinetState == STATE_IN_GAME && activeGame;
+        // ...holding Back for its full hold does.
+        setPin(ArcadeConfig::BUTTON_BACK, true);
+        int held = 0;
+        while (cabinetState == STATE_IN_GAME && held < 200) { frames(1); ++held; }
+        setPin(ArcadeConfig::BUTTON_BACK, false); frames(10);
+        const unsigned long heldMs = held * 17UL;
         const bool back = cabinetState == STATE_LAUNCHER_MENU && !activeGame && !activeGameMem &&
-                          launcher._selection == i;
-        const bool pass = selected && visible && launched && pushed >= 850 && pushed <= 950 && back;
-        printf("%-10s selected %d visible %d launched %d frames pushed %ld back %d -> %s\n",
-               gameRegistry[i].name, selected, visible, launched, pushed, back, pass ? "PASS" : "FAIL");
+                          launcher._selection == i && heldMs >= ArcadeConfig::BACK_HOLD_MS &&
+                          heldMs < ArcadeConfig::BACK_HOLD_MS + 100;
+        const bool pass = selected && visible && launched && pushed >= 850 && pushed <= 950 && stayed && back;
+        printf("%-10s selected %d visible %d launched %d frames pushed %ld B/short Back ignored %d "
+               "Back quit after %lums %d -> %s\n",
+               gameRegistry[i].name, selected, visible, launched, pushed, stayed, heldMs, back, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    // A game quit mid-play with Back still puts its score on the table
+    // (main.cpp calls onQuit()): Brick, started for real, given a score.
+    {
+        int brick = -1;
+        for (int i = 0; i < GAME_COUNT; ++i) if (!strcmp(gameRegistry[i].scoreKey, "brick")) brick = i;
+        selectGame(brick);
+        setPin(ArcadeConfig::BUTTON_A, true);  frames(3);
+        setPin(ArcadeConfig::BUTTON_A, false); frames(3);
+        setPin(ArcadeConfig::BUTTON_A, true);  frames(3);    // A on the title: a real game
+        setPin(ArcadeConfig::BUTTON_A, false); frames(30);
+        auto *g = static_cast<BrickFluxGame*>(activeGame);
+        const bool playing = g && g->_phase == BrickFluxGame::PHASE_PLAYING;
+        if (g) g->_score = 987654;
+        setPin(ArcadeConfig::BUTTON_BACK, true);  frames(70);
+        setPin(ArcadeConfig::BUTTON_BACK, false); frames(10);
+        hiscore::Table t;
+        hiscore::load("brick", t);
+        const bool recorded = t.e[0].score == 987654;
+        const bool pass = playing && recorded && cabinetState == STATE_LAUNCHER_MENU;
+        printf("Back mid-game: playing %d, score on the table %d -> %s\n", playing, recorded, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 

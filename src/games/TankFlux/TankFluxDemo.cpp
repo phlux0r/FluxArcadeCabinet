@@ -70,7 +70,6 @@ void TankFluxGame::startDemo() {
 
 bool TankFluxGame::updateDemo(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     if (input.btnAPressed) { endDemo(); startNewGame(audio); return true; }
-    if (input.btnBPressed) { endDemo(); audio.mute(); return false; }
 
     InputState in = demoPilot();
     audio.setSilenced(true);

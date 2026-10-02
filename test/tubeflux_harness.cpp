@@ -160,7 +160,8 @@ void poses(TubeFluxGame &g, GFXcanvas16 &canvas, AudioEngine &audio) {
 // Scenarios:
 //   play     normal run: the bot misjudges now and then, so game over is covered
 //   god      shield pinned, so a long run climbs every tier
-//   menus    attract exit, in-game hold-B quit, game-over timeout
+//   menus    a Back quit from the attract screen and mid-game (as main.cpp
+//            does it: onQuit(), onExit(), init()), game-over timeout
 //   profile  god, plus per-frame render cost by tier
 //   pose     renders fixed set-ups to pose_*.ppm (see poses())
 //   idle     no input at all: the attract cycle (title, how-to-play, demo)
@@ -249,13 +250,12 @@ int main(int argc, char** argv) {
             long cycle = f % 900;
             if (cycle < 120)                     in.joyX = THROTTLE_SIGN * 1.0f;
             else if (cycle >= 450 && cycle < 520) in.joyX = THROTTLE_SIGN * -1.0f;
-            // ~900ms of B: shows the quit hint without quitting.
-            if (f % 5000 >= 4000 && f % 5000 < 4056) b = true;
         }
 
+        // Back (main.cpp's): from the attract screen, then mid-game.
+        const bool backQuit = menus && (f == 200 || f == 700);
         if (menus) {
-            if (f < 300)                  { a = false; b = (f >= 20 && f < 200); }   // attract: hold B to exit
-            else if (f >= 600 && f < 760) { a = false; b = true; }                    // playing: hold B to quit
+            if (f < 300)                  { a = false; b = false; }
             else if (f > 2000 && g._phase == TubeFluxGame::PHASE_GAMEOVER) { a = false; b = false; }
         }
 
@@ -289,7 +289,8 @@ int main(int argc, char** argv) {
             c.objs = objs; c.tris = tris;
         }
 
-        if (!keepRunning) {
+        if (!keepRunning || backQuit) {
+            if (backQuit) g.onQuit(audio);
             ++quits;
             printf("quit at f=%ld phase=%d\n", f, (int)g._phase);
             g.onExit();
