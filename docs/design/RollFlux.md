@@ -73,6 +73,37 @@ DIRECT clips properly. Unless the board says otherwise, DIRECT is the floor
 renderer, and the camera height is free to choose for play rather than
 cost. The board's numbers (the overlay, and `-DSHOW_FPS`) decide.
 
+### On the board, and what changed for stage 1
+
+DIRECT held 55-57fps on the board; JET bottomed out at 24-25fps
+(playable, but with half the headroom). DIRECT also looked smoother, and
+the middle camera height played best, so both are fixed (`CAMERA_BACK`,
+`CAMERA_UP`). The rolling and the camera's turn rate felt right and are
+unchanged.
+
+With the floor drawn directly, Jet's Scene drew only the ball, always over
+the floor, so a ball falling behind an edge stayed in front of it. Stage 1
+drops the Scene: the ball (a striped low-poly sphere, turned as it rolls),
+its shadow and the gems are drawn in the same pass as the floor, and a
+floor piece nearer than one of them goes after it only if it could hide it
+(its top's plane, carried on to under the item, is above the item's
+bottom; or it's a rail standing higher). Jet's Camera still does the maths
+(projection and rotation tables), so `initializeTrigTables()` is called
+once, which a Scene would otherwise do. On the host this costs a little
+more than stage 0's DIRECT (more on screen), all of it pixel filling.
+
+### Stage 1, first half: built
+
+Rails (`R`: floor with rails on its void edges), ice (`i`), boost pads
+(`^ v > <`), gems (`*`), checkpoints (`C`) and the chequered goal; the
+time limit per course, gems' time, falls back to the last checkpoint with
+its time, time up (the course again), 4 balls and an extra every 100 gems,
+the goal's tally, the course loop with less time each round, game over;
+the HUD; the course leaning with the stick; the ball turning as it rolls,
+striped, with a shadow; the starfield. Still to come in stage 1: the
+other courses of worlds 1-2, the Flux Dash, the attract cycle and demo,
+high scores and name entry, and the sounds (tones for now).
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

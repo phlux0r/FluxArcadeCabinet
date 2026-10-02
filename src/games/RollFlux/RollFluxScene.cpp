@@ -19,10 +19,20 @@ uint16_t lerp565(uint16_t a, uint16_t b, float t) {
                        (ab + (int)((bb - ab) * t)));
 }
 
+// A colour lit by k (1 = as it is), each channel held to its range.
+uint16_t shade565(uint16_t c, float k) {
+    int r = (int)((c >> 11) * k), g = (int)(((c >> 5) & 63) * k), b = (int)((c & 31) * k);
+    if (r > 31) r = 31;
+    if (g > 63) g = 63;
+    if (b > 31) b = 31;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
 // Fills a convex polygon straight into an RGB565 buffer, sampling pixel
 // centres with a half-open rule so neighbouring faces neither gap nor
-// overlap (Tube Flux's, unchanged).
-void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, int n, uint16_t colour) {
+// overlap (Tube Flux's). With shade, it halves what's there instead: the
+// ball's shadow.
+void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, int n, uint16_t colour, bool shade) {
     float ymin = ys[0], ymax = ys[0];
     for (int i = 1; i < n; ++i) {
         if (ys[i] < ymin) ymin = ys[i];
@@ -46,21 +56,69 @@ void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, i
         if (xa < 0) xa = 0;
         if (xb > w - 1) xb = w - 1;
         uint16_t* row = buf + y * w;
-        for (int x = xa; x <= xb; ++x) row[x] = colour;
+        if (shade) for (int x = xa; x <= xb; ++x) row[x] = (row[x] >> 1) & 0x7BEF;
+        else       for (int x = xa; x <= xb; ++x) row[x] = colour;
     }
 }
 
 // The palette: the floor gets lighter with height, so levels read apart;
-// ramps are amber; sides dark; the goal gold.
+// ramps amber; ice pale blue; checkpoints blue (cyan once reached); boost
+// pads orange with a yellow arrow; the goal a chequered flag; sides dark.
 const uint16_t FLOOR_COL[4][2] = {
     { rgb565( 5, 30,  9), rgb565( 4, 23,  7) },
     { rgb565( 9, 40, 13), rgb565( 7, 31, 10) },
     { rgb565(13, 48, 17), rgb565(10, 38, 13) },
     { rgb565(17, 56, 21), rgb565(13, 45, 16) },
 };
-const uint16_t RAMP_COL[2] = { rgb565(26, 42, 6), rgb565(21, 33, 4) };
-const uint16_t GOAL_COL[2] = { rgb565(31, 58, 8), rgb565(28, 48, 4) };
-const uint16_t SIDE_COL[2] = { rgb565(4, 14, 8), rgb565(3, 10, 6) };   // north/south faces, east/west
+const uint16_t RAMP_COL[2]  = { rgb565(26, 42, 6), rgb565(21, 33, 4) };
+const uint16_t ICE_COL[2]   = { rgb565(21, 54, 30), rgb565(17, 46, 27) };
+const uint16_t CHECK_COL[2] = { rgb565(4, 18, 24), rgb565(3, 13, 19) };
+const uint16_t CHECK_LIT[2] = { rgb565(6, 44, 31), rgb565(4, 36, 26) };
+const uint16_t BOOST_COL[2] = { rgb565(28, 28, 2), rgb565(24, 22, 1) };
+const uint16_t ARROW_COL[2] = { rgb565(31, 63, 10), rgb565(31, 48, 0) };
+const uint16_t GOAL_COL[2]  = { rgb565(31, 63, 31), rgb565(3, 6, 5) };
+const uint16_t SIDE_COL[2]  = { rgb565(4, 14, 8), rgb565(3, 10, 6) };    // north/south faces, east/west
+const uint16_t RAIL_COL[2]  = { rgb565(25, 52, 27), rgb565(19, 40, 21) };
+const uint16_t BALL_COL[3]  = { rgb565(0, 52, 31), rgb565(31, 63, 31), rgb565(31, 54, 2) };   // gores, caps
+const uint16_t GEM_COL[2]   = { rgb565(31, 60, 6), rgb565(31, 63, 26) };
+
+// The sun, for the ball: from behind the camera (mostly), high.
+const float SUN[3] = { -0.40f, 0.80f, -0.45f };
+
+// The ball: a sphere of 6 bands and 8 gores, poles up and down, unit
+// radius; built once.
+constexpr int BALL_LON = 8, BALL_RINGS = 5;
+constexpr int BALL_VERTS = 2 + BALL_RINGS * BALL_LON;
+struct BallMesh {
+    float v[BALL_VERTS][3];
+    BallMesh() {
+        v[0][0] = 0; v[0][1] = 1; v[0][2] = 0;
+        for (int i = 1; i <= BALL_RINGS; ++i) {
+            const float phi = i * (float)PI / (BALL_RINGS + 1);
+            for (int g = 0; g < BALL_LON; ++g) {
+                const float th = g * 2.0f * (float)PI / BALL_LON;
+                float* p = v[1 + (i - 1) * BALL_LON + g];
+                p[0] = sinf(phi) * cosf(th);
+                p[1] = cosf(phi);
+                p[2] = sinf(phi) * sinf(th);
+            }
+        }
+        v[BALL_VERTS - 1][0] = 0; v[BALL_VERTS - 1][1] = -1; v[BALL_VERTS - 1][2] = 0;
+    }
+};
+const BallMesh &ballMesh() { static const BallMesh m; return m; }
+inline int ringVert(int ring, int g) { return 1 + (ring - 1) * BALL_LON + (g % BALL_LON); }
+
+// The four sides of a cell, as (dc, dr, our two corners on that edge, the
+// neighbour's two on it, the side's colour), walking each edge in the same
+// order for both.
+struct Edge { int dc, dr, a, b, na, nb, col; };
+const Edge EDGES[4] = {
+    {  0,  1, 0, 1, 3, 2, 0 },   // south: our sw, se against its nw, ne
+    {  0, -1, 2, 3, 1, 0, 0 },   // north: our ne, nw against its se, sw
+    {  1,  0, 1, 2, 0, 3, 1 },   // east:  our se, ne against its sw, nw
+    { -1,  0, 3, 0, 2, 1, 1 },   // west:  our nw, sw against its ne, se
+};
 
 }  // namespace
 
@@ -79,116 +137,34 @@ void RollFluxGame::cornerHeights(int c, int r, float out[4]) const {
     }
 }
 
-// The four sides of a cell, as (dc, dr, our two corners on that edge, the
-// neighbour's two on it, the side's colour), walking each edge in the same
-// order for both.
-namespace {
-struct Edge { int dc, dr, a, b, na, nb, col; };
-const Edge EDGES[4] = {
-    {  0,  1, 0, 1, 3, 2, 0 },   // south: our sw, se against its nw, ne
-    {  0, -1, 2, 3, 1, 0, 0 },   // north: our ne, nw against its se, sw
-    {  1,  0, 1, 2, 0, 3, 1 },   // east:  our se, ne against its sw, nw
-    { -1,  0, 3, 0, 2, 1, 1 },   // west:  our nw, sw against its ne, se
-};
-}  // namespace
-
-// A cell's top (side < 0) or one of its sides (0 north/south, 1 east/west)
-// in the direct renderer, faded towards the sky with depth.
-uint16_t RollFluxGame::cellColour(int c, int r, int side, float depth) const {
+// The plane of a cell's top at (x, z), carried on past its edges.
+float RollFluxGame::planeAt(int c, int r, float x, float z) const {
     const Cell &k = _cells[r][c];
-    const int chk = (c + r) & 1;
-    uint16_t col;
-    if (side >= 0) col = SIDE_COL[side];
-    else if (k.kind == K_GOAL) col = GOAL_COL[chk];
-    else if (k.kind >= K_RAMP_N) col = RAMP_COL[chk];
-    else col = FLOOR_COL[k.h > 3 ? 3 : k.h][chk];
-    if (depth > FOG_NEAR) {
-        float t = (depth - FOG_NEAR) / (FOG_FAR - FOG_NEAR);
-        col = lerp565(col, _sky[ArcadeConfig::LANDSCAPE_HEIGHT - 1], t > 1.0f ? 1.0f : t);
+    const float fx = (x - cellX0(c)) / CELL, fz = (z - cellZ0(r)) / CELL;
+    float y = (float)(k.h * HEIGHT_STEP);
+    switch (k.kind) {
+        case K_RAMP_N: y += HEIGHT_STEP * fz; break;
+        case K_RAMP_S: y += HEIGHT_STEP * (1.0f - fz); break;
+        case K_RAMP_E: y += HEIGHT_STEP * fx; break;
+        case K_RAMP_W: y += HEIGHT_STEP * (1.0f - fx); break;
+        default: break;
     }
-    return col;
+    return y;
 }
 
-// --- The Jet floor -----------------------------------------------------------
-
-// The course as meshes, CHUNK_CELLS square: each cell's top, and a side
-// wherever it stands above its neighbour (or the void, SIDE_DEPTH down).
-// Vertices are in world space, so the chunks sit at the origin.
-void RollFluxGame::buildChunks() {
-    auto &objs = _scene->getObjects();
-    for (int i = 0; i < _chunkCount; ++i) {
-        objs.erase(std::remove(objs.begin(), objs.end(), _chunks[i]), objs.end());
-        delete _chunks[i];
-        _chunks[i] = nullptr;
-    }
-    _chunkCount = 0;
-    auto vert = [](Renderer::Object* o, float x, float y, float z) {
-        uint16_t n = (uint16_t)o->vertices.size();
-        o->addVertex({ Vector3{ (int32_t)x, (int32_t)y, (int32_t)z }, { 0, 0 }, { 0, FIXED_POINT_SCALE, 0 } });
-        return n;
-    };
-    for (int r0 = 0; r0 < _h; r0 += CHUNK_CELLS)
-        for (int c0 = 0; c0 < _w; c0 += CHUNK_CELLS) {
-            auto* o = new Renderer::Object();
-            for (int r = r0; r < r0 + CHUNK_CELLS && r < _h; ++r)
-                for (int c = c0; c < c0 + CHUNK_CELLS && c < _w; ++c) {
-                    if (!solid(c, r)) continue;
-                    float hgt[4];
-                    cornerHeights(c, r, hgt);
-                    const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
-                    const float cx[4] = { x0, x1, x1, x0 }, cz[4] = { z0, z0, z1, z1 };
-                    uint16_t top[4];
-                    for (int i = 0; i < 4; ++i) top[i] = vert(o, cx[i], hgt[i], cz[i]);
-                    const Cell &k = _cells[r][c];
-                    const int chk = (c + r) & 1;
-                    Renderer::Material* m = k.kind == K_GOAL ? &_goalMat[chk]
-                                          : k.kind >= K_RAMP_N ? &_rampMat[chk]
-                                          : &_floorMat[chk][k.h > 3 ? 3 : k.h];
-                    o->addFace(top[0], top[3], top[2], top[1], m);
-                    for (const Edge &e : EDGES) {
-                        float nh[4];
-                        const bool nsolid = solid(c + e.dc, r + e.dr);
-                        if (nsolid) cornerHeights(c + e.dc, r + e.dr, nh);
-                        const float ba = nsolid ? nh[e.na] : hgt[e.a] - SIDE_DEPTH;
-                        const float bb = nsolid ? nh[e.nb] : hgt[e.b] - SIDE_DEPTH;
-                        if (hgt[e.a] <= ba + 1 && hgt[e.b] <= bb + 1) continue;
-                        uint16_t ta = top[e.a], tb = top[e.b];
-                        uint16_t va = vert(o, cx[e.a], fminf(ba, hgt[e.a]), cz[e.a]);
-                        uint16_t vb = vert(o, cx[e.b], fminf(bb, hgt[e.b]), cz[e.b]);
-                        o->addFace(ta, tb, vb, va, &_sideMat[e.col]);
-                    }
-                }
-            if (o->vertices.empty()) { delete o; continue; }
-            o->calculateBoundingBox();
-            o->cullingMode = Renderer::CullingMode::NO_CULLING;
-            o->enabled = false;
-            _scene->addObject(o);
-            _chunkCX[_chunkCount] = (c0 + CHUNK_CELLS * 0.5f) * CELL;
-            _chunkCZ[_chunkCount] = (_h - r0 - CHUNK_CELLS * 0.5f) * CELL;
-            _chunks[_chunkCount++] = o;
-        }
+float RollFluxGame::gemY(int c, int r) const {
+    return _cells[r][c].h * HEIGHT_STEP + 85.0f + 12.0f * sinf(millis() * 0.005f + c + r);
 }
 
-// Only chunks within reach, and only for the Jet floor; Jet's own frustum
-// cull does the rest.
-void RollFluxGame::placeChunks() {
-    const float reach = VIEW_DIST + CHUNK_CELLS * CELL * 0.75f;
-    for (int i = 0; i < _chunkCount; ++i) {
-        const float dx = _chunkCX[i] - _camX, dz = _chunkCZ[i] - _camZ;
-        _chunks[i]->enabled = !_direct && dx * dx + dz * dz < reach * reach;
-    }
+uint16_t RollFluxGame::fog(uint16_t col, float depth) const {
+    if (depth <= FOG_NEAR) return col;
+    const float t = (depth - FOG_NEAR) / (FOG_FAR - FOG_NEAR);
+    return lerp565(col, _sky[ArcadeConfig::LANDSCAPE_HEIGHT - 1], t > 1.0f ? 1.0f : t);
 }
-
-void RollFluxGame::placeBall() {
-    _ballObj->position = Vector3{ (int32_t)lroundf(_bx), (int32_t)lroundf(_by + BALL_RADIUS),
-                                  (int32_t)lroundf(_bz) };
-}
-
-// --- The direct floor ----------------------------------------------------------
 
 // Jet's camera transform for this frame, composed as Scene::render() does
-// (same trig tables, same fixed-point order), so what's drawn here lines up
-// with what Jet draws on top.
+// (same trig tables, same fixed-point order), so it projects exactly as
+// Jet would.
 void RollFluxGame::computeCameraMatrix() {
     int32_t cX, sX, cY, sY, cZ, sZ;
     _camera.getRotationMatrix(cX, sX, cY, sY, cZ, sZ);
@@ -209,6 +185,14 @@ void RollFluxGame::computeCameraMatrix() {
     for (int i = 0; i < 9; ++i) _m[i] = (float)all[i] / FIXED_POINT_SCALE;
 }
 
+void RollFluxGame::toCam(float x, float y, float z, float* out) const {
+    const float px = x - (float)_camera.position.x, py = y - (float)_camera.position.y,
+                pz = z - (float)_camera.position.z;
+    out[0] = _m[0] * px + _m[1] * py + _m[2] * pz;
+    out[1] = _m[3] * px + _m[4] * py + _m[5] * pz;
+    out[2] = _m[6] * px + _m[7] * py + _m[8] * pz;
+}
+
 void RollFluxGame::drawSky(GFXcanvas16 &canvas) {
     uint16_t* buf = canvas.getBuffer();
     const int w = canvas.width(), h = canvas.height();
@@ -219,11 +203,27 @@ void RollFluxGame::drawSky(GFXcanvas16 &canvas) {
     }
 }
 
+// Stars all round, infinitely far: turned with the camera, never moved.
+// The course is drawn over them, so they show only in the void.
+void RollFluxGame::drawStars(GFXcanvas16 &canvas) {
+    uint16_t* buf = canvas.getBuffer();
+    const int w = canvas.width(), h = canvas.height();
+    const float f = _camera.fovFactor;
+    for (int i = 0; i < STAR_COUNT; ++i) {
+        const float* d = _stars[i];
+        const float z = _m[6] * d[0] + _m[7] * d[1] + _m[8] * d[2];
+        if (z < 0.1f) continue;
+        const int sx = (int)(w / 2 + (_m[0] * d[0] + _m[1] * d[1] + _m[2] * d[2]) * f / z);
+        const int sy = (int)(h / 2 - (_m[3] * d[0] + _m[4] * d[1] + _m[5] * d[2]) * f / z);
+        if (sx >= 0 && sx < w && sy >= 0 && sy < h) buf[sy * w + sx] = _starCol[i];
+    }
+}
+
 // A polygon given in camera space: clipped to the near plane, projected
 // as Jet projects (x * f / z from the centre, y up), filled.
-void RollFluxGame::drawQuad(uint16_t* buf, int w, int h, const float (*p)[3], int n, uint16_t colour) {
+void RollFluxGame::drawPoly(uint16_t* buf, int w, int h, const float (*p)[3], int n, uint16_t colour, bool shade) {
     const float zn = (float)CAMERA_NEAR;
-    float cl[8][3];
+    float cl[10][3];
     int m = 0;
     for (int i = 0; i < n; ++i) {
         const float* a = p[i];
@@ -240,162 +240,326 @@ void RollFluxGame::drawQuad(uint16_t* buf, int w, int h, const float (*p)[3], in
     }
     if (m < 3) return;
     const float f = _camera.fovFactor, cx = (float)(w / 2), cy = (float)(h / 2);
-    float xs[8], ys[8];
+    float xs[10], ys[10];
     for (int i = 0; i < m; ++i) {
         const float s = f / cl[i][2];
         xs[i] = cx + cl[i][0] * s;
         ys[i] = cy - cl[i][1] * s;
     }
-    fillConvex(buf, w, h, xs, ys, m, colour);
+    fillConvex(buf, w, h, xs, ys, m, colour, shade);
 }
 
-// Every cell in view, far to near (by its centre's depth): its sides that
-// face the camera, then its top. Over the sky, so the void is just sky.
-void RollFluxGame::drawFloorDirect(GFXcanvas16 &canvas) {
-    computeCameraMatrix();
+// A cell: its sides that face the camera, then its top (a goal's in four
+// chequered squares, a boost pad's with its arrow).
+void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float depth) {
+    const Cell &k = _cells[r][c];
+    float hgt[4];
+    cornerHeights(c, r, hgt);
+    const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
+    const float cx[4] = { x0, x1, x1, x0 }, cz[4] = { z0, z0, z1, z1 };
+    float top[4][3];
+    for (int i = 0; i < 4; ++i) toCam(cx[i], hgt[i], cz[i], top[i]);
+    const float camX = (float)_camera.position.x, camZ = (float)_camera.position.z;
+    for (const Edge &e : EDGES) {
+        // Only sides facing the camera: the camera is beyond the edge.
+        const float ex = e.dc > 0 ? x1 : e.dc < 0 ? x0 : 0, ez = e.dr > 0 ? z0 : e.dr < 0 ? z1 : 0;
+        if ((e.dc > 0 && camX <= ex) || (e.dc < 0 && camX >= ex) ||
+            (e.dr > 0 && camZ >= ez) || (e.dr < 0 && camZ <= ez)) continue;
+        float nh[4];
+        const bool nsolid = solid(c + e.dc, r + e.dr);
+        if (nsolid) cornerHeights(c + e.dc, r + e.dr, nh);
+        const float ba = nsolid ? nh[e.na] : hgt[e.a] - SIDE_DEPTH;
+        const float bb = nsolid ? nh[e.nb] : hgt[e.b] - SIDE_DEPTH;
+        if (hgt[e.a] <= ba + 1 && hgt[e.b] <= bb + 1) continue;
+        float q[4][3];
+        for (int i = 0; i < 3; ++i) { q[0][i] = top[e.a][i]; q[1][i] = top[e.b][i]; }
+        toCam(cx[e.b], fminf(bb, hgt[e.b]), cz[e.b], q[2]);
+        toCam(cx[e.a], fminf(ba, hgt[e.a]), cz[e.a], q[3]);
+        drawPoly(buf, w, h, q, 4, fog(SIDE_COL[e.col], depth));
+    }
+    const int chk = (c + r) & 1;
+    if (k.kind == K_GOAL) {
+        // Four squares, chequered: the flag of a finish line.
+        const float y = hgt[0];
+        for (int j = 0; j < 2; ++j)
+            for (int i = 0; i < 2; ++i) {
+                const float ax = x0 + i * CELL * 0.5f, az = z0 + j * CELL * 0.5f;
+                float q[4][3];
+                toCam(ax, y, az, q[0]);
+                toCam(ax + CELL * 0.5f, y, az, q[1]);
+                toCam(ax + CELL * 0.5f, y, az + CELL * 0.5f, q[2]);
+                toCam(ax, y, az + CELL * 0.5f, q[3]);
+                drawPoly(buf, w, h, q, 4, fog(GOAL_COL[(i + j + chk) & 1], depth));
+            }
+        return;
+    }
+    uint16_t col;
+    if (isRamp(k.kind)) col = RAMP_COL[chk];
+    else if (k.kind == K_ICE) col = ICE_COL[chk];
+    else if (k.kind == K_CHECK) col = (r == _checkR ? CHECK_LIT : CHECK_COL)[chk];
+    else if (isBoost(k.kind)) col = BOOST_COL[chk];
+    else col = FLOOR_COL[k.h > 3 ? 3 : k.h][chk];
+    drawPoly(buf, w, h, top, 4, fog(col, depth));
+    if (isBoost(k.kind)) {
+        // The arrow: a triangle pointing the way the pad pushes, flashing.
+        static const float FX[4] = { 0, 0, 1, -1 }, FZ[4] = { 1, -1, 0, 0 };
+        const int d = k.kind - K_BOOST_N;
+        const float fx = FX[d], fz = FZ[d], rx = fz, rz = -fx;
+        const float mx = x0 + CELL * 0.5f, mz = z0 + CELL * 0.5f, y = hgt[0] + 1.0f;
+        const float pts[3][2] = { { 0.0f, 0.36f }, { -0.30f, -0.22f }, { 0.30f, -0.22f } };   // (right, forward)
+        float q[3][3];
+        for (int i = 0; i < 3; ++i)
+            toCam(mx + (pts[i][0] * rx + pts[i][1] * fx) * CELL, y,
+                  mz + (pts[i][0] * rz + pts[i][1] * fz) * CELL, q[i]);
+        drawPoly(buf, w, h, q, 3, fog(ARROW_COL[(millis() / 150) & 1], depth));
+    }
+}
+
+// A rail: a low wall on a cell's edge, no thickness, seen from either side.
+void RollFluxGame::drawRail(uint16_t* buf, int w, int h, int c, int r, int dir, float depth) {
+    const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
+    const float y0 = (float)(_cells[r][c].h * HEIGHT_STEP), y1 = y0 + RAIL_HEIGHT;
+    float ax, az, bx, bz;
+    switch (dir) {
+        case D_N: ax = x0; az = z1; bx = x1; bz = z1; break;
+        case D_S: ax = x0; az = z0; bx = x1; bz = z0; break;
+        case D_E: ax = x1; az = z0; bx = x1; bz = z1; break;
+        default:  ax = x0; az = z0; bx = x0; bz = z1; break;
+    }
+    float q[4][3];
+    toCam(ax, y0, az, q[0]);
+    toCam(bx, y0, bz, q[1]);
+    toCam(bx, y1, bz, q[2]);
+    toCam(ax, y1, az, q[3]);
+    drawPoly(buf, w, h, q, 4, fog(RAIL_COL[dir >= D_E], depth));
+}
+
+// The ball: its faces turned to the camera, each lit by the sun. Striped
+// so its turn shows: gores in two colours, the poles capped.
+void RollFluxGame::drawBall(uint16_t* buf, int w, int h) {
+    const BallMesh &mesh = ballMesh();
+    float cam[BALL_VERTS][3];
+    for (int i = 0; i < BALL_VERTS; ++i) {
+        const float* v = mesh.v[i];
+        const float wx = _rot[0] * v[0] + _rot[1] * v[1] + _rot[2] * v[2];
+        const float wy = _rot[3] * v[0] + _rot[4] * v[1] + _rot[5] * v[2];
+        const float wz = _rot[6] * v[0] + _rot[7] * v[1] + _rot[8] * v[2];
+        toCam(_bx + wx * BALL_RADIUS, _by + BALL_RADIUS + wy * BALL_RADIUS, _bz + wz * BALL_RADIUS, cam[i]);
+    }
+    float centre[3];
+    toCam(_bx, _by + BALL_RADIUS, _bz, centre);
+    for (int band = 0; band <= BALL_RINGS; ++band)
+        for (int g = 0; g < BALL_LON; ++g) {
+            int idx[4], n;
+            if (band == 0) { idx[0] = 0; idx[1] = ringVert(1, g + 1); idx[2] = ringVert(1, g); n = 3; }
+            else if (band == BALL_RINGS) {
+                idx[0] = ringVert(band, g); idx[1] = ringVert(band, g + 1); idx[2] = BALL_VERTS - 1; n = 3;
+            } else {
+                idx[0] = ringVert(band, g); idx[1] = ringVert(band, g + 1);
+                idx[2] = ringVert(band + 1, g + 1); idx[3] = ringVert(band + 1, g); n = 4;
+            }
+            // Facing the camera: the face's outward direction (from the
+            // ball's centre) points back towards the eye.
+            float fc[3] = { 0, 0, 0 }, lv[3] = { 0, 0, 0 };
+            for (int k = 0; k < n; ++k)
+                for (int e = 0; e < 3; ++e) { fc[e] += cam[idx[k]][e] / n; lv[e] += mesh.v[idx[k]][e] / n; }
+            const float nx = fc[0] - centre[0], ny = fc[1] - centre[1], nz = fc[2] - centre[2];
+            if (nx * fc[0] + ny * fc[1] + nz * fc[2] >= 0) continue;
+            // Lit by the sun in the world: the face's direction turned with the ball.
+            const float wx = _rot[0] * lv[0] + _rot[1] * lv[1] + _rot[2] * lv[2];
+            const float wy = _rot[3] * lv[0] + _rot[4] * lv[1] + _rot[5] * lv[2];
+            const float wz = _rot[6] * lv[0] + _rot[7] * lv[1] + _rot[8] * lv[2];
+            const float len = sqrtf(wx * wx + wy * wy + wz * wz) + 1e-6f;
+            const float lit = (wx * SUN[0] + wy * SUN[1] + wz * SUN[2]) / len;
+            const uint16_t base = (band == 0 || band == BALL_RINGS) ? BALL_COL[2] : BALL_COL[g & 1];
+            float q[4][3];
+            for (int k = 0; k < n; ++k)
+                for (int e = 0; e < 3; ++e) q[k][e] = cam[idx[k]][e];
+            drawPoly(buf, w, h, q, n, shade565(base, 0.45f + 0.6f * (lit > 0 ? lit : 0)));
+        }
+}
+
+// The ball's shadow: a dark octagon on the floor under it, following the
+// floor's height at each corner so it lies on a ramp too.
+void RollFluxGame::drawShadow(uint16_t* buf, int w, int h, float floorY) {
+    float q[8][3];
+    const float rad = BALL_RADIUS * 0.85f;
+    for (int i = 0; i < 8; ++i) {
+        const float a = i * (float)PI / 4;
+        const float x = _bx + cosf(a) * rad, z = _bz - sinf(a) * rad;
+        float y;
+        if (!floorAt(x, z, y)) y = floorY;
+        toCam(x, y + 1.0f, z, q[i]);
+    }
+    drawPoly(buf, w, h, q, 8, 0, true);
+}
+
+// A gem: a spinning diamond (an octahedron) bobbing over its cell.
+void RollFluxGame::drawGem(uint16_t* buf, int w, int h, int c, int r) {
+    const float mx = cellX0(c) + CELL * 0.5f, mz = cellZ0(r) + CELL * 0.5f, my = gemY(c, r);
+    const float s = 32.0f, spin = millis() * 0.004f;
+    float tip[2][3], ring[4][3];
+    toCam(mx, my + s * 1.4f, mz, tip[0]);
+    toCam(mx, my - s * 1.4f, mz, tip[1]);
+    for (int i = 0; i < 4; ++i) {
+        const float a = spin + i * (float)PI / 2;
+        toCam(mx + cosf(a) * s, my, mz + sinf(a) * s, ring[i]);
+    }
+    float centre[3];
+    toCam(mx, my, mz, centre);
+    for (int half = 0; half < 2; ++half)
+        for (int i = 0; i < 4; ++i) {
+            float q[3][3];
+            for (int e = 0; e < 3; ++e) {
+                q[0][e] = tip[half][e];
+                q[1][e] = ring[i][e];
+                q[2][e] = ring[(i + 1) & 3][e];
+            }
+            const float fx = (q[0][0] + q[1][0] + q[2][0]) / 3, fy = (q[0][1] + q[1][1] + q[2][1]) / 3,
+                        fz = (q[0][2] + q[1][2] + q[2][2]) / 3;
+            if ((fx - centre[0]) * fx + (fy - centre[1]) * fy + (fz - centre[2]) * fz >= 0) continue;
+            drawPoly(buf, w, h, q, 3, fog(GEM_COL[(i + half) & 1], centre[2]));
+        }
+}
+
+// Everything, far to near. The floor pieces (cells, and rails as their
+// own pieces) are sorted by depth; the ball, its shadow and the gems
+// (items) by theirs. A floor piece nearer than an item is drawn after it
+// only if it could hide it: a rail standing above the item's bottom, or a
+// cell whose top (its plane carried on to under the item) is above the
+// item's bottom. Otherwise it's floor the item sits on or over, and goes
+// first. So a ball rolling on a cell isn't painted over by that cell's
+// near half, and a ball falling behind an edge goes behind it.
+void RollFluxGame::drawWorld(GFXcanvas16 &canvas) {
     uint16_t* buf = canvas.getBuffer();
     const int w = canvas.width(), h = canvas.height();
     const float f = _camera.fovFactor;
-    const float camX = (float)_camera.position.x, camY = (float)_camera.position.y, camZ = (float)_camera.position.z;
-    auto toCam = [&](float x, float y, float z, float* out) {
-        const float px = x - camX, py = y - camY, pz = z - camZ;
-        out[0] = _m[0] * px + _m[1] * py + _m[2] * pz;
-        out[1] = _m[3] * px + _m[4] * py + _m[5] * pz;
-        out[2] = _m[6] * px + _m[7] * py + _m[8] * pz;
-    };
 
-    // What's in view: in front (or close enough to straddle the near
+    // Floor pieces in view: in front (or close enough to straddle the near
     // plane), within reach, and inside the frustum's sides with a cell's
     // margin.
     int count = 0;
     const float margin = CELL * 0.9f;
     for (int r = 0; r < _h; ++r)
         for (int c = 0; c < _w; ++c) {
-            if (!solid(c, r)) continue;
+            if (!solid(c, r) || count >= MAX_DRAW - 4) continue;
             float p[3];
-            toCam(cellX0(c) + CELL * 0.5f, (float)(_cells[r][c].h * HEIGHT_STEP), cellZ0(r) + CELL * 0.5f, p);
+            const float base = (float)(_cells[r][c].h * HEIGHT_STEP);
+            toCam(cellX0(c) + CELL * 0.5f, base, cellZ0(r) + CELL * 0.5f, p);
             if (p[2] < -margin || p[2] > VIEW_DIST) continue;
             const float zz = p[2] > 1.0f ? p[2] : 1.0f;
             if ((fabsf(p[0]) - margin) * f > (w / 2) * zz) continue;
             if ((fabsf(p[1]) - margin) * f > (h / 2) * zz) continue;
-            _drawList[count++] = DrawCell{ (int16_t)p[2], (uint8_t)c, (uint8_t)r };
+            _draw[count++] = DrawEntry{ (int16_t)p[2], P_CELL, (uint8_t)c, (uint8_t)r, 0, 0 };
+            if (!(_cells[r][c].flags & F_RAIL)) continue;
+            for (int d = 0; d < 4; ++d) {
+                if (!railed(c, r, d)) continue;
+                static const float MX[4] = { 0.5f, 0.5f, 1.0f, 0.0f }, MZ[4] = { 1.0f, 0.0f, 0.5f, 0.5f };
+                float q[3];
+                toCam(cellX0(c) + MX[d] * CELL, base + RAIL_HEIGHT * 0.5f, cellZ0(r) + MZ[d] * CELL, q);
+                _draw[count++] = DrawEntry{ (int16_t)q[2], P_RAIL, (uint8_t)c, (uint8_t)r, (uint8_t)d, 0 };
+            }
         }
-    std::sort(_drawList, _drawList + count, [](const DrawCell &a, const DrawCell &b) { return a.z > b.z; });
+    std::sort(_draw, _draw + count, [](const DrawEntry &a, const DrawEntry &b) { return a.z > b.z; });
 
-    for (int i = 0; i < count; ++i) {
-        const int c = _drawList[i].c, r = _drawList[i].r;
-        float hgt[4];
-        cornerHeights(c, r, hgt);
-        const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
-        const float cx[4] = { x0, x1, x1, x0 }, cz[4] = { z0, z0, z1, z1 };
-        float top[4][3];
-        for (int k = 0; k < 4; ++k) toCam(cx[k], hgt[k], cz[k], top[k]);
-        const float depth = (float)_drawList[i].z;
-        for (const Edge &e : EDGES) {
-            // Only sides facing the camera: the camera is beyond the edge.
-            const float ex = e.dc > 0 ? x1 : e.dc < 0 ? x0 : 0, ez = e.dr > 0 ? z0 : e.dr < 0 ? z1 : 0;
-            if ((e.dc > 0 && camX <= ex) || (e.dc < 0 && camX >= ex) ||
-                (e.dr > 0 && camZ >= ez) || (e.dr < 0 && camZ <= ez)) continue;
-            float nh[4];
-            const bool nsolid = solid(c + e.dc, r + e.dr);
-            if (nsolid) cornerHeights(c + e.dc, r + e.dr, nh);
-            const float ba = nsolid ? nh[e.na] : hgt[e.a] - SIDE_DEPTH;
-            const float bb = nsolid ? nh[e.nb] : hgt[e.b] - SIDE_DEPTH;
-            if (hgt[e.a] <= ba + 1 && hgt[e.b] <= bb + 1) continue;
-            float q[4][3];
-            for (int k = 0; k < 3; ++k) { q[0][k] = top[e.a][k]; q[1][k] = top[e.b][k]; }
-            toCam(cx[e.b], fminf(bb, hgt[e.b]), cz[e.b], q[2]);
-            toCam(cx[e.a], fminf(ba, hgt[e.a]), cz[e.a], q[3]);
-            drawQuad(buf, w, h, q, 4, cellColour(c, r, e.col, depth));
+    // Items in view. The ball blinks while it waits after a fall.
+    int items = 0;
+    float bc[3];
+    toCam(_bx, _by + BALL_RADIUS, _bz, bc);
+    const bool ballShown = bc[2] > -BALL_RADIUS && bc[2] < VIEW_DIST &&
+                           ((long)(millis() - _holdUntil) >= 0 || ((millis() / 100) & 1));
+    if (ballShown) {
+        float fy;
+        if (floorAt(_bx, _bz, fy) && _by >= fy - 1.0f && _by - fy < 600.0f) {
+            float sc[3];
+            toCam(_bx, fy, _bz, sc);
+            _items[items++] = Item{ fmaxf(sc[2], bc[2] + 1.0f), fy, _bx, _bz, I_SHADOW, 0, 0 };
         }
-        drawQuad(buf, w, h, top, 4, cellColour(c, r, -1, depth));
+        _items[items++] = Item{ bc[2], _by, _bx, _bz, I_BALL, 0, 0 };
+    }
+    for (int i = 0; i < count && items < MAX_ITEMS; ++i) {
+        const DrawEntry &e = _draw[i];
+        if (e.type != P_CELL || (_cells[e.r][e.c].flags & (F_GEM | F_TAKEN)) != F_GEM) continue;
+        const float gx = cellX0(e.c) + CELL * 0.5f, gz = cellZ0(e.r) + CELL * 0.5f, gy = gemY(e.c, e.r);
+        float gc[3];
+        toCam(gx, gy, gz, gc);
+        _items[items++] = Item{ gc[2], gy - 45.0f, gx, gz, I_GEM, e.c, e.r };
+    }
+    std::sort(_items, _items + items, [](const Item &a, const Item &b) { return a.depth > b.depth; });
+
+    // Which item each floor piece must follow, then a stable sort by that.
+    int slotCount[MAX_ITEMS + 1] = {};
+    for (int i = 0; i < count; ++i) {
+        DrawEntry &e = _draw[i];
+        int slot = 0;
+        for (int j = 0; j < items; ++j) {
+            const Item &it = _items[j];
+            if (e.z >= it.depth) continue;
+            const bool hides = e.type == P_RAIL
+                ? it.bottom < _cells[e.r][e.c].h * HEIGHT_STEP + RAIL_HEIGHT - 2.0f
+                : it.bottom < planeAt(e.c, e.r, it.x, it.z) - 20.0f;
+            if (hides) slot = j + 1;
+        }
+        e.slot = (uint8_t)slot;
+        ++slotCount[slot];
+    }
+    int start[MAX_ITEMS + 2];
+    start[0] = 0;
+    for (int s = 0; s <= items; ++s) start[s + 1] = start[s] + slotCount[s];
+    int fill[MAX_ITEMS + 1];
+    for (int s = 0; s <= items; ++s) fill[s] = start[s];
+    for (int i = 0; i < count; ++i) _drawSorted[fill[_draw[i].slot]++] = _draw[i];
+
+    for (int s = 0; s <= items; ++s) {
+        for (int i = start[s]; i < start[s + 1]; ++i) {
+            const DrawEntry &e = _drawSorted[i];
+            if (e.type == P_CELL) drawCell(buf, w, h, e.c, e.r, (float)e.z);
+            else drawRail(buf, w, h, e.c, e.r, e.dir, (float)e.z);
+        }
+        if (s == items) break;
+        const Item &it = _items[s];
+        switch (it.type) {
+            case I_BALL:   drawBall(buf, w, h); break;
+            case I_SHADOW: drawShadow(buf, w, h, it.bottom); break;
+            default:       drawGem(buf, w, h, it.c, it.r); break;
+        }
     }
 }
-
-// --- Frame ----------------------------------------------------------------------
 
 void RollFluxGame::renderFrame(GFXcanvas16 &canvas) {
-    placeChunks();
-    placeBall();
-    if (_direct) {
-        drawSky(canvas);
-        drawFloorDirect(canvas);
-        _scene->setClearBuffer(false);
-    } else {
-        _scene->setClearBuffer(true);     // to the sky gradient
-    }
-    _scene->render();
-    _jetTris = _scene->lastFrameDrawnTriangles;
+    computeCameraMatrix();
+    drawSky(canvas);
+    drawStars(canvas);
+    drawWorld(canvas);
 }
 
-// Stage 0's readout: renderer, camera, render time (averaged over a
-// second; it leaves out the display push), triangles Jet drew, and goals
-// and falls so far.
-void RollFluxGame::drawOverlay(GFXcanvas16 &canvas) {
-    char buf[40];
-    snprintf(buf, sizeof(buf), "%s %s %lu.%lums %dt", _direct ? "DIRECT" : "JET",
-             CAMERA_PRESETS[_preset].name, _renderAvgUs / 1000, (_renderAvgUs / 100) % 10, _jetTris);
-    canvas.setFont();
-    canvas.setTextSize(1);
-    canvas.fillRect(0, 0, canvas.width(), 9, ArcadeConfig::COLOR_BLACK);
-    canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-    canvas.setCursor(1, 1);
-    canvas.print(buf);
-    snprintf(buf, sizeof(buf), "G%ld F%ld", _goals, _falls);
-    canvas.setTextColor(ArcadeConfig::COLOR_GREY);
-    canvas.setCursor(1, canvas.height() - 8);
-    canvas.print(buf);
-    canvas.setCursor(70, canvas.height() - 8);
-    canvas.print("A:CAM B:FLOOR");
-}
-
-// --- The scene --------------------------------------------------------------------
-
-void RollFluxGame::ensureSceneReady(GFXcanvas16 &canvas) {
-    if (_scene) return;
-    _scene = new Renderer::Scene(canvas.getBuffer(), nullptr, canvas.width(), canvas.height());
-
+// The sky, the stars and the camera's lens, once.
+void RollFluxGame::ensureReady(GFXcanvas16 &canvas) {
+    if (_ready) return;
+    _ready = true;
     // The void: a dark sky, deepening towards the top.
     const int h = canvas.height();
     for (int y = 0; y < h && y < ArcadeConfig::LANDSCAPE_HEIGHT; ++y)
         _sky[y] = lerp565(rgb565(1, 2, 6), rgb565(8, 10, 18), (float)y / (float)(h - 1));
-    _scene->backgroundGradientColors = _sky;
-
+    // Stars spread evenly over the sphere, from a fixed seed (not random(),
+    // which the game's play uses).
+    uint32_t seed = 12345;
+    auto rnd = [&seed]() { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.0f; };
+    for (int i = 0; i < STAR_COUNT; ++i) {
+        const float z = 2.0f * rnd() - 1.0f, t = 2.0f * (float)PI * rnd(), s = sqrtf(1.0f - z * z);
+        _stars[i][0] = s * cosf(t);
+        _stars[i][1] = z;
+        _stars[i][2] = s * sinf(t);
+        const uint8_t v = (uint8_t)(10 + rnd() * 21);
+        _starCol[i] = rgb565(v, (uint8_t)(v * 2), v);
+    }
+    // Jet's Scene fills its trig tables when it's made; with no Scene here,
+    // the camera's rotation needs them filled first.
+    Renderer::initializeTrigTables();
     _camera.setFOV(CAMERA_FOV, canvas.width());
     _camera.nearPlane = CAMERA_NEAR;
     _camera.farPlane  = CAMERA_FAR;
-    _scene->setCamera(&_camera);
-    _scene->setDirectionalLight(&_sun);
-    _scene->setAmbientLight(&_amb);
-
-    for (int k = 0; k < 2; ++k) {
-        for (int lvl = 0; lvl < 4; ++lvl) {
-            _floorMat[k][lvl].shadingMode = Renderer::ShadingMode::UNLIT;
-            _floorMat[k][lvl].color = FLOOR_COL[lvl][k];
-        }
-        _rampMat[k].shadingMode = _goalMat[k].shadingMode = _sideMat[k].shadingMode = Renderer::ShadingMode::UNLIT;
-        _rampMat[k].color = RAMP_COL[k];
-        _goalMat[k].color = GOAL_COL[k];
-        _sideMat[k].color = SIDE_COL[k];
-    }
-    _ballMat.shadingMode = Renderer::ShadingMode::FLAT;
-    _ballMat.color = rgb565(20, 56, 31);
-
-    buildChunks();
-    _ballObj = Primitives::createSphere((int32_t)BALL_RADIUS, 8, &_ballMat);
-    _scene->addObject(_ballObj);
     updateCamera(true);
-}
-
-// Jet's Scene doesn't own what's added to it, so delete it all here.
-void RollFluxGame::releaseScene() {
-    if (!_scene) return;
-    for (Renderer::Object* obj : _scene->getObjects()) delete obj;
-    delete _scene;
-    _scene = nullptr;
-    _ballObj = nullptr;
-    for (auto &c : _chunks) c = nullptr;
-    _chunkCount = 0;
 }
 
 }  // namespace rollflux

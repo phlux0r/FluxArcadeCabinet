@@ -1,22 +1,26 @@
-// Host harness for Roll Flux's stage 0 (the renderer prototype): the real
-// game and the real Jet against a fake clock, like the other 3D harnesses.
+// Host harness for Roll Flux: the real game against a fake clock, like the
+// other 3D harnesses.
 //
-//   profile [N]  a scripted driver rolls the ball round the course for N
-//                frames (default 3000) with each floor renderer and camera
-//                height; prints the host render cost and Jet's triangles
-//                for each, and whether the driver reached the goal. Host
-//                microseconds aren't ESP32 ones: compare the rows with each
-//                other, not with a frame budget
-//   pose         writes frames of both renderers at fixed points on the
-//                course (roll_<renderer>_<camera>_<spot>.ppm), to compare
-//                them by eye: they should match, the ball on the floor
-//   physics      the ball rolls up a ramp, can't climb a step, falls off an
-//                edge and back to the start, and never ends up inside the
-//                floor at top speed and the longest frame
-//   all          everything (the default)
+//   physics      the ball rolls up a ramp, can't climb a step (or sink into
+//                it), stays between rails at top speed, coasts further on
+//                ice, is thrown on by a boost pad, falls off an edge, turns
+//                the way it rolls, and never ends up inside the floor at top
+//                speed and the longest frame
+//   rules        gems (points and time), checkpoints, a fall back to the
+//                last checkpoint with its time, time running out, game over,
+//                and the goal's tally on to the next course
+//   play [N]     a scripted driver rolls the ball round the course through
+//                the whole game loop (N frames at most, default 3000); it
+//                must reach the goal in time. Prints the host cost of a
+//                frame: compare runs with each other, not with a budget
+//   pose         writes frames at fixed points on the course
+//                (roll_<spot>.ppm), to look at by eye: the ball on the
+//                floor, its stripes and shadow, rails, gems, a ball fallen
+//                behind an edge hidden by it
+//   all          everything but pose (the default)
 //
-// The driver steers for waypoints along the course, as a stand-in for the
-// demo's planned route (which comes with stage 1).
+// The driver steers for waypoints along course 1, as a stand-in for the
+// demo's planned route (which comes with the attract cycle).
 
 #include "harness_common.h"
 #include <chrono>
@@ -48,13 +52,25 @@ static void routePoint(const RollFluxGame &g, int i, float &x, float &z) {
 // Stick input that steers the ball for the next waypoint at a steady pace,
 // braking against its own velocity: the wanted change of velocity, turned
 // into the camera-relative stick the game expects (landscape: screen up is
-// -joyX, right +joyY).
+// -joyX, right +joyY). After a fall it starts again from the waypoint
+// nearest the ball.
 struct Driver {
     int next = 1;
     InputState input(const RollFluxGame &g) {
         float wx, wz;
         routePoint(g, next, wx, wz);
         float dx = wx - g._bx, dz = wz - g._bz;
+        if (dx * dx + dz * dz > 1500.0f * 1500.0f) {
+            float best = 1e30f;
+            for (int i = 1; i < ROUTE_N; ++i) {
+                float x, z;
+                routePoint(g, i, x, z);
+                const float d = (x - g._bx) * (x - g._bx) + (z - g._bz) * (z - g._bz);
+                if (d < best) { best = d; next = i; }
+            }
+            routePoint(g, next, wx, wz);
+            dx = wx - g._bx; dz = wz - g._bz;
+        }
         const float d = sqrtf(dx * dx + dz * dz);
         if (d < 70.0f && next < ROUTE_N - 1) { ++next; routePoint(g, next, wx, wz); dx = wx - g._bx; dz = wz - g._bz; }
         const float dd = sqrtf(dx * dx + dz * dz) + 1e-3f;
@@ -70,134 +86,134 @@ struct Driver {
     }
 };
 
-static bool scenarioProfile(long frames) {
-    static RollFluxGame g;
-    AudioEngine audio;
-    GFXcanvas16 canvas(160, 128);
-    g.init(audio);
-    bool ok = true;
-    printf("profile: %ld frames each, host microseconds per frame (update + render)\n", frames);
-    printf("  %-7s %-5s %8s %8s %8s %6s %6s\n", "floor", "cam", "mean", "p95", "max", "tris", "goals");
-    for (int direct = 1; direct >= 0; --direct)
-        for (int preset = 0; preset < 3; ++preset) {
-            g.init(audio);
-            g._direct = direct;
-            g._preset = preset;
-            g.respawn();
-            Driver drv;
-            std::vector<double> us;
-            long tris = 0;
-            for (long f = 0; f < frames; ++f) {
-                InputState in = drv.input(g);
-                auto t0 = std::chrono::steady_clock::now();
-                g.update(canvas, in, audio);
-                auto t1 = std::chrono::steady_clock::now();
-                us.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
-                tris += g._jetTris;
-                g_fakeMillis += STEP_MS;
-                if (g._goals > 0) break;
-            }
-            std::sort(us.begin(), us.end());
-            double sum = 0;
-            for (double u : us) sum += u;
-            const bool reached = g._goals > 0;
-            printf("  %-7s %-5s %8.0f %8.0f %8.0f %6ld %6ld%s\n", direct ? "DIRECT" : "JET",
-                   CAMERA_PRESETS[preset].name, sum / us.size(), us[us.size() * 95 / 100], us.back(),
-                   tris / (long)us.size(), g._goals, reached ? "" : "  (didn't reach the goal)");
-            ok &= reached;
-        }
-    printf("profile -> %s\n", ok ? "PASS" : "FAIL");
-    return ok;
-}
-
-static void scenarioPose() {
-    static RollFluxGame g;
-    AudioEngine audio;
-    GFXcanvas16 canvas(160, 128);
-    g.init(audio);
-    InputState none{};
-    g.update(canvas, none, audio);
-    struct Spot { const char* name; float c, r, yawDeg; };
-    const Spot spots[] = {
-        { "start",   5.0f, 33, 0 },
-        { "ramp",    5.5f, 28, 0 },
-        { "gap",     5.5f, 24, 0 },
-        { "block",   4.5f, 10.5f, 0 },
-        { "sideways", 3.5f, 6, 45 },
-    };
-    for (const Spot &s : spots)
-        for (int direct = 1; direct >= 0; --direct)
-            for (int preset = 0; preset < 3; ++preset) {
-                g._direct = direct;
-                g._preset = preset;
-                g._bx = (s.c + 0.5f) * CELL;
-                g._bz = (g._h - 1 - s.r + 0.5f) * CELL;
-                float y = 0;
-                g.floorAt(g._bx, g._bz, y);
-                g._by = y;
-                g._vx = g._vz = 0;
-                g._falling = false;
-                g._yaw = s.yawDeg * (float)PI / 180.0f;
-                g.updateCamera(true);
-                g.renderFrame(canvas);
-                char name[64];
-                snprintf(name, sizeof(name), "roll_%s_%s_%s", direct ? "direct" : "jet",
-                         CAMERA_PRESETS[preset].name, s.name);
-                FrameDumper d(name);
-                d.n = 1; d.at[0] = 0;
-                d.maybeDump(0, canvas);
-            }
-}
-
 static bool check(const char* what, bool cond, bool &ok) {
-    printf("  %-60s %s\n", what, cond ? "ok" : "BAD");
+    printf("  %-66s %s\n", what, cond ? "ok" : "BAD");
     ok &= cond;
     return cond;
+}
+
+// A fresh game, its scene ready, the respawn wait over.
+static void fresh(RollFluxGame &g, AudioEngine &audio, GFXcanvas16 &canvas) {
+    g.init(audio);
+    g.update(canvas, InputState{}, audio);
+    g_fakeMillis += 1000;
+    g._holdUntil = 0;
+    g._lastFrameMs = g_fakeMillis;
+}
+
+// The ball still at cell (c, r) (fractions allowed), on the floor there.
+static void at(RollFluxGame &g, float c, float r) {
+    g._bx = (c + 0.5f) * CELL; g._bz = (g._h - 1 - r + 0.5f) * CELL;
+    float y = 0; g.floorAt(g._bx, g._bz, y); g._by = y;
+    g._vx = g._vz = g._vy = 0; g._falling = false; g._fellOut = false; g._yaw = 0;
+    g._extraSpeed = 0; g._holdUntil = 0;
+}
+
+static void run(RollFluxGame &g, float joyX, float joyY, int frames, unsigned long ms = STEP_MS) {
+    for (int f = 0; f < frames; ++f) {
+        InputState in{}; in.joyX = joyX; in.joyY = joyY;
+        g._lastFrameMs = g_fakeMillis; g_fakeMillis += ms;
+        g.updateFrameScale();
+        g.stepBall(in);
+    }
 }
 
 static bool scenarioPhysics() {
     static RollFluxGame g;
     AudioEngine audio;
     GFXcanvas16 canvas(160, 128);
-    g.init(audio);
+    fresh(g, audio, canvas);
     bool ok = true;
     printf("physics:\n");
-    auto at = [&](float c, float r) {
-        g._bx = (c + 0.5f) * CELL; g._bz = (g._h - 1 - r + 0.5f) * CELL;
-        float y = 0; g.floorAt(g._bx, g._bz, y); g._by = y;
-        g._vx = g._vz = g._vy = 0; g._falling = false; g._yaw = 0;
-    };
-    auto run = [&](float joyX, float joyY, int frames, unsigned long ms = STEP_MS) {
-        for (int f = 0; f < frames; ++f) {
-            InputState in{}; in.joyX = joyX; in.joyY = joyY;
-            g._lastFrameMs = g_fakeMillis; g_fakeMillis += ms;
-            g.updateFrameScale();
-            g.stepBall(in);
-        }
-    };
     // Up the ramp (rows 27 to 25, rising north): stick up, camera facing north.
-    at(5.5f, 28);
-    run(-1.0f, 0, 40);
+    at(g, 5.5f, 28);
+    run(g, -1.0f, 0, 40);
     check("rolls up the ramp onto the plateau", g._by >= HEIGHT_STEP - 1 && !g._falling, ok);
-    // The raised block (height 2, rows 7-8, cols 5-6) from the east: a wall.
-    at(7.5f, 7.5f);
+    // The raised block (height 2, rows 7-8, cols 5-6) from the east: a wall,
+    // and the ball stops short of it by about its radius.
+    at(g, 7.5f, 7.5f);
     g._yaw = -(float)PI / 2;                       // facing west
-    run(-1.0f, 0, 40);
+    run(g, -1.0f, 0, 40);
     check("can't climb a two-step block: bounced off it", g._bx > 7.0f * CELL && g._by < 1.0f, ok);
+    check("and doesn't sink into it (stops a radius short)", g._bx > 7.0f * CELL + WALL_PROBE - SUBSTEP, ok);
     // Off the plateau's edge into the gap (rows 19-21 void between cols 2 and 9).
-    const long falls0 = g._falls;
-    at(5.5f, 22);
-    run(-1.0f, 0, 120);
-    check("rolls off into the gap, falls, and is back at the start",
-          g._falls == falls0 + 1 && fabsf(g._bx - g._startX) < CELL && !g._falling, ok);
+    at(g, 5.5f, 22);
+    run(g, -1.0f, 0, 120);
+    check("rolls off into the gap and falls out", g._fellOut, ok);
+    // Rails: the right-hand bridge (col 9, rows 19-21) is railed both sides.
+    // Flung at it sideways at full speed, with 100ms frames, it stays on.
+    bool stayed = true;
+    for (int trial = 0; trial < 16; ++trial) {
+        at(g, 9, 20);
+        const float s = (trial & 1) ? 1.0f : -1.0f;
+        g._vx = s * BALL_MAX_SPEED;
+        g._vz = (trial % 3 - 1) * 200.0f;
+        g._yaw = (float)PI / 2;                    // facing east: stick up pushes east
+        for (int f = 0; f < 10; ++f) {
+            run(g, -s, 0, 1, 100);
+            const int c = g.colAt(g._bx);
+            if (g._falling || c != 9) stayed = false;
+        }
+    }
+    check("rails keep the ball on a bridge at full speed and 100ms frames", stayed, ok);
+    // The unrailed bridge (col 2): the same throw goes over the edge.
+    at(g, 2, 20);
+    g._vx = BALL_MAX_SPEED;
+    run(g, 0, 0, 10);
+    check("without rails the same throw goes over", g._falling || g._fellOut, ok);
+    // Ice (rows 15-16, cols 4-7) against plain floor (row 18): coasting
+    // east from the same speed, the ball goes further on ice.
+    at(g, 3.6f, 15);
+    g._vx = 500;
+    run(g, 0, 0, 30);
+    const float iceDist = g._bx - 4.1f * CELL;
+    at(g, 3.6f, 18);
+    g._vx = 500;
+    run(g, 0, 0, 30);
+    const float floorDist = g._bx - 4.1f * CELL;
+    char line[96];
+    snprintf(line, sizeof(line), "coasts further on ice (%.0f) than on floor (%.0f)", iceDist, floorDist);
+    check(line, iceDist > floorDist * 1.3f, ok);
+    // The boost pad (row 28, pushing north) speeds it up, past its usual top speed.
+    auto peak = [&](float vz) {
+        at(g, 5.5f, 29);
+        g._vz = vz;
+        float top = 0;
+        for (int f = 0; f < 30; ++f) { run(g, 0, 0, 1); top = fmaxf(top, g._vz); }
+        return top;
+    };
+    const float slow = peak(300), fast = peak(BALL_MAX_SPEED - 50);
+    snprintf(line, sizeof(line), "a boost pad throws it on (300 -> %.0f)", slow);
+    check(line, slow > 800, ok);
+    snprintf(line, sizeof(line), "and past the usual top speed (%.0f -> %.0f)", BALL_MAX_SPEED - 50, fast);
+    check(line, fast > BALL_MAX_SPEED + 100, ok);
+    // Turning as it rolls: rolled east, the top of the ball has gone east;
+    // rolled south, south; by the distance over the radius.
+    at(g, 5.5f, 33);
+    g._rot[0] = g._rot[4] = g._rot[8] = 1;
+    g._rot[1] = g._rot[2] = g._rot[3] = g._rot[5] = g._rot[6] = g._rot[7] = 0;
+    float x0 = g._bx;
+    g._vx = 300;
+    run(g, 0, 0, 4);
+    float angle = acosf(fmaxf(-1.0f, fminf(1.0f, g._rot[4])));
+    snprintf(line, sizeof(line), "rolled east, its top turns east (top x %.2f, %.2f rad for %.2f)",
+             g._rot[1], angle, (g._bx - x0) / BALL_RADIUS);
+    check(line, g._rot[1] > 0.3f && fabsf(angle - (g._bx - x0) / BALL_RADIUS) < 0.05f, ok);
+    at(g, 5.5f, 33);
+    g._rot[0] = g._rot[4] = g._rot[8] = 1;
+    g._rot[1] = g._rot[2] = g._rot[3] = g._rot[5] = g._rot[6] = g._rot[7] = 0;
+    g._vz = -300;
+    run(g, 0, 0, 4);
+    snprintf(line, sizeof(line), "rolled south, its top turns south (top z %.2f)", g._rot[7]);
+    check(line, g._rot[7] < -0.3f && fabsf(g._rot[1]) < 0.01f, ok);
     // Never inside the floor: fling it about at top speed with 100ms frames.
     int inside = 0;
     for (int trial = 0; trial < 40; ++trial) {
-        at(5.5f, 30 - (trial % 6));
+        at(g, 5.5f, 30 - (trial % 6));
         g._vx = BALL_MAX_SPEED * cosf(trial * 0.7f);
         g._vz = BALL_MAX_SPEED * sinf(trial * 0.7f);
         for (int f = 0; f < 20; ++f) {
-            run(cosf(trial + f * 0.3f), sinf(trial * 1.3f + f * 0.2f), 1, 100);
+            run(g, cosf(trial + f * 0.3f), sinf(trial * 1.3f + f * 0.2f), 1, 100);
             float y;
             if (!g._falling && g.floorAt(g._bx, g._bz, y) && g._by < y - 1.0f) ++inside;
         }
@@ -207,6 +223,179 @@ static bool scenarioPhysics() {
     return ok;
 }
 
+// One frame of the whole game.
+static void frame(RollFluxGame &g, AudioEngine &audio, GFXcanvas16 &canvas, InputState in = InputState{}) {
+    g_fakeMillis += STEP_MS;
+    g.update(canvas, in, audio);
+}
+
+static bool scenarioRules() {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    bool ok = true;
+    printf("rules:\n");
+    fresh(g, audio, canvas);
+    check("starts with 4 balls, the course's time, gems to find",
+          g._lives == START_LIVES && g._timeMs > 50000 && g._courseGems == 7, ok);
+
+    // A gem: the one on the left bridge (col 2, row 20).
+    at(g, 2, 21.2f);
+    g._yaw = 0;
+    const long score0 = g._score, time0 = g._timeMs;
+    for (int f = 0; f < 60 && g._courseGemsTaken == 0; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    check("a gem: 100 points, 2 more seconds",
+          g._courseGemsTaken == 1 && g._score == score0 + GEM_POINTS && g._timeMs > time0 + 1000, ok);
+
+    // A fall with no checkpoint yet: back to the start, a ball fewer.
+    at(g, 5.5f, 22);
+    for (int f = 0; f < 120 && g._lives == START_LIVES; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    check("a fall: a ball fewer, back at the start",
+          g._lives == START_LIVES - 1 && fabsf(g._bx - g._startX) < 1 && fabsf(g._bz - g._startZ) < 1, ok);
+    check("and the ball waits a moment", (long)(g_fakeMillis - g._holdUntil) < 0, ok);
+
+    // The checkpoint row (17): rolled onto, then a fall puts it back there
+    // with the time it had.
+    at(g, 5.5f, 18.4f);
+    for (int f = 0; f < 60 && g._checkR < 0; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    const long checkTime = g._respawnTimeMs;
+    check("the checkpoint row is reached", g._checkR == 17, ok);
+    at(g, 5.5f, 22);
+    g._timeMs = 5000;
+    for (int f = 0; f < 120 && g._lives == START_LIVES - 1; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    check("a fall after it: back at the checkpoint, with its time",
+          g._lives == START_LIVES - 2 && g.rowAt(g._bz) == 17 && g._timeMs == checkTime, ok);
+
+    // Time running out: a ball fewer, the course from the top (gems back).
+    g._timeMs = 40;
+    g._holdUntil = 0;
+    frame(g, audio, canvas);
+    frame(g, audio, canvas);
+    check("time up: a ball fewer, the course again with its gems and time",
+          g._lives == START_LIVES - 3 && g._courseGemsTaken == 0 && g._timeMs == g._courseMs &&
+          g._checkR < 0 && fabsf(g._bx - g._startX) < 1, ok);
+
+    // The goal: the tally, then the next course (round again: 15% less time).
+    g._holdUntil = 0;
+    g._timeMs = 30500;
+    const long before = g._score;
+    at(g, 7, 2.2f);
+    for (int f = 0; f < 60 && g._phase == RollFluxGame::PHASE_PLAYING; ++f)
+        frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    check("the goal: the course is clear", g._phase == RollFluxGame::PHASE_CLEAR, ok);
+    printf("  (tally: time %ld, no falls %ld, all gems %ld; score %ld -> %ld)\n", g._clearTime, g._clearNoFall,
+           g._clearAllGems, before, g._score);
+    // (No falls since time ran out and the course started again.)
+    check("time bonus 100 a second left, and the no-falls bonus",
+          g._clearTime >= 28 * TIME_POINTS && g._clearTime <= 30 * TIME_POINTS && g._clearNoFall == NO_FALL_BONUS &&
+          g._clearAllGems == 0 && g._score == before + g._clearTime + g._clearNoFall, ok);
+    for (int f = 0; f < 200 && g._phase == RollFluxGame::PHASE_CLEAR; ++f) frame(g, audio, canvas);
+    check("then the next course (round again, less time)",
+          g._phase == RollFluxGame::PHASE_PLAYING && g._loop == 1 && g._courseMs == 51000, ok);
+
+    // The last ball gone: game over; A (after its delay) starts again.
+    at(g, 5.5f, 22);
+    for (int f = 0; f < 120 && g._phase == RollFluxGame::PHASE_PLAYING; ++f)
+        frame(g, audio, canvas, InputState{ -1.0f, 0 });
+    check("the last ball gone: game over", g._phase == RollFluxGame::PHASE_GAMEOVER && g._lives == 0, ok);
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    frame(g, audio, canvas, a);
+    check("A straight away does nothing", g._phase == RollFluxGame::PHASE_GAMEOVER, ok);
+    for (int f = 0; f < 40; ++f) frame(g, audio, canvas);
+    frame(g, audio, canvas, a);
+    check("A after a second: a new game", g._phase == RollFluxGame::PHASE_PLAYING &&
+          g._lives == START_LIVES && g._score == 0 && g._loop == 0, ok);
+    printf("rules -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+static bool scenarioPlay(long frames) {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    g.init(audio);
+    FrameDumper dump("roll_play");
+    Driver drv;
+    std::vector<double> us;
+    long f = 0;
+    float floorShare = 0;                      // of the screen under the HUD, not sky
+    for (; f < frames && g._phase == RollFluxGame::PHASE_PLAYING; ++f) {
+        InputState in = drv.input(g);
+        g_fakeMillis += STEP_MS;
+        auto t0 = std::chrono::steady_clock::now();
+        g.update(canvas, in, audio);
+        auto t1 = std::chrono::steady_clock::now();
+        us.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
+        dump.maybeDump(f, canvas);
+        if (f == 100) {
+            int n = 0;
+            for (int y = 20; y < 128; ++y)
+                for (int x = 0; x < 160; ++x) n += canvas.getBuffer()[y * 160 + x] != g._sky[y];
+            floorShare = n / (108.0f * 160.0f);
+        }
+    }
+    std::sort(us.begin(), us.end());
+    double sum = 0;
+    for (double u : us) sum += u;
+    const bool cleared = g._phase == RollFluxGame::PHASE_CLEAR;
+    printf("play: %ld frames, %s, %ld falls, gems %d/%d, %.1fs left, score %ld\n", f,
+           cleared ? "reached the goal" : "didn't reach the goal", g._falls, g._courseGemsTaken,
+           g._courseGems, g._timeMs / 1000.0, g._score);
+    printf("  host us a frame (update + draw): mean %.0f, p95 %.0f, max %.0f\n",
+           sum / us.size(), us[us.size() * 95 / 100], us.back());
+    printf("  course drawn over %.0f%% of the view at frame 100\n", floorShare * 100);
+    const bool ok = cleared && g._lives == START_LIVES && floorShare > 0.3f;
+    printf("play -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+static void scenarioPose() {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    fresh(g, audio, canvas);
+    struct Spot { const char* name; float c, r, yawDeg, drop, joyX, joyY; };
+    const Spot spots[] = {
+        { "start",    5.0f, 33,    0,    0,  0, 0 },
+        { "rails",    5.5f, 30.5f, 0,    0,  0, 0 },
+        { "ramp",     5.5f, 26.5f, 0,    0,  0, 0 },
+        { "gap",      5.5f, 23.5f, 0,    0,  0, 0 },
+        { "bridge",   9.0f, 22.5f, 0,    0,  0, 0 },
+        { "ice",      5.5f, 18.5f, 0,    0,  0, 0 },
+        { "block",    4.5f, 10.5f, 0,    0,  0, 0 },
+        { "sideways", 3.5f, 6,     45,   0,  0, 0 },
+        { "goal",     7.5f, 4,     0,    0,  0, 0 },
+        { "lean",     5.5f, 23.5f, 0,    0, -1, 1 },
+        // Fallen into the gap below the near edge: the plateau in front
+        // must hide it (camera left where it was, as during a fall).
+        { "behind",   5.5f, 20.7f, 0,   60,  0, 0 },
+    };
+    for (const Spot &s : spots) {
+        at(g, s.c, s.r);
+        g._yaw = s.yawDeg * (float)PI / 180.0f;
+        g._leanRoll = s.joyY * LEAN_ROLL;
+        g._leanPitch = -s.joyX * LEAN_PITCH;
+        // A little roll so the stripes sit at an angle.
+        g.rollBall(37, 23);
+        if (s.drop > 0) {
+            g._bz -= 2.0f * CELL;              // the camera as it was, on the plateau
+            g.updateCamera(true);
+            g._bz += 2.0f * CELL;
+            g._by = -s.drop;
+            g._falling = true;
+            g.updateCamera(false);
+        } else {
+            g.updateCamera(true);
+        }
+        g.renderFrame(canvas);
+        char name[64];
+        snprintf(name, sizeof(name), "roll_%s", s.name);
+        FrameDumper d(name);
+        d.n = 1; d.at[0] = 0;
+        d.maybeDump(0, canvas);
+    }
+}
+
 int main(int argc, char** argv) {
     (void)fnv;                                   // harness_common's trace hash: not used here
     const char* which = argc > 1 ? argv[1] : "all";
@@ -214,7 +403,8 @@ int main(int argc, char** argv) {
     const bool all = !strcmp(which, "all");
     bool ok = true;
     if (all || !strcmp(which, "physics")) ok &= scenarioPhysics();
-    if (all || !strcmp(which, "profile")) ok &= scenarioProfile(frames);
-    if (all || !strcmp(which, "pose")) scenarioPose();
+    if (all || !strcmp(which, "rules")) ok &= scenarioRules();
+    if (all || !strcmp(which, "play")) ok &= scenarioPlay(frames);
+    if (!strcmp(which, "pose")) scenarioPose();
     return ok ? 0 : 1;
 }

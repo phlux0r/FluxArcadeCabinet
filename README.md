@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Roll Flux | Roll | Landscape | 3D marble game, **stage 0 prototype**: one course and the ball, to measure the floor renderer on the board (see below) |
+| Roll Flux | Roll | Landscape | 3D marble game, **in progress (stage 1)**: tilt the course to roll a ball to the goal against the clock |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
@@ -159,17 +159,24 @@ levels make a loop (16 layouts and the bosses); each loop is faster, the
 wall quicker, guns and bosses sharper, the bosses tougher, up to the
 fifth. `docs/design/BrickFlux.md` is the full design.
 
-**Roll Flux** (`docs/design/RollFlux.md`) is, for now, its stage 0: a
-renderer prototype. One course; the stick rolls the ball (camera-relative:
-up rolls it away from you) up ramps, round a gap and a block, to the gold
-goal, where it starts again; off an edge it falls and starts again. B swaps
-how the floor is drawn, **DIRECT** (filled straight into the canvas with
-Jet's projection, as Tube draws its tunnel) or **JET** (the course as Jet
-meshes); A cycles three camera heights. The top line shows which, the
-render time averaged over a second (leaving out the display push), and the
-triangles Jet drew; the bottom one goals and falls. Its purpose is the
-board's numbers: on the host, DIRECT costs about what Tube does a frame
-and JET about twice that.
+**Roll Flux** (`docs/design/RollFlux.md`) is in progress (stage 1, first
+half). The stick tilts the course and the ball rolls that way
+(camera-relative: up rolls it away from you), to the chequered goal before
+the clock runs out. Ramps roll it up or down a step; a bigger step is a
+wall; off an edge it falls, and that's a ball gone (4 to start). Rails
+(grey) keep it on narrow ways; ice (pale blue) is slippery; boost pads
+(orange, yellow arrow) throw it along their arrow, past its usual top
+speed. Gems (spinning yellow diamonds) are 100 points and 2 more seconds,
+and an extra ball every 100. A checkpoint row (blue, cyan once reached) is
+where a fall puts you back, with the time you had there; out of time, it's
+a ball gone and the course from the top. At the goal: 100 a second left,
+2,000 for no falls, 5,000 for every gem. The camera follows behind, turning
+slowly to the way you roll, and the course leans with the stick.
+Everything is drawn straight into the canvas with Jet's camera maths (not
+its Scene): stage 0 measured that at ~55fps on the board against ~25
+through Jet. For now there's one course, which loops (15% less time each
+round); the rest of stage 1 adds the courses, the Flux Dash, the attract
+cycle, high scores and sounds.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -602,7 +609,7 @@ test/build.sh god 30000      # one Tank Flux scenario, full trace
 test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh star god 12000 # one Star Flux scenario
 test/build.sh brick play 20000   # one Brick Flux scenario
-test/build.sh roll profile       # Roll Flux's renderers compared
+test/build.sh roll play          # one Roll Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```

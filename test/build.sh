@@ -5,7 +5,7 @@
 #   test/build.sh god 30000        # one Tank Flux scenario
 #   test/build.sh tube god 30000   # one Tube Flux scenario
 #   test/build.sh star god 12000   # one Star Flux scenario
-#   test/build.sh roll profile     # Roll Flux: renderer cost, poses, physics
+#   test/build.sh roll play       # Roll Flux: physics, rules, play, pose
 #   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
 #   test/build.sh brick play 20000       # one Brick Flux scenario
@@ -117,10 +117,10 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
-  for s in physics "profile 3000"; do
+  for s in physics rules "play 3000"; do
     echo "=== roll $s"
     # shellcheck disable=SC2086
-    ./rollflux_harness $s | tail -9
+    ./rollflux_harness $s | tail -24
   done
   for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit; do
     echo "=== brick $s"

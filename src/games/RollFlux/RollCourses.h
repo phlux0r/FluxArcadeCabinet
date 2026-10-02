@@ -12,20 +12,25 @@
 //   S   the start (floor)            G  the goal (floor)
 //   n s e w  a ramp rising one step towards the north, south, east or west
 //            (its height is the low end's)
-// Stage 0 has one course, a tour of the basics: a ramp up, a gap with
-// narrow ways round it, a ramp down, a zigzag, a block to roll round and a
-// ramp sideways up to the goal.
+//   R   floor with a rail along each edge that borders the void
+//   i   ice                          *  floor with a gem over it
+//   C   a checkpoint (floor)
+//   ^ v > <  a boost pad pushing north, south, east or west
 // =============================================================================
 
 namespace rollflux {
 
-struct CourseDef { int w, h; const char* const* rows; };
+struct CourseDef { const char* name; int w, h, seconds; const char* const* rows; };
 
+// A tour of the basics: a railed run-up over a boost pad and up a ramp, a
+// gap with a narrow way round each side (the left one bare, with a gem on
+// it; the right one railed), a checkpoint, ice, a ramp down, a zigzag, a
+// block to roll round and a ramp sideways up to the goal.
 static const char* const COURSE_1_ROWS[] PROGMEM = {
     "............1#1#1#1#....",
     "............1#1G1G1#....",
     "............1#1#1#1#....",
-    "..........1#1#1#1#1#....",
+    "..........1*1#1#1#1#....",
     "......0e0e1#1#1#1#1#....",
     "......0e0e1#1#1#1#1#....",
     "......0#0#0#0#0#0#......",
@@ -33,26 +38,26 @@ static const char* const COURSE_1_ROWS[] PROGMEM = {
     "......0#0#2#2#0#0#......",
     "......0#0#0#0#0#0#......",
     "............0#0#........",
-    "........0#0#0#0#........",
+    "........0*0#0#0#........",
     "........0#0#............",
     "........0#0#............",
     "........0s0s0s0s........",
+    "....1#1#1i1i1i1i1#1#....",
+    "....1#1#1i1i1i1i1#1#....",
+    "....1C1C1C1C1C1C1C1C....",
+    "....1#1#1#1#1#1#1#1#....",
+    "....1#............1R....",
+    "....1*............1R....",
+    "....1#............1R....",
+    "....1*1#1#1#1#1#1#1*....",
     "....1#1#1#1#1#1#1#1#....",
     "....1#1#1#1#1#1#1#1#....",
-    "....1#1#1#1#1#1#1#1#....",
-    "....1#1#1#1#1#1#1#1#....",
-    "....1#............1#....",
-    "....1#............1#....",
-    "....1#............1#....",
-    "....1#1#1#1#1#1#1#1#....",
-    "....1#1#1#1#1#1#1#1#....",
-    "....1#1#1#1#1#1#1#1#....",
-    "....1#1#1#1#1#1#1#1#....",
+    "....1*1#1#1#1#1#1#1*....",
     "..........0n0n..........",
-    "..........0#0#..........",
-    "..........0#0#..........",
-    "..........0#0#..........",
-    "..........0#0#..........",
+    "..........0R0R..........",
+    "..........0^0^..........",
+    "..........0R0R..........",
+    "..........0R0R..........",
     "......0#0#0#0#0#0#......",
     "......0#0#0#0#0#0#......",
     "......0#0#0S0#0#0#......",
@@ -61,7 +66,7 @@ static const char* const COURSE_1_ROWS[] PROGMEM = {
 };
 
 static const CourseDef COURSES[] = {
-    { 12, 36, COURSE_1_ROWS },
+    { "FIRST ROLL", 12, 36, 60, COURSE_1_ROWS },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
 
