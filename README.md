@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: eight games behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: eight games (and a ninth's prototype) behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -9,6 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
+| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 8 courses in 2 worlds |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
@@ -158,6 +159,38 @@ levels make a loop (16 layouts and the bosses); each loop is faster, the
 wall quicker, guns and bosses sharper, the bosses tougher, up to the
 fifth. `docs/design/BrickFlux.md` is the full design.
 
+**Roll Flux** (`docs/design/RollFlux.md`): the stick tilts the course and
+the ball rolls that way (camera-relative: up rolls it away from you), to
+the chequered goal before the clock runs out. Ramps roll it up or down a
+step; a bigger step is a wall; off an edge it falls, and that's a ball
+gone (4 to start). Rails (grey) keep it on narrow ways; ice (pale) barely
+grips, so the ball drifts and is slow to turn; boost pads (orange, yellow
+arrow) throw it along their arrow, past its usual top speed. Gems
+(spinning yellow diamonds) are 100 points and 2 more seconds, an extra
+ball every 100, and fill the **Flux Dash** meter along the bottom: 5 gems
+a step, 3 steps. With a step, hold A to charge (the ball held back,
+flickering, a dashed line on the floor showing the way it'll go) and let
+go to dash the way you're pushing: up to twice its top speed for a moment,
+with less gravity, enough at a full charge to jump a two-cell gap (not a
+three); then it brakes back to the speed it had, so a dash on open floor
+is over within about three cells. A checkpoint row (dark, lit once reached) is where a
+fall puts you back, with the time you had there; out of time, it's a ball
+gone and the course from the top. At the goal: 100 a second left, 2,000
+for no falls, 5,000 for every gem. Eight courses in two worlds: the Orbit
+Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb) and the Ice
+Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash); after 2-4
+it goes round again with 15% less time, to 60%. The camera follows
+behind, turning slowly to the way you roll (but not round to face you
+when you roll back), and the course leans with the stick. Hold B and the
+stick turns the camera instead (the ball rolls on by itself); let go and
+it stays turned until you set off a new way. Everything is
+drawn straight into the canvas with Jet's camera maths (not its Scene):
+stage 0 measured that at ~55fps on the board against ~25 through Jet. The
+attract cycle orbits course 1 under the title (drawn live, not an image),
+two how-to-play slides and the scores. Still to come (stage 2): colour
+gates and phase bridges, crystal walls, bumpers, conveyors, moving parts,
+worlds 3-4 and the guardians.
+
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
 an autopilot, and back to the title (Maze cycles title, how-to-play and
@@ -173,6 +206,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
+| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, and dashes on long safe straights |
 
 ## Build
 
@@ -286,6 +320,11 @@ sloppy sideways push doesn't tilt it): up raises the right end, sending the
 ball left. A serves, lets a caught ball go, or fires the lasers; held with
 the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
 (on the press, so it's instant).
+
+Roll Flux: the joystick tilts the course, camera-relative (up rolls the
+ball away from you), harder for a bigger push. Hold A (with a dash step)
+to charge the Flux Dash, let go to dash. Hold B and the stick turns the
+camera left or right instead.
 
 Star Flux: the joystick flies the ship round the screen. A fires twin
 lasers, once per press as fast as you tap, or steadily while held. Press B
@@ -514,6 +553,7 @@ fetches the real files into an existing clone.
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
+| `pickup.wav` (gem); optional sounds below | Roll Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what
 the last column says. Mono 16-bit 44.1kHz, short (they're cached).
@@ -560,8 +600,20 @@ so it plays tones until they are.
 | `brick_clear.wav` | a level cleared | ~1.2s | a tone |
 | `brick_extra.wav` | an extra life | ~1s | a tone |
 
+Roll Flux's optional sounds, the same again (none on the card yet):
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `roll_bump.wav` | the ball knocks a wall or rail hard | ~60ms | a tone |
+| `roll_boost.wav` | onto a boost pad | ~0.2s | a tone |
+| `roll_charge.wav` | a dash starts charging | ~0.4s | a tone |
+| `roll_dash.wav` | a dash | ~0.4s | a tone |
+| `roll_check.wav` | a checkpoint reached | ~0.4s | two notes |
+| `roll_fall.wav` | off the course | ~0.8s | a falling run of notes |
+| `roll_goal.wav` | the goal | ~1.2s | a short fanfare |
+
 Each game also has a music track, named after its launcher entry:
-`flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
+`flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-roll.wav`, `flux-runner.wav`,
 `flux-star.wav`, `flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
 attract/title screen), carries on through lost lives and between-level
 screens, and stops at game over. A missing track just means no music.
@@ -589,6 +641,7 @@ test/build.sh god 30000      # one Tank Flux scenario, full trace
 test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh star god 12000 # one Star Flux scenario
 test/build.sh brick play 20000   # one Brick Flux scenario
+test/build.sh roll play          # one Roll Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```

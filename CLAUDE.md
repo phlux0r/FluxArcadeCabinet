@@ -33,8 +33,9 @@ before changing anything.
 - `src/launcher/`: the menu (scrolls six rows at a time), setup, the
   high-score viewer and its idle cycle.
 - `src/games/<Name>Flux/`: one folder per game. The 2D games are
-  header-only; the 3D ones (Tank, Tube, Star) have .cpp files and render
-  with Jet (https://github.com/CubeCoders/Jet, pinned in platformio.ini).
+  header-only; the 3D ones (Tank, Tube, Star, Roll) have .cpp files and render
+  with Jet (https://github.com/CubeCoders/Jet, pinned in platformio.ini);
+  Roll uses only Jet's camera maths and fills everything itself.
 - `sd/audio/`: the SD card's `/audio/` folder, WAVs in Git LFS.
 - `test/`: host harnesses and stubs; `tools/`: asset generators.
 
