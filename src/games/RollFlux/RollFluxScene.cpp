@@ -61,19 +61,45 @@ void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, i
     }
 }
 
-// The palette: the floor gets lighter with height, so levels read apart;
-// ramps amber; ice pale blue; checkpoints blue (cyan once reached); boost
-// pads orange with a yellow arrow; the goal a chequered flag; sides dark.
-const uint16_t FLOOR_COL[4][2] = {
-    { rgb565( 5, 30,  9), rgb565( 4, 23,  7) },
-    { rgb565( 9, 40, 13), rgb565( 7, 31, 10) },
-    { rgb565(13, 48, 17), rgb565(10, 38, 13) },
-    { rgb565(17, 56, 21), rgb565(13, 45, 16) },
+// The palettes, by world: the floor gets lighter with height, so levels
+// read apart; ramps amber; ice pale (whiter in the Ice Relay, where the
+// floor's cold too); checkpoints dark (blue, or violet on the slate; lit
+// once reached); boost pads orange with a yellow arrow; the goal a
+// chequered flag; sides dark.
+const uint16_t FLOOR_COL[2][MAX_FLOOR_LEVEL + 1][2] = {
+    {   // Orbit Garden: greens
+        { rgb565( 5, 30,  9), rgb565( 4, 23,  7) },
+        { rgb565( 9, 40, 13), rgb565( 7, 31, 10) },
+        { rgb565(13, 48, 17), rgb565(10, 38, 13) },
+        { rgb565(17, 56, 21), rgb565(13, 45, 16) },
+        { rgb565(21, 62, 25), rgb565(16, 51, 19) },
+    },
+    {   // Ice Relay: slate blues
+        { rgb565( 5, 18, 15), rgb565( 4, 14, 12) },
+        { rgb565( 8, 26, 19), rgb565( 6, 20, 15) },
+        { rgb565(11, 33, 22), rgb565( 9, 27, 18) },
+        { rgb565(14, 40, 25), rgb565(11, 33, 21) },
+        { rgb565(17, 47, 28), rgb565(14, 39, 24) },
+    },
+};
+const uint16_t ICE_COL[2][2] = {
+    { rgb565(21, 54, 30), rgb565(17, 46, 27) },
+    { rgb565(27, 61, 31), rgb565(23, 55, 30) },
+};
+// The sky, bottom and top: a dark blue, and a deep violet night.
+const uint16_t SKY_COL[2][2] = {
+    { rgb565(8, 10, 18), rgb565(1, 2, 6) },
+    { rgb565(10, 4, 16), rgb565(2, 0, 5) },
 };
 const uint16_t RAMP_COL[2]  = { rgb565(26, 42, 6), rgb565(21, 33, 4) };
-const uint16_t ICE_COL[2]   = { rgb565(21, 54, 30), rgb565(17, 46, 27) };
-const uint16_t CHECK_COL[2] = { rgb565(4, 18, 24), rgb565(3, 13, 19) };
-const uint16_t CHECK_LIT[2] = { rgb565(6, 44, 31), rgb565(4, 36, 26) };
+const uint16_t CHECK_COL[2][2] = {
+    { rgb565(4, 18, 24), rgb565(3, 13, 19) },     // blue on the greens
+    { rgb565(12, 8, 22), rgb565(9, 6, 17) },      // violet on the slate
+};
+const uint16_t CHECK_LIT[2][2] = {
+    { rgb565(6, 44, 31), rgb565(4, 36, 26) },
+    { rgb565(24, 30, 31), rgb565(20, 24, 27) },
+};
 const uint16_t BOOST_COL[2] = { rgb565(28, 28, 2), rgb565(24, 22, 1) };
 const uint16_t ARROW_COL[2] = { rgb565(31, 63, 10), rgb565(31, 48, 0) };
 const uint16_t GOAL_COL[2]  = { rgb565(31, 63, 31), rgb565(3, 6, 5) };
@@ -295,10 +321,10 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
     }
     uint16_t col;
     if (isRamp(k.kind)) col = RAMP_COL[chk];
-    else if (k.kind == K_ICE) col = ICE_COL[chk];
-    else if (k.kind == K_CHECK) col = (r == _checkR ? CHECK_LIT : CHECK_COL)[chk];
+    else if (k.kind == K_ICE) col = ICE_COL[_skyWorld][chk];
+    else if (k.kind == K_CHECK) col = (r == _checkR ? CHECK_LIT : CHECK_COL)[_skyWorld][chk];
     else if (isBoost(k.kind)) col = BOOST_COL[chk];
-    else col = FLOOR_COL[k.h > 3 ? 3 : k.h][chk];
+    else col = FLOOR_COL[_skyWorld][k.h > MAX_FLOOR_LEVEL ? MAX_FLOOR_LEVEL : k.h][chk];
     drawPoly(buf, w, h, top, 4, fog(col, depth));
     if (isBoost(k.kind)) {
         // The arrow: a triangle pointing the way the pad pushes, flashing.
@@ -335,9 +361,11 @@ void RollFluxGame::drawRail(uint16_t* buf, int w, int h, int c, int r, int dir, 
 }
 
 // The ball: its faces turned to the camera, each lit by the sun. Striped
-// so its turn shows: gores in two colours, the poles capped.
+// so its turn shows: gores in two colours, the poles capped. It flickers
+// white charging a dash, and glows white dashing.
 void RollFluxGame::drawBall(uint16_t* buf, int w, int h) {
     const BallMesh &mesh = ballMesh();
+    const bool glow = (_charging && ((millis() / 80) & 1)) || (long)(millis() - _dashUntil) < 0;
     float cam[BALL_VERTS][3];
     for (int i = 0; i < BALL_VERTS; ++i) {
         const float* v = mesh.v[i];
@@ -371,7 +399,8 @@ void RollFluxGame::drawBall(uint16_t* buf, int w, int h) {
             const float wz = _rot[6] * lv[0] + _rot[7] * lv[1] + _rot[8] * lv[2];
             const float len = sqrtf(wx * wx + wy * wy + wz * wz) + 1e-6f;
             const float lit = (wx * SUN[0] + wy * SUN[1] + wz * SUN[2]) / len;
-            const uint16_t base = (band == 0 || band == BALL_RINGS) ? BALL_COL[2] : BALL_COL[g & 1];
+            uint16_t base = (band == 0 || band == BALL_RINGS) ? BALL_COL[2] : BALL_COL[g & 1];
+            if (glow && (band == 0 || band == BALL_RINGS || (g & 1) == 0)) base = ArcadeConfig::COLOR_WHITE;
             float q[4][3];
             for (int k = 0; k < n; ++k)
                 for (int e = 0; e < 3; ++e) q[k][e] = cam[idx[k]][e];
@@ -430,7 +459,7 @@ void RollFluxGame::drawGem(uint16_t* buf, int w, int h, int c, int r) {
 // item's bottom. Otherwise it's floor the item sits on or over, and goes
 // first. So a ball rolling on a cell isn't painted over by that cell's
 // near half, and a ball falling behind an edge goes behind it.
-void RollFluxGame::drawWorld(GFXcanvas16 &canvas) {
+void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
     uint16_t* buf = canvas.getBuffer();
     const int w = canvas.width(), h = canvas.height();
     const float f = _camera.fovFactor;
@@ -466,7 +495,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas) {
     int items = 0;
     float bc[3];
     toCam(_bx, _by + BALL_RADIUS, _bz, bc);
-    const bool ballShown = bc[2] > -BALL_RADIUS && bc[2] < VIEW_DIST &&
+    const bool ballShown = withBall && bc[2] > -BALL_RADIUS && bc[2] < VIEW_DIST &&
                            ((long)(millis() - _holdUntil) >= 0 || ((millis() / 100) & 1));
     if (ballShown) {
         float fy;
@@ -526,21 +555,28 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas) {
     }
 }
 
-void RollFluxGame::renderFrame(GFXcanvas16 &canvas) {
+void RollFluxGame::renderFrame(GFXcanvas16 &canvas, bool withBall) {
+    if (_skyWorld != courseDef().world) buildSky();
     computeCameraMatrix();
     drawSky(canvas);
     drawStars(canvas);
-    drawWorld(canvas);
+    drawWorld(canvas, withBall);
 }
 
-// The sky, the stars and the camera's lens, once.
+// The sky for this course's world.
+void RollFluxGame::buildSky() {
+    _skyWorld = courseDef().world;
+    const int h = ArcadeConfig::LANDSCAPE_HEIGHT;
+    for (int y = 0; y < h; ++y)
+        _sky[y] = lerp565(SKY_COL[_skyWorld][1], SKY_COL[_skyWorld][0], (float)y / (float)(h - 1));
+}
+
+// The sky, the stars and the camera's lens, once (the sky again when the
+// world changes).
 void RollFluxGame::ensureReady(GFXcanvas16 &canvas) {
     if (_ready) return;
     _ready = true;
-    // The void: a dark sky, deepening towards the top.
-    const int h = canvas.height();
-    for (int y = 0; y < h && y < ArcadeConfig::LANDSCAPE_HEIGHT; ++y)
-        _sky[y] = lerp565(rgb565(1, 2, 6), rgb565(8, 10, 18), (float)y / (float)(h - 1));
+    buildSky();
     // Stars spread evenly over the sphere, from a fixed seed (not random(),
     // which the game's play uses).
     uint32_t seed = 12345;

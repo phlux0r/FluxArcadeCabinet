@@ -41,10 +41,11 @@ void RollFluxGame::stickToWorld(const InputState &in, float &ax, float &az) cons
 }
 
 // The ball: the stick's push, a ramp's slope and a boost pad accelerate
-// it, friction slows it (less on ice), and it moves in steps of at most
+// it, friction slows it (less on ice), charging a dash holds it back, and it moves in steps of at most
 // SUBSTEP, across then along, so it can't pass through a step or a rail
 // at any speed. A rise of more than STEP_UP within WALL_PROBE of its
-// centre is a wall; a drop of more than STEP_DOWN, or the void, under its
+// centre is a wall (in the air, more than LAND_LIP: it catches a lip and
+// lands on it); a drop of more than STEP_DOWN, or the void, under its
 // centre starts a fall. Fallen FALL_DEPTH below the course, _fellOut says
 // so (the rules take a life).
 void RollFluxGame::stepBall(const InputState &in) {
@@ -73,7 +74,10 @@ void RollFluxGame::stepBall(const InputState &in) {
                 ax += BX[d] * BOOST_ACCEL;
                 az += BZ[d] * BOOST_ACCEL;
             }
-            _extraSpeed = BOOST_SPEED - BALL_MAX_SPEED;
+            if (_extraSpeed < BOOST_SPEED - BALL_MAX_SPEED) {
+                _extraSpeed = BOOST_SPEED - BALL_MAX_SPEED;
+                _extraFade = EXTRA_SPEED_DECAY;
+            }
         }
     }
     _vx += ax * dt;
@@ -83,9 +87,10 @@ void RollFluxGame::stepBall(const InputState &in) {
         _vx *= keep > 0 ? keep : 0;
         _vz *= keep > 0 ? keep : 0;
     }
-    _extraSpeed -= EXTRA_SPEED_DECAY * dt;
+    _extraSpeed -= _extraFade * dt;
     if (_extraSpeed < 0) _extraSpeed = 0;
-    const float cap = BALL_MAX_SPEED + _extraSpeed;
+    // Charging a dash holds the ball back.
+    const float cap = _charging ? BALL_MAX_SPEED * DASH_CHARGE_HOLD : BALL_MAX_SPEED + _extraSpeed;
     const float speed = sqrtf(_vx * _vx + _vz * _vz);
     if (speed > cap) { _vx *= cap / speed; _vz *= cap / speed; }
 
@@ -99,12 +104,13 @@ void RollFluxGame::stepBall(const InputState &in) {
         // Across, then along. A rail on the edge ahead (while the ball's
         // low enough to meet it) or a rise too big to roll up turns it.
         const int cc = colAt(_bx), cr = rowAt(_bz);
+        const float rise = _falling ? LAND_LIP : STEP_UP;
         const bool railHigh = solid(cc, cr) && _by < _cells[cr][cc].h * HEIGHT_STEP + RAIL_HEIGHT;
         if (_vx != 0) {
             const float nx = _bx + _vx * sdt, px = nx + (_vx > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vx > 0 ? px > cellX0(cc) + CELL && railed(cc, cr, D_E)
                                                    : px < cellX0(cc) && railed(cc, cr, D_W));
-            if (rail || (floorAt(px, _bz, fy) && fy > _by + STEP_UP)) {
+            if (rail || (floorAt(px, _bz, fy) && fy > _by + rise)) {
                 if (fabsf(_vx) > _bump) _bump = fabsf(_vx);
                 _vx = -_vx * (rail ? RAIL_BOUNCE : WALL_BOUNCE);
             } else _bx = nx;
@@ -113,7 +119,7 @@ void RollFluxGame::stepBall(const InputState &in) {
             const float nz = _bz + _vz * sdt, pz = nz + (_vz > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vz > 0 ? pz > cellZ0(cr) + CELL && railed(cc, cr, D_N)
                                                    : pz < cellZ0(cr) && railed(cc, cr, D_S));
-            if (rail || (floorAt(_bx, pz, fy) && fy > _by + STEP_UP)) {
+            if (rail || (floorAt(_bx, pz, fy) && fy > _by + rise)) {
                 if (fabsf(_vz) > _bump) _bump = fabsf(_vz);
                 _vz = -_vz * (rail ? RAIL_BOUNCE : WALL_BOUNCE);
             } else _bz = nz;
@@ -129,11 +135,23 @@ void RollFluxGame::stepBall(const InputState &in) {
             _vy -= GRAVITY * sdt;
             _by += _vy * sdt;
             // Landing: onto the floor from above, not from under its edge.
-            if (ground && _by <= gy && gy - _by < 40.0f) { _by = gy; _vy = 0; _falling = false; }
+            if (ground && _by <= gy && gy - _by < LAND_LIP) { _by = gy; _vy = 0; _falling = false; }
         }
     }
     rollBall(_bx - x0, _bz - z0);
     _fellOut = _by < -FALL_DEPTH;
+}
+
+// A dash: the ball's speed jumps to `strength` times its usual top speed
+// along (dx, dz), the extra fading over DASH_FADE_MS.
+void RollFluxGame::startDash(float dx, float dz, float strength) {
+    const float len = sqrtf(dx * dx + dz * dz);
+    if (len < 1e-3f) return;
+    const float speed = BALL_MAX_SPEED * strength;
+    _vx = dx / len * speed;
+    _vz = dz / len * speed;
+    _extraSpeed = speed - BALL_MAX_SPEED;
+    _extraFade = _extraSpeed * 1000.0f / DASH_FADE_MS;
 }
 
 // Turns the ball as it rolls: about the level axis at right angles to the

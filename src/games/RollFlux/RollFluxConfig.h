@@ -38,6 +38,7 @@ inline constexpr float SLOPE_GRAVITY = 900.0f;    // along a ramp's fall line
 inline constexpr float GRAVITY       = 2600.0f;   // falling
 inline constexpr float STEP_UP       = 30.0f;     // a rise bigger than this is a wall
 inline constexpr float STEP_DOWN     = 24.0f;     // a drop bigger than this is a fall
+inline constexpr float LAND_LIP      = 40.0f;     // in the air, it catches a floor edge up to this far above it
 inline constexpr float WALL_PROBE    = 45.0f;     // walls and rails stop the ball this far from its centre
 inline constexpr float FALL_DEPTH    = 900.0f;    // below the course: a fall
 inline constexpr float WALL_BOUNCE   = 0.35f;
@@ -49,6 +50,21 @@ inline constexpr float SUBSTEP       = 20.0f;     // the ball moves at most this
 inline constexpr float BOOST_ACCEL   = 3200.0f;
 inline constexpr float BOOST_SPEED   = 1900.0f;
 inline constexpr float EXTRA_SPEED_DECAY = 700.0f;
+
+// The Flux Dash: gems fill a meter of DASH_STEPS steps, DASH_GEMS_PER_STEP
+// gems a step. Hold A (with a step) to charge, the ball held to a fraction
+// of its top speed; let go to dash, a step used: the ball's speed jumps to
+// between DASH_SPEED_MIN and DASH_SPEED_MAX times its usual top speed (by
+// how long it charged) and fades back over DASH_FADE_MS. At full speed it
+// clears a two-cell gap, not a three.
+inline constexpr int   DASH_GEMS_PER_STEP = 5;
+inline constexpr int   DASH_STEPS         = 3;
+inline constexpr unsigned long DASH_CHARGE_MS     = 400;
+inline constexpr unsigned long DASH_MIN_CHARGE_MS = 100;   // let go sooner: no dash, no step used
+inline constexpr float DASH_CHARGE_HOLD   = 0.6f;
+inline constexpr float DASH_SPEED_MIN     = 1.5f;
+inline constexpr float DASH_SPEED_MAX     = 2.2f;
+inline constexpr unsigned long DASH_FADE_MS = 600;
 
 // --- Rules -------------------------------------------------------------------
 inline constexpr int   START_LIVES    = 4;
@@ -63,6 +79,17 @@ inline constexpr unsigned long TIME_WARN_MS  = 10000;   // the clock goes red, a
 inline constexpr unsigned long CLEAR_MS      = 3500;    // the course-clear tally
 inline constexpr unsigned long RESPAWN_HOLD_MS = 700;   // the ball waits after a fall
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 20000;
+
+// --- Attract cycle -------------------------------------------------------------
+// Title, two how-to-play slides and the high scores over a slow orbit of
+// course 1, then a silent demo on a course picked at random.
+inline constexpr unsigned long ATTRACT_SLIDE_MS = 6000;
+inline constexpr unsigned long DEMO_MS          = 35000;
+inline constexpr float ORBIT_RADIUS = 1500.0f, ORBIT_HEIGHT = 1300.0f;
+inline constexpr float ORBIT_SPEED  = 0.12f;      // radians a second
+
+// --- Sound -------------------------------------------------------------------
+inline constexpr const char* MUSIC = "/audio/flux-roll.wav";
 
 // --- Camera -------------------------------------------------------------------
 // Behind and above the ball (stage 0's middle height played best).
@@ -88,6 +115,7 @@ inline constexpr float FOG_NEAR  = 1600.0f;       // the floor fades to the sky 
 inline constexpr float FOG_FAR   = 3000.0f;
 inline constexpr int   MAX_DRAW  = 1200;          // floor pieces in view (cells and rails)
 inline constexpr int   MAX_ITEMS = 32;            // ball, shadow, gems in view
+inline constexpr int   MAX_FLOOR_LEVEL = 4;       // heights above this share its colour
 inline constexpr int   STAR_COUNT = 48;
 
 }  // namespace rollflux

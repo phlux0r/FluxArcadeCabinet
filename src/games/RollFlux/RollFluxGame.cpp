@@ -2,23 +2,73 @@
 
 namespace rollflux {
 
+namespace {
+
+// The optional sounds on the SD card: each falls back to a tone (or, for
+// the checkpoint, a fall and the goal, a short melody) without it.
+struct SfxDef { const char* path; int hz, ms; };
+const SfxDef ROLL_SFX[] = {
+    { "/audio/roll_bump.wav",   160,  30 },   // SFX_BUMP
+    { "/audio/pickup.wav",     1568,  50 },   // SFX_GEM (shared)
+    { "/audio/roll_boost.wav", 1300,  60 },   // SFX_BOOST
+    { "/audio/roll_charge.wav", 600,  90 },   // SFX_CHARGE
+    { "/audio/roll_dash.wav",  1200, 120 },   // SFX_DASH
+    { "/audio/roll_check.wav",    0,   0 },   // SFX_CHECK
+    { "/audio/roll_fall.wav",     0,   0 },   // SFX_FALL
+    { "/audio/roll_goal.wav",     0,   0 },   // SFX_GOAL
+};
+static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 8, "one SfxDef per Sfx");
+
+// While the demo runs, new sounds are dropped (lifted again whichever way
+// update() returns).
+struct RollSilence {
+    AudioEngine &a; bool on;
+    RollSilence(AudioEngine &a_, bool on_) : a(a_), on(on_) { if (on) a.setSilenced(true); }
+    ~RollSilence() { if (on) a.setSilenced(false); }
+};
+
+}  // namespace
+
 void RollFluxGame::init(AudioEngine &audio) {
+    _audio = &audio;
+    _scores.begin("roll");
     _lastFrameMs = millis();
+    findSounds(audio);
+    enterAttract();
     static const int n[] = { 392, 523, 659, 784 };
     static const int d[] = {  70,  70,  70, 160 };
     audio.playMelody(n, d, 4);
-    _phase = PHASE_PLAYING;
-    _score = 0;
-    _lives = START_LIVES;
-    _gemsTotal = _goals = _falls = 0;
-    _course = _loop = 0;
-    loadCourse(0);
-    _timeMs = _courseMs;
-    banner(COURSES[0].name, ArcadeConfig::COLOR_CYAN, 2000);
 }
 
-// Quitting (the cabinet's Back button).
+// Which optional sounds are on the card, checked once: a missing file
+// would otherwise cost an SD open every time it's asked for. What will
+// play is decoded into the mixer's cache now, so the first play isn't late.
+void RollFluxGame::findSounds(AudioEngine &audio) {
+    for (int i = 0; i < SFX_COUNT; ++i) {
+        _sfxOnCard[i] = audio.exists(ROLL_SFX[i].path);
+        if (_sfxOnCard[i]) audio.preload(ROLL_SFX[i].path);
+    }
+    _musicOnCard = audio.exists(MUSIC);
+}
+
+void RollFluxGame::sfx(Sfx s) {
+    if (_silent || !_audio) return;
+    if (_sfxOnCard[s]) { _audio->playWAV(ROLL_SFX[s].path); return; }
+    switch (s) {
+        case SFX_CHECK: { static const int n[] = { 880, 1175 }, d[] = { 60, 100 }; sfxMelody(n, d, 2); break; }
+        case SFX_FALL:  { static const int n[] = { 700, 500, 330, 200 }, d[] = { 60, 60, 60, 120 }; sfxMelody(n, d, 4); break; }
+        case SFX_GOAL:  { static const int n[] = { 523, 659, 784, 1047, 784, 1047 }, d[] = { 80, 80, 80, 120, 80, 240 };
+                          sfxMelody(n, d, 6); break; }
+        default: _audio->playTone(ROLL_SFX[s].hz, ROLL_SFX[s].ms); break;
+    }
+}
+
+// Quitting (the cabinet's Back button): a game in progress still goes on
+// the table (if it makes it), under the last name entered; a name being
+// entered is kept. Nothing from the demo.
 void RollFluxGame::onQuit(AudioEngine &audio) {
+    if (_phase == PHASE_NAME) _scores.finishNow();
+    else if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_CLEAR)) _scores.record(_score);
     audio.mute();
 }
 
@@ -35,11 +85,19 @@ void RollFluxGame::updateFrameScale() {
 }
 
 void RollFluxGame::startNewGame(AudioEngine &audio) {
+    _demo = false;
+    _silent = false;
+    _scores.forget();
     _score = 0;
     _lives = START_LIVES;
-    _gemsTotal = _goals = _falls = 0;
+    _gemsTotal = _goals = _falls = _dashes = 0;
+    _dashGems = 0;
     _course = _loop = 0;
+    _prevA = true;                    // the A that started it isn't a dash
     startCourse(audio);
+    // Music plays during a game only: not on the attract screens or in the
+    // demo, and it stops at game over.
+    if (_musicOnCard) audio.loopWAV(MUSIC);
 }
 
 // A course from its text: cells, gems back in place, the start. The time
@@ -70,6 +128,7 @@ void RollFluxGame::loadCourse(int index) {
                 case 'e': cell.kind = K_RAMP_E; break;
                 case 'w': cell.kind = K_RAMP_W; break;
                 case 'i': cell.kind = K_ICE; break;
+                case 'I': cell.kind = K_ICE; cell.flags = F_RAIL; break;
                 case 'C': cell.kind = K_CHECK; break;
                 case '^': cell.kind = K_BOOST_N; break;
                 case 'v': cell.kind = K_BOOST_S; break;
@@ -91,17 +150,21 @@ void RollFluxGame::loadCourse(int index) {
     _yaw = 0;
     _rot[0] = _rot[4] = _rot[8] = 1;
     _rot[1] = _rot[2] = _rot[3] = _rot[5] = _rot[6] = _rot[7] = 0;
+    _pathLen = 0;
+    _targetC = _targetR = -1;
     respawn();
 }
 
 // The current course from the top: full time, every gem back.
 void RollFluxGame::startCourse(AudioEngine &audio) {
+    (void)audio;
     loadCourse(_course);
     _timeMs = _courseMs;
     _phase = PHASE_PLAYING;
     _phaseAt = millis();
-    banner(COURSES[_course % COURSE_COUNT].name, ArcadeConfig::COLOR_CYAN, 2000);
-    sfxTone(audio, 900, 80);
+    snprintf(_bannerBuf, sizeof(_bannerBuf), "%s %s", courseDef().code, courseDef().name);
+    banner(_bannerBuf, ArcadeConfig::COLOR_CYAN, 2000);
+    sfxTone(900, 80);
 }
 
 // Back at the start or the last checkpoint, still, facing the way it was.
@@ -112,27 +175,26 @@ void RollFluxGame::respawn() {
     floorAt(_bx, _bz, y);
     _by = y;
     _vx = _vz = _vy = 0;
-    _extraSpeed = 0;
+    _extraSpeed = _extraFade = 0;
     _falling = false;
     _fellOut = false;
+    _charging = false;
+    _dashUntil = 0;
     _yaw = _respawnYaw;
     _leanRoll = _leanPitch = 0;
     _holdUntil = millis() + RESPAWN_HOLD_MS;
     updateCamera(true);
 }
 
-// A fall or the clock running out. Out of lives, it's game over; out of
-// time, the course starts again; a fall goes back to the last checkpoint
-// with the time it had there.
+// A fall or the clock running out. Out of lives, it's game over (or the
+// demo's end); out of time, the course starts again; a fall goes back to
+// the last checkpoint with the time it had there.
 void RollFluxGame::loseLife(AudioEngine &audio, const char* why) {
     --_lives;
     if (_lives <= 0) {
         _lives = 0;
-        _phase = PHASE_GAMEOVER;
-        _phaseAt = millis();
-        static const int n[] = { 520, 390, 260, 130 };
-        static const int d[] = { 120, 120, 120, 320 };
-        sfxMelody(audio, n, d, 4);
+        if (_demo) endDemo();
+        else enterGameOver(audio);
         return;
     }
     if (why) {   // time up
@@ -145,27 +207,69 @@ void RollFluxGame::loseLife(AudioEngine &audio, const char* why) {
     banner(_checkC >= 0 ? "BACK TO CHECKPOINT" : "TRY AGAIN", ArcadeConfig::COLOR_ORANGE);
 }
 
+// The last ball's gone: a name for the table first, if the score made it.
+void RollFluxGame::enterGameOver(AudioEngine &audio) {
+    _phase = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+    _phaseAt = millis();
+    _charging = false;
+    audio.stopLoop();
+    static const int n[] = { 520, 390, 260, 130 };
+    static const int d[] = { 120, 120, 120, 320 };
+    sfxMelody(n, d, 4);
+}
+
 void RollFluxGame::banner(const char* text, uint16_t colour, unsigned long ms) {
     _banner = text;
     _bannerColour = colour;
     _bannerUntil = millis() + ms;
 }
 
+// The Flux Dash: press A with a step on the meter to charge (the ball
+// held back and glowing), let go to dash, by how long it charged. Let go
+// too soon and nothing happens, the step kept. The way: the stick's, or
+// the ball's own with the stick centred (or the camera's, standing still).
+void RollFluxGame::updateDash(const InputState &in) {
+    const bool pressed = in.btnA && !_prevA;
+    _prevA = in.btnA;
+    if (!_charging) {
+        if (pressed && dashSteps() > 0 && (long)(millis() - _holdUntil) >= 0) {
+            _charging = true;
+            _chargeAt = millis();
+            sfx(SFX_CHARGE);
+        }
+        return;
+    }
+    if (in.btnA) return;
+    _charging = false;
+    const unsigned long held = millis() - _chargeAt;
+    if (held < DASH_MIN_CHARGE_MS) return;
+    const float t = held >= DASH_CHARGE_MS ? 1.0f : (float)held / DASH_CHARGE_MS;
+    float dx, dz;
+    stickToWorld(in, dx, dz);
+    if (dx * dx + dz * dz < (0.3f * BALL_ACCEL) * (0.3f * BALL_ACCEL)) {
+        if (_vx * _vx + _vz * _vz > 50.0f * 50.0f) { dx = _vx; dz = _vz; }
+        else { dx = sinf(_yaw); dz = cosf(_yaw); }
+    }
+    startDash(dx, dz, DASH_SPEED_MIN + (DASH_SPEED_MAX - DASH_SPEED_MIN) * t);
+    _dashGems -= DASH_GEMS_PER_STEP;
+    ++_dashes;
+    _dashUntil = millis() + DASH_FADE_MS;
+    sfx(SFX_DASH);
+}
+
 // The clock, falls, gems, checkpoints and the goal, after the ball's moved.
 void RollFluxGame::stepRules(AudioEngine &audio) {
-    if (_bump > 350.0f) sfxTone(audio, 140 + (int)(_bump * 0.1f), 30);
+    if (_bump > 350.0f) sfx(SFX_BUMP);
     // A boost pad, on first rolling onto it.
     const int c = colAt(_bx), r = rowAt(_bz);
     const int here = solid(c, r) && !_falling && isBoost(_cells[r][c].kind) ? r * MAX_COURSE_W + c : -1;
-    if (here >= 0 && here != _boostCell) sfxTone(audio, 1300, 60);
+    if (here >= 0 && here != _boostCell) sfx(SFX_BOOST);
     _boostCell = here;
 
     if (_fellOut) {
         ++_falls;
         ++_courseFalls;
-        static const int n[] = { 700, 500, 330, 200 };
-        static const int d[] = {  60,  60,  60, 120 };
-        sfxMelody(audio, n, d, 4);
+        sfx(SFX_FALL);
         loseLife(audio, nullptr);
         return;
     }
@@ -173,14 +277,14 @@ void RollFluxGame::stepRules(AudioEngine &audio) {
         _timeMs -= (long)(_dt * 1000.0f + 0.5f);
         if (_timeMs <= 0) {
             _timeMs = 0;
-            sfxTone(audio, 200, 400);
+            sfxTone(200, 400);
             loseLife(audio, "TIME UP");
             return;
         }
         // The last seconds tick.
         if (_timeMs < (long)TIME_WARN_MS && millis() - _tickAt >= 1000) {
             _tickAt = millis();
-            sfxTone(audio, 1800, 25);
+            sfxTone(1800, 25);
         }
     }
     collectGems(audio);
@@ -190,9 +294,7 @@ void RollFluxGame::stepRules(AudioEngine &audio) {
         // A row of checkpoint cells is one checkpoint: only a new row says so.
         if (_checkR != r) {
             banner("CHECKPOINT", ArcadeConfig::COLOR_CYAN);
-            static const int n[] = { 880, 1175 };
-            static const int d[] = {  60,  100 };
-            sfxMelody(audio, n, d, 2);
+            sfx(SFX_CHECK);
         }
         _checkC = c;
         _checkR = r;
@@ -204,8 +306,10 @@ void RollFluxGame::stepRules(AudioEngine &audio) {
     if (cell.kind == K_GOAL) reachGoal(audio);
 }
 
-// A gem's taken when the ball's within reach of it, in the air or not.
+// A gem's taken when the ball's within reach of it, in the air or not:
+// points, time, and a gem on the dash meter.
 void RollFluxGame::collectGems(AudioEngine &audio) {
+    (void)audio;
     const int c0 = colAt(_bx), r0 = rowAt(_bz);
     for (int r = r0 - 1; r <= r0 + 1; ++r)
         for (int c = c0 - 1; c <= c0 + 1; ++c) {
@@ -220,17 +324,22 @@ void RollFluxGame::collectGems(AudioEngine &audio) {
             ++_gemsTotal;
             _score += GEM_POINTS;
             _timeMs += GEM_TIME_MS;
+            const int before = dashSteps();
+            if (_dashGems < DASH_STEPS * DASH_GEMS_PER_STEP) ++_dashGems;
             if (_gemsTotal % GEMS_PER_LIFE == 0 && _lives < MAX_LIVES) {
                 ++_lives;
                 banner("EXTRA BALL", ArcadeConfig::COLOR_GREEN);
+            } else if (dashSteps() > before) {
+                banner("DASH READY: HOLD A", ArcadeConfig::COLOR_CYAN);
             }
-            sfxTone(audio, 1568, 50);
+            sfx(SFX_GEM);
         }
 }
 
 // The tally: a hundred a second left, a bonus for no falls and another for
 // every gem; then the next course.
 void RollFluxGame::reachGoal(AudioEngine &audio) {
+    (void)audio;
     ++_goals;
     _clearTime = (_timeMs / 1000) * TIME_POINTS;
     _clearNoFall = _courseFalls == 0 ? NO_FALL_BONUS : 0;
@@ -238,9 +347,8 @@ void RollFluxGame::reachGoal(AudioEngine &audio) {
     _score += _clearTime + _clearNoFall + _clearAllGems;
     _phase = PHASE_CLEAR;
     _phaseAt = millis();
-    static const int n[] = { 523, 659, 784, 1047, 784, 1047 };
-    static const int d[] = {  80,  80,  80,  120,  80,  240 };
-    sfxMelody(audio, n, d, 6);
+    _charging = false;
+    sfx(SFX_GOAL);
 }
 
 // The course leans with the stick, eased, so the tilt shows.
@@ -253,9 +361,8 @@ void RollFluxGame::updateLean(const InputState &in) {
 // Behind and above the ball, turning slowly to the way it's rolling (not
 // while it's nearly still, falling, or rolling back towards the camera,
 // down a ramp say, when it holds its heading so the stick keeps its
-// sense), and
-// looking a little ahead of it. While the ball falls the camera stays put,
-// watching it go.
+// sense), and looking a little ahead of it. While the ball falls the
+// camera stays put, watching it go.
 void RollFluxGame::updateCamera(bool snap) {
     if (!(_falling && !snap)) {
         const float speed = sqrtf(_vx * _vx + _vz * _vz);
@@ -286,22 +393,45 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     ensureReady(canvas);
     updateFrameScale();
     // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
+    if (_demo) {
+        // The demo: the autopilot plays, silently, until A, its time, or
+        // its last ball.
+        if (input.btnAPressed) {
+            startNewGame(audio);
+            return updatePlaying(canvas, InputState{}, audio);
+        }
+        RollSilence quiet(audio, true);
+        _silent = true;
+        const InputState in = pilot(true);
+        if (_phase == PHASE_CLEAR) updateClear(canvas, in, audio);
+        else updatePlaying(canvas, in, audio);
+        if (_demo && (long)(millis() - _demoUntil) >= 0) endDemo();
+        return true;
+    }
     switch (_phase) {
+        case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
         case PHASE_CLEAR:    return updateClear(canvas, input, audio);
+        case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default:             return updatePlaying(canvas, input, audio);
     }
 }
 
 bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    updateDash(input);
     stepBall(input);
     updateLean(input);
     updateCamera(false);
     stepRules(audio);
+    if (_phase == PHASE_ATTRACT) {       // the demo's last ball: back to the title
+        updateAttract(canvas, InputState{}, audio);
+        return true;
+    }
     const unsigned long t0 = micros();
     renderFrame(canvas);
     _renderUs = micros() - t0;
-    if (_phase == PHASE_GAMEOVER) renderGameOver(canvas);
+    if (_phase == PHASE_NAME) _scores.draw(canvas);
+    else if (_phase == PHASE_GAMEOVER) renderGameOver(canvas);
     else drawHUD(canvas);
     return true;
 }
@@ -309,6 +439,7 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 // The ball rolls to a stop on the goal under the tally; then the next
 // course (A skips the wait).
 bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    _prevA = input.btnA;
     stepBall(InputState{});
     _leanRoll *= 0.9f;
     _leanPitch *= 0.9f;
@@ -320,7 +451,22 @@ bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, Aud
     if (t > CLEAR_MS || (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed)) {
         ++_course;
         if (_course % COURSE_COUNT == 0) ++_loop;
+        _prevA = true;
         startCourse(audio);
+    }
+    return true;
+}
+
+// The course goes on behind the name entry; when it's done (or timed
+// out), the game-over screen.
+bool RollFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (!_fellOut) stepBall(InputState{});
+    renderFrame(canvas);
+    _scores.draw(canvas);
+    if (_scores.update(input, getRotation())) {
+        _phase = PHASE_GAMEOVER;
+        _phaseAt = millis();
+        audio.playTone(1047, 80);
     }
     return true;
 }
@@ -331,6 +477,7 @@ bool RollFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
     renderGameOver(canvas);
     const unsigned long t = millis() - _phaseAt;
     if (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) startNewGame(audio);
+    else if (t > GAMEOVER_TIMEOUT_MS) enterAttract();
     return true;
 }
 

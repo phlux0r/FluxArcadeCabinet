@@ -112,6 +112,23 @@ it's one ramp now, and the harness checks every course for it. The camera
 no longer swings round to face the ball rolling back down a slope, which
 had swapped the stick's sense round under the player.
 
+### Stage 1, second half: built
+
+The eight courses of worlds 1-2 (the guardian courses 5 and 10 come with
+the guardians in stage 2), each world with its own palette; the Flux Dash
+(as section 5, with the dash's jump made by the ball catching a floor's
+lip in the air up to `LAND_LIP`, the same reach it lands with); the
+attract cycle (the title drawn live over an orbit of course 1 rather than
+a generated image, saving its ~40kB of flash; two how-to-play slides; the
+scores; the demo); high scores and name entry; the optional sounds with
+tone fallbacks, and the music. The autopilot plans with Dijkstra over the
+cells (rolling only where a step allows, never against a boost pad,
+paying extra for exposed edges, ice and drops), goes for gems close to
+its way, and aims as far ahead as it can roll straight without leaving
+the way or crossing an edge it can't roll over. The harness runs it on
+every course (`god`): all eight clear with no falls. Not yet: the
+rolling tone that follows speed (section 11).
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35
