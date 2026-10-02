@@ -29,6 +29,7 @@
 
 // Game implementations
 #include "games/AsteroidFlux/AsteroidFluxGame.h"
+#include "games/BrickFlux/BrickFluxGame.h"
 #include "games/LanderFlux/LanderFluxGame.h"
 #include "games/MazeFlux/MazeFluxGame.h"
 #include "games/PlatformFlux/PlatformFluxGame.h"
@@ -80,6 +81,7 @@ LauncherMenu launcher;
 // Game registry — order determines menu order
 const GameEntry gameRegistry[] = {
     { "Asteroids", makeGame<AsteroidFluxGame>, "asteroids" },
+    { "Brick",     makeGame<BrickFluxGame>,    "brick" },
     { "Lander",    makeGame<LanderFluxGame>,   "lander" },
     { "Maze",      makeGame<MazeFluxGame>,     "maze" },
     { "Runner",    makeGame<PlatformFluxGame>, "runner" },

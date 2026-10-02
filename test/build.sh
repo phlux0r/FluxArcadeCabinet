@@ -7,6 +7,7 @@
 #   test/build.sh star god 12000   # one Star Flux scenario
 #   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
+#   test/build.sh brick play 20000       # one Brick Flux scenario
 #   test/build.sh cabinet          # main.cpp: every game launched and quit
 #   test/build.sh hiscore          # the high-score tables and name entry
 #   test/build.sh --build-only
@@ -65,6 +66,13 @@ echo "building games2d_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-sign-compare \
     -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
     "$HERE/games2d_harness.cpp" -o "$OUT/games2d_harness"
+# Brick Flux: its play, wall, smash timing, polarity, living bricks, every
+# level and boss, and attract demo. Real (inert)
+# audio engine like the other 2D games; no Jet.
+echo "building brickflux_harness"
+g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
+    -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
+    "$HERE/brickflux_harness.cpp" -o "$OUT/brickflux_harness"
 # The whole cabinet: main.cpp, launcher and every game, real audio engine
 # (inert), so src/ ahead of the stubs again. Needs Jet for the 3D games.
 echo "building cabinet_sim"
@@ -86,6 +94,7 @@ g++ "${CXXFLAGS[@]}" -Wall -I"$ROOT/src" "$HERE/audio_test.cpp" -o "$OUT/audio_t
 cd "$OUT"
 [ "${1:-}" = audio ] && exec ./audio_test
 [ "${1:-}" = games2d ] && { shift; exec ./games2d_harness "$@"; }
+[ "${1:-}" = brick ] && { shift; exec ./brickflux_harness "$@"; }
 [ "${1:-}" = cabinet ] && exec ./cabinet_sim
 [ "${1:-}" = hiscore ] && exec ./hiscore_test
 game=tankflux
@@ -105,6 +114,11 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
+  for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit; do
+    echo "=== brick $s"
+    # shellcheck disable=SC2086
+    ./brickflux_harness $s | tail -9
+  done
   for g in tankflux tubeflux starflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")
     # Every 3D game's attract screen includes a demo run: idle sits through it.

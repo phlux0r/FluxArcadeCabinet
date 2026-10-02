@@ -1,11 +1,12 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: seven games behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: eight games behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
 |---|---|---|---|
 | Asteroid Flux | Asteroids | Landscape | Asteroid shooter with power-ups and a nebula backdrop |
+| Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
@@ -113,6 +114,50 @@ From the second loop, a spinning gold rapid-fire pod flies in twice a stage
 while you haven't got it. Fly into it for double the fire rate (tapping and
 held) and 500 points, shown as "2X" under the score, until you lose a life.
 
+**Brick Flux** is a bat-and-ball brick breaker with its own twists. The bat
+tilts (up to 25 degrees), so you aim each rebound rather than relying on
+where the ball meets it. The bat is cyan or magenta (tap B to swap; the side
+walls show which), and the ball takes the bat's colour each time it
+touches it: it breaks neutral bricks and bricks of its own colour, and
+bounces off the other colour harmlessly. Coloured bricks broken in a row
+score x2, x3... up to x8 (shown by the score); a bounce off the wrong colour
+or a lost life ends the chain. Breaking bricks fills the Flux meter across the
+top; with it full, hold A until the bat glows, then let go as the ball
+arrives: within 50ms of it meeting the bat is a **Perfect** (the ball
+smashes through three columns to the top wall, x3 points, +500), up to
+150ms a **Good** (one column, x2), and letting go up to 60ms after it
+left the bat still counts as a Good. A miss costs nothing: the meter stays
+full. Smashes break steel and portals, which nothing else does, and either
+colour. And the formation
+creeps down a row every 14s (half a second sooner each level, to 7s), the
+red danger line flashing just before: if a breakable brick crosses the
+line you lose a life, those bricks go, and the formation is pushed back up
+three rows (steel there just shatters). Capsules fall from one brick in
+eight: **W**ide bat, **M**ultiball (each ball into three, up to six),
+**C**atch, **L**aser, **S**low and **F**lux (a full meter). A level clear
+scores 1,000, plus 100 for each row of headroom left between the
+formation's lowest point and the line, plus 2,000 for not losing a life.
+3 lives, an extra one at 30,000 and every 50,000 after (up to 5).
+
+Living bricks come in a level at a time: **guns** (level 7, red with a
+coloured eye) fire bolts of their eye's colour once nothing's below them;
+a bolt of the bat's colour charges the meter, one of the other colour
+stuns the bat for 0.75s. **Magnets** (level 6) bend a passing ball towards
+them; **portals** (level 11, purple rings in pairs) take the ball in one
+and out of the other; **sparks** (yellow) drop a spark to catch for 250,
+and the third caught in a level is an extra life.
+
+Every fifth level is a boss, with a health bar under the meter: a ball hit
+does 1, a smash 4 (Perfect 6). **The Warden** (5) slides along in a ring of
+two-colour bricks that grows back; **the Hive** (10) buds guns that creep
+down, and one at the line costs a life; **the Twins** (15) are a cyan core
+and a magenta one, each harmed only by its own colour, swapping places;
+**the Flux Engine** (20) sits in a chamber above a band of steel, reached
+through portals or by smashing through, over its own advancing wall. 20
+levels make a loop (16 layouts and the bosses); each loop is faster, the
+wall quicker, guns and bosses sharper, the bosses tougher, up to the
+fifth. `docs/design/BrickFlux.md` is the full design.
+
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
 an autopilot, and back to the title (Maze cycles title, how-to-play and
@@ -121,6 +166,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 
 | Game | The demo |
 |---|---|
+| Brick | a random level 2-12, or one time in four the Warden; predicts where the ball comes down, tilts to send it at the lowest brick (or the core) in that brick's colour, absorbs or dodges bolts, detours for capsules and sparks, and smashes (mostly Perfect) |
 | Runner | a random stage 2-7; the autopilot predicts on the game's own rules and jumps at the best moment |
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
@@ -226,6 +272,13 @@ Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
 picked up the gun. Hold B to quit.
 
+Brick Flux: the joystick moves the bat left and right (speed follows how
+far you push) and tilts it with up/down (past a third of the way, so a
+sloppy sideways push doesn't tilt it): up raises the right end, sending the
+ball left. A serves, lets a caught ball go, or fires the lasers; held with
+the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
+(on the press, so it's instant); hold B to quit.
+
 Star Flux: the joystick flies the ship round the screen. A fires twin
 lasers, once per press as fast as you tap, or steadily while held. Tap B
 for a smart bomb (3, topped back up to 3 when you lose a life): it flies
@@ -304,6 +357,15 @@ FluxArcadeCabinet/
         ├── IGame.h             # Interface every game implements
         ├── AsteroidFlux/       # AsteroidFluxGame.h + ship/asteroid/power-up/
         │                       # background managers + assets/
+        ├── BrickFlux/          # Brick breaker, header-only:
+        │   ├── BrickFluxGame.h     # Class, phases, attract cycle, sounds
+        │   ├── BrickConfig.h       # All tuning: field, bat, ball, smash, wall, capsules
+        │   ├── BrickPlay.h         # Bat, balls, bricks, smash, capsules, the wall
+        │   ├── BrickRender.h       # Field, HUD, overlays, title and how-to-play
+        │   ├── BrickAutopilot.h    # The demo's player (also the harness's bot)
+        │   ├── BrickBoard.h        # The brick grid and its creep
+        │   ├── BrickBall.h         # Ball/capsule types, the bat's bounce maths
+        │   └── BrickLevels.h       # Layouts, as text
         ├── LanderFlux/         # LanderFluxGame.h (thin) + GameEngineLander.h,
         │                       # Ship.h, CavernObstacles.h + assets/
         ├── MazeFlux/           # MazeFluxGame.h + GameEngineMaze.h, generator,
@@ -443,6 +505,7 @@ fetches the real files into an existing clone.
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
+| `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what
 the last column says. Mono 16-bit 44.1kHz, short (they're cached).
@@ -463,8 +526,34 @@ the last column says. Mono 16-bit 44.1kHz, short (they're cached).
 | `star_power.wav` | the rapid-fire pod collected | ~0.5s | `powerup.wav` |
 | `star_extra.wav` | an extra life | ~1s | a tone |
 
+Brick Flux's optional sounds work the same way; none are on the card yet,
+so it plays tones until they are.
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `brick_bat.wav` | the ball off the bat | ~40ms | a tone |
+| `brick_break.wav` | a brick broken | ~80ms | a tone |
+| `brick_crack.wav` | a hard brick hit, not broken | ~60ms | a tone |
+| `brick_clank.wav` | the ball off steel | ~80ms | a tone |
+| `brick_serve.wav` | a serve | ~80ms | a tone |
+| `brick_ready.wav` | the Flux meter full | ~0.4s | a tone |
+| `brick_smash.wav` | a Good smash | ~0.6s | `explosion.wav` |
+| `brick_perfect.wav` | a Perfect smash | ~0.8s | `explosion.wav` |
+| `brick_swap.wav` | the bat's colour swapped | ~60ms | a tone (high cyan, low magenta) |
+| `brick_bolt.wav` | a gun or boss fires | ~80ms | a tone |
+| `brick_zap.wav` | the bat stunned by a bolt | ~0.2s | a tone |
+| `brick_absorb.wav` | a bolt absorbed | ~60ms | a tone |
+| `brick_portal.wav` | through a portal | ~0.15s | a tone |
+| `brick_boss_warn.wav` | a boss arrives | ~1.5s | a tone |
+| `brick_boss_hit.wav` | a boss core hit | ~80ms | a tone |
+| `brick_boss_die.wav` | a boss core destroyed | ~2.5s | `star_boss_die.wav` |
+| `brick_tick.wav` | the wall about to step | ~50ms | a tone |
+| `brick_step.wav` | the wall steps down | ~0.2s | a tone |
+| `brick_clear.wav` | a level cleared | ~1.2s | a tone |
+| `brick_extra.wav` | an extra life | ~1s | a tone |
+
 Each game also has a music track, named after its launcher entry:
-`flux-asteroids.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
+`flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-runner.wav`,
 `flux-star.wav`, `flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
 attract/title screen), carries on through lost lives and between-level
 screens, and stops at game over. A missing track just means no music.
@@ -491,13 +580,16 @@ test/build.sh                # build, run every scenario, print summaries
 test/build.sh god 30000      # one Tank Flux scenario, full trace
 test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh star god 12000 # one Star Flux scenario
+test/build.sh brick play 20000   # one Brick Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```
 
 See `test/README.md` for the scenarios, how to diff a change, and — just as
 important — what it cannot see (audio, how anything looks or plays, real
-timing, the four 2D games).
+timing, most of the older 2D games' play). Brick Flux has its own harness
+(`test/brickflux_harness.cpp`): play, the wall, the smash timing, tunnelling,
+polarity, the living bricks, every level and boss, and its attract demo.
 
 For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
 It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial
@@ -524,8 +616,9 @@ slow frame:
 
 The 3D games scale their movement by measured frame time
 (`REFERENCE_FRAME_MS` in their config headers), so they play at the same
-speed whether running at 40 or 22fps. The other games do not; their speed
-still follows the frame rate.
+speed whether running at 40 or 22fps. So does Brick Flux (its speeds are
+pixels per second, against the measured frame time). The other 2D games do
+not; their speed still follows the frame rate.
 
 ## Adding a New Game
 

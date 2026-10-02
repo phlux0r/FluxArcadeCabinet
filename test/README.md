@@ -1,4 +1,4 @@
-# Host harnesses (Tank Flux, Tube Flux, Star Flux)
+# Host harnesses (Tank Flux, Tube Flux, Star Flux, Brick Flux)
 
 Run the 3D games' real game logic and the real Jet rasteriser on a desktop,
 so a change can be checked without flashing the board. The point is regression
@@ -54,6 +54,29 @@ bucketed by how many tanks were on screen, plus the scene's total object and
 triangle count as a drift check (an arena reset only moves existing objects,
 so the totals must not grow). Host microseconds aren't ESP32 microseconds —
 compare the buckets to each other, not to a frame budget.
+
+## Brick Flux
+
+`test/brickflux_harness.cpp`, run with `test/build.sh brick <scenario> [frames]`.
+Its bot is the game's own autopilot (`BrickFluxGame::autopilot()`, in
+`BrickAutopilot.h`), as for Tube and Star Flux. Each prints PASS/FAIL.
+
+| Scenario | What it checks |
+|---|---|
+| `play [N]` | The autopilot plays real games for N frames (default 40000, restarting through the name entry and game over): no ball ever inside a brick or outside the field, the score never drops within a game, and it clears levels and makes smashes |
+| `wall` | A breakable brick past the danger line costs exactly one life, its row goes and the formation is pushed back three rows; steel there shatters and costs nothing; the step interval by level and loop |
+| `smash` | A ball dropping onto the bat with A released 20, 100 and 200ms before it arrives, and 30ms after: Perfect, Good, nothing (meter kept full), Good |
+| `tunnel` | Balls at near top speed, 50ms frames, at angles from 20 to 160 degrees, at a single row of steel: none gets through |
+| `polarity` | A ball off the other colour bounces (brick intact, chain broken); three of its own colour in a row score 20, 40, 60; neutral bricks break to either colour; smashes and lasers break either; the ball takes the bat's colour at the bat; B's 250ms cooldown |
+| `living` | A buried gun stays quiet, a clear one fires its colour; a bolt of the bat's colour is absorbed (+2 meter), one of the other stuns it for 0.75s; a magnet turns a passing ball; a portal carries the ball above the steel; the third spark caught is a life, the fourth isn't |
+| `levels [N]` | The autopilot, lives pinned, plays every regular level of the first loop; each must be cleared within N frames (default 12000), with no ball ever inside a brick. Prints the time and lives lost per level. This is what found a portal putting the ball out inside a brick |
+| `boss [N]` | The same for each of the four bosses (default 15000 frames) |
+| `idle [N]` | No input: title, how-to-play, scores, then the demo: silent, high score untouched, and it ends back at the title |
+| `demoexit` | A mid-demo starts a clean game (level 1, no score, three lives, a ball waiting to be served) |
+
+`DUMP_AT=20,400 test/build.sh brick play 401` writes `brick_000020.ppm` etc.;
+with `levels` or `boss`, it writes those frames of every level
+(`brick_L05_001500.ppm` is the Warden 50 seconds in).
 
 ## Looking at frames
 
@@ -111,7 +134,8 @@ being freed on exit to the launcher).
 - **Real timing.** The clock is fake and advanced a fixed step per frame, so
   nothing here reflects the frame rate on hardware. `profile` compares
   relative cost only.
-- **Most of the 2D games.** Beyond the 3D games, only the Runner and Asteroid attract demos are covered
+- **Most of the older 2D games.** Beyond the 3D games and Brick Flux, only
+  the Runner, Asteroid and Lander attract demos are covered
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay.
 
@@ -125,6 +149,7 @@ test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
+├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch and quit every game; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
 ├── harness_common.h            # fake clock, seeded RNG, trace hashing, frame dumps
