@@ -2,10 +2,13 @@
 
 namespace starflux {
 
-// Quitting mid-run: the score still goes on the table (if it makes it),
-// under the last name entered. Never from the demo: its score isn't yours.
-void StarFluxGame::recordQuit() {
-    if (!inDemo()) _scores.record(_score);
+// Quitting (the cabinet's Back button): a run in progress still goes on the
+// table (if it makes it), under the last name entered; a name being entered
+// is kept. Never from the demo: its score isn't yours.
+void StarFluxGame::onQuit(AudioEngine &audio) {
+    if (_phase == PHASE_NAME) _scores.finishNow();
+    else if ((_phase == PHASE_PLAYING || _phase == PHASE_RESULTS) && !inDemo()) _scores.record(_score);
+    audio.mute();
 }
 
 // Movement is per REFERENCE_FRAME_MS, scaled by the real frame time, as in
@@ -22,8 +25,6 @@ void StarFluxGame::updateFrameScale() {
 void StarFluxGame::init(AudioEngine &audio) {
     _scores.begin("star");
     enterAttract();
-    _btnBWasHeld = true;
-    _btnBHoldStart = 0;
     _lastFrameMs = millis();
     static const int n[] = { 523, 784, 1047, 1568 };
     static const int d[] = {  70,  70,  90,  220 };
@@ -164,25 +165,8 @@ bool StarFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     ensureSceneReady(canvas);
     updateFrameScale();
 
-    // Hold B to exit, in every phase. After init() B must be released
-    // first, so the launcher press that started us can't count. While
-    // playing, a short tap of B drops a bomb instead (updateBombButton).
-    // Not while entering a name, where B steps back a letter.
-    if (_phase == PHASE_NAME) {
-        _btnBHoldStart = 0;
-    } else if (_btnBWasHeld) {
-        if (!input.btnB) _btnBWasHeld = false;
-    } else if (input.btnB) {
-        if (_btnBHoldStart == 0) _btnBHoldStart = millis();
-        if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
-            _btnBHoldStart = 0;
-            if (_phase == PHASE_PLAYING || _phase == PHASE_RESULTS) recordQuit();
-            audio.mute();
-            return false;
-        }
-    } else {
-        _btnBHoldStart = 0;
-    }
+    // Quitting is the cabinet's Back button (main.cpp, then onQuit()); B
+    // is the bomb (updateBombButton).
 
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
@@ -238,7 +222,6 @@ bool StarFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, Audi
     if (_scores.update(input, getRotation())) {
         _phase = PHASE_GAMEOVER;
         _phaseEnteredMs = millis();
-        _btnBWasHeld = input.btnB;   // a B still down from the entry isn't the start of a quit
         audio.playTone(1047, 80);
     }
     return true;
@@ -310,7 +293,6 @@ void StarFluxGame::renderRun(GFXcanvas16 &canvas) {
     renderWorld(canvas);
     drawHUD(canvas);
     drawOverlays(canvas);
-    drawQuitHint(canvas);
 }
 
 // Backdrop, the ship's shadow and stars (drawn directly), rings, Jet's

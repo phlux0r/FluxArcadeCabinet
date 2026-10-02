@@ -265,12 +265,6 @@ inline constexpr unsigned long DEMO_MIN_MS    = 30000;
 inline constexpr unsigned long DEMO_MAX_MS    = 40000;
 inline constexpr unsigned long DEMO_DODGE_MS  = 450;    // strafe on seeing a barrel glow
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 30000;
-inline constexpr unsigned long EXIT_HOLD_MS        = 2000;   // hold B on attract to exit
-// B alone is strafe during play, so quitting mid-game needs A+B held. The
-// hint only shows after a longer-than-a-shot press, since firing while
-// strafing is common.
-inline constexpr unsigned long QUIT_HOLD_MS       = 2000;
-inline constexpr unsigned long QUIT_HINT_DELAY_MS = 650;
 // Looped during a game (not on the attract screen).
 inline constexpr const char* TANK_MUSIC = "/audio/flux-tank.wav";
 

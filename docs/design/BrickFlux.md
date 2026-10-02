@@ -48,7 +48,7 @@ is `joyDown`, screen down is `joyUp`.
 | A tap | Serve the ball; release a caught ball (Catch); fire lasers (Laser) |
 | A hold (meter full) | Charge the Flux Smash; release just as the ball reaches the bat |
 | B tap | Swap polarity (on press, so it is instant) |
-| B hold 2s | Quit to the launcher (the swap a hold starts with doesn't matter) |
+| Back hold 1s | Quit to the launcher (the cabinet's own button, handled in `main.cpp`; B is only the swap) |
 
 Tap vs hold on A: a press counts as a hold once it has been down 0.2s.
 Lasers and serves fire on the press, so a hold that becomes a charge still

@@ -44,6 +44,7 @@ public:
     void init(AudioEngine &audio) override;
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override;
     void onExit() override { releaseScene(); }
+    void onQuit(AudioEngine &audio) override;
 
     uint8_t getRotation() const override { return 1; }
     const char* getName()  const override { return "Tube Flux"; }
@@ -89,8 +90,6 @@ private:
 
     // --- Session ---------------------------------------------------------------
     GamePhase     _phase = PHASE_ATTRACT;
-    bool          _btnBWasHeld = false;   // B must be released before hold-to-exit counts
-    unsigned long _btnBHoldStart = 0;
     unsigned long _phaseEnteredMs = 0;
     AttractSlide  _attractSlide = SLIDE_TITLE;
     unsigned long _attractSlideAt = 0;
@@ -229,7 +228,6 @@ private:
     Renderer::Sprite2D  _shipSprite;
 
     // --- TubeFluxGame.cpp ------------------------------------------------------
-    void recordQuit();
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     void resetRun();
@@ -337,7 +335,6 @@ private:
     // --- TubeFluxHud.cpp -------------------------------------------------------
     void drawHUD(GFXcanvas16 &canvas);
     void drawOverlays(GFXcanvas16 &canvas);
-    void drawQuitHint(GFXcanvas16 &canvas);
     void drawCentred(GFXcanvas16 &canvas, const char* text, int y, uint16_t colour, uint8_t size = 1);
     void enterAttract();
     void renderAttractTitle(GFXcanvas16 &canvas);

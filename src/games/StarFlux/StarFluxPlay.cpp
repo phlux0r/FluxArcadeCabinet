@@ -317,17 +317,11 @@ void StarFluxGame::tryFire(const InputState &input, AudioEngine &audio) {
     }
 }
 
-// B released within BOMB_TAP_MS of pressing it drops a bomb. Longer is
-// on its way to hold-to-quit (StarFluxGame::update()), and drops nothing.
+// A press of B drops a bomb, at once (quitting is the Back button's, so B
+// no longer waits to see whether it's a tap or a hold).
 void StarFluxGame::updateBombButton(const InputState &input, AudioEngine &audio) {
-    if (input.btnB) {
-        if (_btnBDownAt == 0) _btnBDownAt = millis() | 1;
-        return;
-    }
-    if (_btnBDownAt != 0) {
-        if (millis() - _btnBDownAt < BOMB_TAP_MS) dropBomb(audio);
-        _btnBDownAt = 0;
-    }
+    if (input.btnB && !_bombBtnHeld) dropBomb(audio);
+    _bombBtnHeld = input.btnB;
 }
 
 void StarFluxGame::dropBomb(AudioEngine &audio) {

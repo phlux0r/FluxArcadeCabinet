@@ -9,9 +9,8 @@
 
 namespace brickflux {
 
-// B swaps the bat between cyan and magenta, on the press so it's instant
-// (holding B on to quit just swaps once first). The ball takes the new
-// colour the next time it touches the bat.
+// B swaps the bat between cyan and magenta, on the press so it's instant.
+// The ball takes the new colour the next time it touches the bat.
 inline void BrickFluxGame::updateButtonB(const InputState &in) {
     const bool pressed = in.btnB && !_bHeld;
     _bHeld = in.btnB;

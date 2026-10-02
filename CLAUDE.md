@@ -48,7 +48,9 @@ so far has:
   scored or saved), A starting a real game from any of them;
 - a 3-letter name entry at game over via `hiscore::ScoreBoard`, `record()`
   on a mid-game quit, and its best on the title;
-- hold B to quit (not during name entry, where B steps back);
+- quitting is main.cpp's (hold Back, GPIO 18, for 1s): the game implements
+  `onQuit()` to `record()` a game in progress, or `finishNow()` a name
+  entry, and A and B stay purely its own;
 - optional WAVs on the SD card, each with a fallback (a PROGMEM sample or
   a tone), checked once with `audio.exists()` and preloaded;
 - a host harness scenario (bot play, attract/demo exit, menus), added to

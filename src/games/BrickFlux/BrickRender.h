@@ -240,16 +240,6 @@ inline void BrickFluxGame::drawRoundOverlay(GFXcanvas16 &cv) {
     if (now < _perfectFlashUntil) hiscore::printCentred(cv, "PERFECT!", 104, ArcadeConfig::COLOR_WHITE, 2);
 }
 
-inline void BrickFluxGame::drawQuitHint(GFXcanvas16 &cv) {
-    if (_btnBHoldStart == 0) return;
-    const unsigned long held = millis() - _btnBHoldStart;
-    if (held < QUIT_HINT_DELAY_MS) return;
-    cv.fillRect(14, 20, 100, 13, COL_PANEL);
-    hiscore::printCentred(cv, "HOLD B TO QUIT", 21, ArcadeConfig::COLOR_WHITE);
-    const int fill = (int)(96UL * (held > EXIT_HOLD_MS ? EXIT_HOLD_MS : held) / EXIT_HOLD_MS);
-    cv.fillRect(16, 30, fill, 2, ArcadeConfig::COLOR_AMBER);
-}
-
 // The title, drawn rather than a bitmap: a band of bricks, the name, and a
 // ball bouncing between a bat and the bricks.
 inline void BrickFluxGame::renderTitle(GFXcanvas16 &cv) {
@@ -300,7 +290,7 @@ inline void BrickFluxGame::renderInfo(GFXcanvas16 &cv, int page) {
             cv.fillRect((int)(cx + dx * k * 7) - 1, (int)(cy - 3 + dy * k * 7) - 1, 2, 2, k == 5 ? WH : GR);
         hiscore::printCentred(cv, "A: SERVE / LASERS", 116, WH);
         hiscore::printCentred(cv, "B: SWAP COLOUR", 126, WH);
-        hiscore::printCentred(cv, "HOLD B: QUIT", 138, GR);
+        hiscore::printCentred(cv, "HOLD BACK: QUIT", 138, GR);
     } else if (page == 1) {
         hiscore::printCentred(cv, "COLOUR", 6, ArcadeConfig::COLOR_MAGENTA);
         hiscore::printCentred(cv, "THE BALL TAKES THE", 18, WH);

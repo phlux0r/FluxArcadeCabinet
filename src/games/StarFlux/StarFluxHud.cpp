@@ -110,18 +110,6 @@ void StarFluxGame::drawOverlays(GFXcanvas16 &canvas) {
     }
 }
 
-// Only once B has been held past QUIT_HINT_DELAY_MS, so a tap (a bomb)
-// never flashes it.
-void StarFluxGame::drawQuitHint(GFXcanvas16 &canvas) {
-    if (_btnBHoldStart == 0) return;
-    unsigned long held = millis() - _btnBHoldStart;
-    if (held < QUIT_HINT_DELAY_MS) return;
-    canvas.fillRect(30, 12, 100, 13, PANEL);
-    drawCentred(canvas, "HOLD B TO QUIT", 13, ArcadeConfig::COLOR_WHITE);
-    int16_t fill = (int16_t)(96UL * (held > EXIT_HOLD_MS ? EXIT_HOLD_MS : held) / EXIT_HOLD_MS);
-    canvas.fillRect(32, 22, fill, 2, ArcadeConfig::COLOR_AMBER);
-}
-
 void StarFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
     _shipSprite.enabled = false;
@@ -140,7 +128,6 @@ void StarFluxGame::renderAttractTitle(GFXcanvas16 &canvas) {
     if (millis() % 1000 < 600) drawCentred(canvas, "[BTN A] TO PLAY", TITLE_STRIP_Y + 5, ArcadeConfig::COLOR_WHITE);
     char buf[24];
     drawCentred(canvas, _scores.bestLine(buf, sizeof(buf), "HI: "), TITLE_STRIP_Y + 14, ArcadeConfig::COLOR_YELLOW);
-    drawQuitHint(canvas);
 }
 
 void StarFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
@@ -148,15 +135,14 @@ void StarFluxGame::renderAttractInfo(GFXcanvas16 &canvas) {
     drawCentred(canvas, "HOW TO PLAY", 22, ArcadeConfig::COLOR_CYAN);
     drawCentred(canvas, "STICK: FLY", 33, ArcadeConfig::COLOR_WHITE);
     drawCentred(canvas, "A: LASERS (HOLD: STEADY)", 42, ArcadeConfig::COLOR_GREEN);
-    drawCentred(canvas, "TAP B: SMART BOMB", 51, rgb(120, 170, 255));
+    drawCentred(canvas, "B: SMART BOMB", 51, rgb(120, 170, 255));
     drawCentred(canvas, "FLY THROUGH SILVER", 61, ArcadeConfig::COLOR_GREY);
     drawCentred(canvas, "RINGS FOR SHIELD", 69, ArcadeConfig::COLOR_GREY);
     drawCentred(canvas, "BOSS: HIT THE GLOWS", 79, ArcadeConfig::COLOR_ORANGE);
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 91, ArcadeConfig::COLOR_WHITE);
     char buf[24];
     drawCentred(canvas, _scores.bestLine(buf, sizeof(buf)), 100, ArcadeConfig::COLOR_YELLOW);
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 // The cabinet's table for this game, over the drifting world.
@@ -164,8 +150,7 @@ void StarFluxGame::renderAttractScores(GFXcanvas16 &canvas) {
     canvas.fillRect(22, 18, W - 44, 88, PANEL);
     hiscore::drawTable(canvas, _scores.table(), "HIGH SCORES", 24);
     if ((millis() / 500) & 1) drawCentred(canvas, "PRESS A TO START", 96, ArcadeConfig::COLOR_WHITE);
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 // The stage tally: lines appear one by one.
@@ -202,7 +187,6 @@ void StarFluxGame::renderResults(GFXcanvas16 &canvas) {
         drawCentred(canvas, buf, 79, ArcadeConfig::COLOR_YELLOW);
     }
     if (t > RESULTS_MIN_MS && ((millis() / 400) & 1)) drawCentred(canvas, _stageNum + 1 < STAGE_COUNT ? "A: NEXT STAGE" : "A: NEXT LOOP", 99, ArcadeConfig::COLOR_WHITE);
-    drawQuitHint(canvas);
 }
 
 void StarFluxGame::renderGameOver(GFXcanvas16 &canvas) {
@@ -225,8 +209,7 @@ void StarFluxGame::renderGameOver(GFXcanvas16 &canvas) {
     if (millis() - _phaseEnteredMs > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS) {
         drawCentred(canvas, "A: AGAIN", 94, ArcadeConfig::COLOR_WHITE);
     }
-    drawCentred(canvas, "HOLD B TO EXIT", 116, ArcadeConfig::COLOR_GREY);
-    drawQuitHint(canvas);
+    drawCentred(canvas, "HOLD BACK TO EXIT", 116, ArcadeConfig::COLOR_GREY);
 }
 
 }  // namespace starflux

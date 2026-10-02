@@ -2,10 +2,13 @@
 
 namespace tubeflux {
 
-// Quitting mid-run: the score still goes on the table (if it makes it),
-// under the last name entered.
-void TubeFluxGame::recordQuit() {
-    _scores.record(_score);
+// Quitting (the cabinet's Back button): a run in progress still goes on the
+// table (if it makes it), under the last name entered; a name being entered
+// is kept.
+void TubeFluxGame::onQuit(AudioEngine &audio) {
+    if (_phase == PHASE_NAME) _scores.finishNow();
+    else if (_phase == PHASE_PLAYING) _scores.record(_score);
+    audio.mute();
 }
 
 // Movement is per REFERENCE_FRAME_MS, scaled by the real frame time, as in
@@ -22,8 +25,6 @@ void TubeFluxGame::updateFrameScale() {
 void TubeFluxGame::init(AudioEngine &audio) {
     _scores.begin("tube");
     enterAttract();
-    _btnBWasHeld = true;
-    _btnBHoldStart = 0;
     _lastFrameMs = millis();
     _angle = 0.0f;
     _rollVel = 0.0f;
@@ -110,25 +111,7 @@ bool TubeFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     ensureSceneReady(canvas);
     updateFrameScale();
 
-    // Hold B to exit, in every phase but the name entry (where B steps back
-    // a letter). After init() B must be released first, so the launcher
-    // press that started us can't count.
-    if (_phase == PHASE_NAME) {
-        _btnBHoldStart = 0;
-    } else if (_btnBWasHeld) {
-        if (!input.btnB) _btnBWasHeld = false;
-    } else if (input.btnB) {
-        if (_btnBHoldStart == 0) _btnBHoldStart = millis();
-        if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
-            _btnBHoldStart = 0;
-            if (_phase == PHASE_PLAYING) recordQuit();
-            audio.mute();
-            return false;
-        }
-    } else {
-        _btnBHoldStart = 0;
-    }
-
+    // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
         case PHASE_NAME:     return updateName(canvas, input, audio);
@@ -207,7 +190,6 @@ bool TubeFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, Audi
     if (_scores.update(input, getRotation())) {
         _phase = PHASE_GAMEOVER;
         _phaseEnteredMs = millis();
-        _btnBWasHeld = input.btnB;   // a B still down from the entry isn't the start of a quit
         audio.playTone(1047, 80);
     }
     return true;
@@ -265,7 +247,6 @@ void TubeFluxGame::renderRun(GFXcanvas16 &canvas) {
     renderWorld(canvas);
     drawHUD(canvas);
     drawOverlays(canvas);
-    drawQuitHint(canvas);
 }
 
 // The tunnel (drawn directly), then Jet's pass for the blocks, then

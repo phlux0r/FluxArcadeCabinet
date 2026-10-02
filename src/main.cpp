@@ -23,6 +23,7 @@
 #include "cabinet/AudioEngine.h"
 #include "cabinet/ParticleManager.h"
 #include "cabinet/PowerManager.h"
+#include "cabinet/HighScores.h"
 
 // Game interface
 #include "games/IGame.h"
@@ -105,6 +106,36 @@ void*        activeGameMem = nullptr;   // the block makeGame() allocated
 
 void returnToLauncher();
 
+// Back, held BACK_HOLD_MS, quits whatever game is running (A and B are the
+// games' own). It has to be let go after a launch before it counts.
+bool          backNeedsRelease = true;
+unsigned long backHoldStart    = 0;
+
+// How long Back has been held in a game, and whether that's long enough to
+// quit; 0 while it's up (or still to be let go).
+unsigned long backHeldFor(const InputState &state) {
+    if (backNeedsRelease) {
+        if (!state.btnBack) backNeedsRelease = false;
+        backHoldStart = 0;
+        return 0;
+    }
+    if (!state.btnBack) { backHoldStart = 0; return 0; }
+    if (backHoldStart == 0) backHoldStart = millis() | 1;
+    return millis() - backHoldStart;
+}
+
+// The bar that fills while Back's held, over the game's frame, centred near
+// the top in either orientation.
+void drawBackHint(GFXcanvas16 &canvas, unsigned long held) {
+    const int w = 84, x = (canvas.width() - w) / 2, y = 14;
+    canvas.setFont();
+    canvas.fillRect(x, y, w, 15, ArcadeConfig::COLOR_BLACK);
+    canvas.drawRect(x, y, w, 15, ArcadeConfig::COLOR_AMBER);
+    hiscore::printCentred(canvas, "HOLD TO QUIT", y + 3, ArcadeConfig::COLOR_WHITE);
+    const unsigned long t = held > ArcadeConfig::BACK_HOLD_MS ? ArcadeConfig::BACK_HOLD_MS : held;
+    canvas.fillRect(x + 2, y + 12, (int)((w - 4) * t / ArcadeConfig::BACK_HOLD_MS), 1, ArcadeConfig::COLOR_AMBER);
+}
+
 // Build the chosen game and switch to it: rotation, display, init.
 void launchGame(int index) {
     Serial.printf("[CABINET] Free internal heap before launch: %u bytes\n",
@@ -121,6 +152,7 @@ void launchGame(int index) {
     uint8_t rotation = game->getRotation();
     tft.setRotation(rotation);
     input.waitForButtonARelease();  // Prevent launch-press bleeding into game
+    backNeedsRelease = true;
     // The launcher's launch melody gives way to the game's own start sound
     // (the old one-sound engine cut it off the same way).
     audio.mute();
@@ -306,10 +338,21 @@ void loop() {
             // to the display themselves, the rest are pushed here.
             GFXcanvas16& canvas = activeCanvas();
             bool running = activeGame->update(canvas, state, audio);
-            if (!activeGame->flushesItself()) {
+            // Back held: a bar over the frame, then the game's let go. A game
+            // that pushed its own frame gets it pushed again with the bar.
+            const unsigned long held = backHeldFor(state);
+            const bool quit = held >= ArcadeConfig::BACK_HOLD_MS;
+            const bool hint = held >= ArcadeConfig::BACK_HINT_DELAY_MS && !quit;
+            if (hint) drawBackHint(canvas, held);
+            if (!activeGame->flushesItself() || hint) {
                 tft.drawRGBBitmap(0, 0, canvas.getBuffer(), canvas.width(), canvas.height());
             }
-            if (!running) returnToLauncher();
+            if (quit) {
+                activeGame->onQuit(audio);
+                returnToLauncher();
+            } else if (!running) {
+                returnToLauncher();
+            }
             break;
         }
 

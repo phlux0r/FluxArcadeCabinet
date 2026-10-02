@@ -55,6 +55,7 @@ public:
     void init(AudioEngine &audio) override;
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override;
     void onExit() override { releaseScene(); }
+    void onQuit(AudioEngine &audio) override;
 
     uint8_t getRotation() const override { return 1; }
     const char* getName()  const override { return "Star Flux"; }
@@ -140,8 +141,6 @@ private:
 
     // --- Session ---------------------------------------------------------------
     GamePhase     _phase = PHASE_ATTRACT;
-    bool          _btnBWasHeld = false;   // B must be released before it counts
-    unsigned long _btnBHoldStart = 0;
     unsigned long _phaseEnteredMs = 0;
     AttractSlide  _attractSlide = SLIDE_TITLE;
     unsigned long _attractSlideAt = 0;
@@ -180,7 +179,7 @@ private:
     unsigned long _frozenUntil = 0;     // frost shard hit: steering slowed
     unsigned long _lastShotAt = 0;
     bool  _prevA = false;
-    unsigned long _btnBDownAt = 0;   // for telling a bomb tap from a quit hold
+    bool  _bombBtnHeld = false;      // B down last frame: a bomb per press
     // Stats for the results screen, per stage.
     int   _fightersSeen = 0, _fightersDowned = 0, _targetsDowned = 0, _ringsCaught = 0;
     long  _stageStartScore = 0;
@@ -275,7 +274,6 @@ private:
     Renderer::Sprite2D  _shipSprite;
 
     // --- StarFluxGame.cpp ------------------------------------------------------
-    void recordQuit();
     void updateFrameScale();
     void startNewGame(AudioEngine &audio);
     void resetRun();
@@ -455,7 +453,6 @@ private:
     // --- StarFluxHud.cpp -------------------------------------------------------
     void drawHUD(GFXcanvas16 &canvas);
     void drawOverlays(GFXcanvas16 &canvas);
-    void drawQuitHint(GFXcanvas16 &canvas);
     void drawCentred(GFXcanvas16 &canvas, const char* text, int y, uint16_t colour, uint8_t size = 1);
     void enterAttract();
     void renderAttractTitle(GFXcanvas16 &canvas);

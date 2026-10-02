@@ -219,6 +219,7 @@ file; `esptool.py flash_id` confirms which chip you have.
 | JOY Y | 17 |
 | BTN A | 4 |
 | BTN B | 21 |
+| BTN Back | 18 |
 | Power button | 6 |
 | Amp SD_MODE | 5 |
 
@@ -249,12 +250,19 @@ sleep, a few µA (`src/cabinet/PowerManager.h`).
 |---|---|
 | Joystick | Move / steer |
 | Button A | Fire / thrust / confirm |
-| Button B (hold 2s) | Return to launcher |
+| Button B | The game's second button (bomb, strafe, colour swap...); back in the launcher's menus |
+| Back (hold 1s) | Quit the game to the launcher, from any screen |
 | Power button (hold 2s, in the menu) | Turn off; press to turn on (see Power) |
 
-Tank Flux differs: **hold B** strafes while driving, so quitting mid-game is
-**hold A+B** for 2s instead (a progress bar appears once you've held them long
-enough for it not to be a normal shot).
+**Back** is its own button (GPIO 18 to ground, internal pull-up), so A and B
+are purely the games'. Hold it for a second in any game, on any screen, and
+it returns to the launcher; a bar fills over the game while it's held, and
+a brush of the button does nothing. `main.cpp` handles it for every game,
+calling the game's `onQuit()` first: a game in progress still goes on the
+high-score table (under the last name entered), and a name being entered is
+kept as it stands. Before Back, each game quit on a 2s hold of B (Tank: A+B,
+since B strafes), which is gone. There's no pause: the games time things by
+the real clock, so a frozen game's timers would jump on resuming.
 
 Runner (Platform Flux) plays in stages, like Moon Patrol's checkpoints:
 each hazard section is a numbered stage, and the rule under the HUD fills
@@ -270,21 +278,21 @@ each loop.
 
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've
-picked up the gun. Hold B to quit.
+picked up the gun.
 
 Brick Flux: the joystick moves the bat left and right (speed follows how
 far you push) and tilts it with up/down (past a third of the way, so a
 sloppy sideways push doesn't tilt it): up raises the right end, sending the
 ball left. A serves, lets a caught ball go, or fires the lasers; held with
 the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
-(on the press, so it's instant); hold B to quit.
+(on the press, so it's instant).
 
 Star Flux: the joystick flies the ship round the screen. A fires twin
-lasers, once per press as fast as you tap, or steadily while held. Tap B
+lasers, once per press as fast as you tap, or steadily while held. Press B
 for a smart bomb (3, topped back up to 3 when you lose a life): it flies
 ahead and blows everything near it apart, clears every enemy shot in the
-air, and hurts the boss. Hold B to quit; a bomb needs B released within
-0.4s, so a hold never drops one.
+air, and hurts the boss. It goes on the press (it used to wait for B's
+release, to tell a bomb from a hold-B quit).
 
 The launcher's "[JOY] MOVE / [BTN A] GO / [BTN B] SETUP" hint sits below the
 background art's menu box, leaving the box for the game list: six rows fit,
@@ -305,9 +313,9 @@ joystick up/down changes the letter (A-Z, 0-9, `.`, held to run through
 them), left/right moves between the three, A confirms each (the third
 saves it), B steps back. It starts on the last name entered on the cabinet
 (`AAA` the first time), and after 20s untouched that name is saved, so a
-regular player can just press A three times, or walk away. Holding B
-doesn't quit from this screen. Quitting mid-game still puts the score on
-the table, under the last name. The game-over screen then says NEW HIGH
+regular player can just press A three times, or walk away. Quitting here
+(holding Back) saves the name as it stands. Quitting mid-game still puts
+the score on the table, under the last name. The game-over screen then says NEW HIGH
 SCORE or HIGH SCORE #n, and the title screens show the top score with its
 name. The tables are in each game's attract cycle, under SETUP > HIGH
 SCORES (left/right flips games), and after 30s untouched the launcher
@@ -317,7 +325,7 @@ score; that carries over as its table's first entry, named `---`.
 
 Every game's game-over screen ignores A and B for its first second, then
 acts only on a fresh press (`ArcadeConfig::GAMEOVER_INPUT_DELAY_MS`), so
-buttons still being mashed when a game ends can't restart it or quit.
+buttons still being mashed when a game ends can't restart it.
 
 ## Project Structure
 
@@ -628,6 +636,9 @@ not; their speed still follows the frame rate.
 4. Add `mygame` to `hiscore::GAMES` in `src/cabinet/HighScores.h`, and give
    the game a `hiscore::ScoreBoard`: `begin("mygame")` in `init()`,
    `offer(score)` at game over (showing its `draw()`/`update()` until done)
+5. Implement `onQuit(audio)`: the player held Back. `record(score)` a game in
+   progress, `finishNow()` a name entry, and mute. Don't quit on A or B: they're
+   the game's
 
 Games are built when launched and destroyed on the way back to the menu
 (`makeGame()` in `main.cpp`, in internal RAM where there's room), so only the

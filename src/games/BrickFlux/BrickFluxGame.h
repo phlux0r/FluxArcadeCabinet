@@ -39,6 +39,7 @@ class BrickFluxGame : public IGame {
 public:
     void init(AudioEngine &audio) override;
     bool update(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) override;
+    void onQuit(AudioEngine &audio) override;
     uint8_t getRotation() const override { return 2; }
     const char* getName() const override { return "Brick Flux"; }
 
@@ -131,7 +132,6 @@ private:
     void drawBat(GFXcanvas16 &cv);
     void drawHud(GFXcanvas16 &cv);
     void drawRoundOverlay(GFXcanvas16 &cv);
-    void drawQuitHint(GFXcanvas16 &cv);
     void renderTitle(GFXcanvas16 &cv);
     void renderInfo(GFXcanvas16 &cv, int page);
     void renderScores(GFXcanvas16 &cv);
@@ -200,9 +200,7 @@ private:
     bool _warned = false;
     bool _serving = true;                     // a ball on the bat, waiting for A
 
-    // Quit (hold B), name entry, demo
-    bool _btnBWasHeld = true;
-    unsigned long _btnBHoldStart = 0;
+    // Demo
     bool _demo = false;
     unsigned long _demoUntil = 0;
     bool _apHolding = false;                  // autopilot: A held for a smash
@@ -290,8 +288,6 @@ inline void BrickFluxGame::sfx(Sfx s, int hz) {
 inline void BrickFluxGame::init(AudioEngine &audio) {
     _audio = &audio;
     _scores.begin("brick");
-    _btnBWasHeld = true;
-    _btnBHoldStart = 0;
     _lastFrameMs = millis();
     findSounds(audio);
     resetRun(1);
@@ -317,27 +313,8 @@ inline bool BrickFluxGame::update(GFXcanvas16 &canvas, const InputState &input, 
     _audio = &audio;
     updateFrameTime();
 
-    // Hold B to exit, in every phase but the name entry (where B steps back
-    // a letter). After init() B must be released first, so the launcher
-    // press that started us can't count.
-    if (_phase == PHASE_NAME) {
-        _btnBHoldStart = 0;
-    } else if (_btnBWasHeld) {
-        if (!input.btnB) _btnBWasHeld = false;
-    } else if (input.btnB) {
-        if (_btnBHoldStart == 0) _btnBHoldStart = _now;
-        if (_now - _btnBHoldStart > EXIT_HOLD_MS) {
-            _btnBHoldStart = 0;
-            // Quitting mid-game: the score still goes on the table, under
-            // the last name entered.
-            if (_phase == PHASE_PLAYING) _scores.record(_score);
-            audio.mute();
-            return false;
-        }
-    } else {
-        _btnBHoldStart = 0;
-    }
-
+    // Quitting is the cabinet's Back button (main.cpp, then onQuit()); B
+    // swaps the bat's colour.
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
         case PHASE_NAME:     return updateName(canvas, input, audio);
@@ -346,9 +323,16 @@ inline bool BrickFluxGame::update(GFXcanvas16 &canvas, const InputState &input, 
     }
     stepPlay(input);
     renderPlay(canvas);
-    drawQuitHint(canvas);
     if (_round == ROUND_LOST && _lives <= 0 && _now - _roundAt >= LOST_MS) enterGameOver(audio);
     return true;
+}
+
+// Quitting (the Back button): a game in progress still goes on the table,
+// under the last name entered; a name being entered is kept.
+inline void BrickFluxGame::onQuit(AudioEngine &audio) {
+    if (_phase == PHASE_NAME) _scores.finishNow();
+    else if (_phase == PHASE_PLAYING) _scores.record(_score);
+    audio.mute();
 }
 
 inline void BrickFluxGame::enterAttract() {
@@ -453,7 +437,6 @@ inline bool BrickFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &
         case SLIDE_INFO3: renderInfo(canvas, 2); break;
         default:          renderScores(canvas); break;
     }
-    drawQuitHint(canvas);
     return true;
 }
 
@@ -466,7 +449,6 @@ inline bool BrickFluxGame::updateName(GFXcanvas16 &canvas, const InputState &inp
     if (_scores.update(input, getRotation())) {
         _phase = PHASE_GAMEOVER;
         _phaseAt = millis();
-        _btnBWasHeld = input.btnB;   // a B still down from the entry isn't the start of a quit
         audio.playTone(1047, 80);
     }
     return true;
@@ -476,7 +458,6 @@ inline bool BrickFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState 
     _particles.update();
     drawField(canvas);
     renderGameOver(canvas);
-    drawQuitHint(canvas);
     const unsigned long elapsed = _now - _phaseAt;
     if (elapsed > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) {
         startNewGame(audio);

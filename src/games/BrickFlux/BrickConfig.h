@@ -134,8 +134,6 @@ inline constexpr unsigned long ATTRACT_SLIDE_MS = 8000;
 inline constexpr unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
 inline constexpr int DEMO_MIN_LEVEL = 2, DEMO_MAX_LEVEL = 12;
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 30000;
-inline constexpr unsigned long EXIT_HOLD_MS = 2000;
-inline constexpr unsigned long QUIT_HINT_DELAY_MS = 400;
 inline constexpr unsigned long POPUP_MS = 700;
 inline constexpr unsigned long SHAKE_MS = 133;          // ~4 frames at 30fps
 

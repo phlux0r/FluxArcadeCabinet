@@ -2,10 +2,13 @@
 
 namespace tankflux {
 
-// Quitting mid-game: the score still goes on the table (if it makes it),
-// under the last name entered. The attract demo's score is nobody's.
-void TankFluxGame::recordQuit() {
-    if (!inDemo()) _scores.record(_score);
+// Quitting (the cabinet's Back button): a game in progress still goes on the
+// table (if it makes it), under the last name entered; a name being entered
+// is kept. The attract demo's score is nobody's.
+void TankFluxGame::onQuit(AudioEngine &audio) {
+    if (_phase == PHASE_NAME) _scores.finishNow();
+    else if (_phase == PHASE_PLAYING && !inDemo()) _scores.record(_score);
+    audio.mute();
 }
 
 // How far this frame should move things, relative to a frame at the rate the
@@ -25,8 +28,6 @@ void TankFluxGame::init(AudioEngine &audio) {
     _phase = PHASE_ATTRACT;
     _attractSlide      = SLIDE_GAME;
     _attractSlideTimer = millis();
-    _btnBWasHeld = true;
-    _btnBHoldStart = 0;
     _lastFrameMs = millis();   // so the first frame isn't a huge clamped step
     // /audio/tank_start.wav from SD, or a generated melody if it's missing.
     audio.playTankStartSound();
@@ -81,7 +82,6 @@ void TankFluxGame::resetGame() {
     _nextBossAt  = BOSS_EVERY_KILLS;
     _bossesDefeated = 0;
     _bossBonusUntil = 0;
-    _quitHoldStart = 0;
     _arenaShiftCuePending = false;
     _arenaShiftFlashUntil = 0;
     for (auto &p : _particles.pool) p.active = false;
@@ -92,26 +92,8 @@ bool TankFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     ensureSceneReady(canvas);
     updateFrameScale();
 
-    // Outside of play, holding B for EXIT_HOLD_MS exits. A fresh B press
-    // already exits from both screens (see their handlers); this covers B
-    // still held down from strafing when the game ended. After init(), B
-    // must be released first so a press carried over from the launcher
-    // doesn't count. During play B is strafe and A+B quits (updatePlaying()).
-    // Not in the name entry either, where B steps back a letter.
-    if (_phase != PHASE_PLAYING && _phase != PHASE_NAME) {
-        if (_btnBWasHeld) {
-            if (!input.btnB) _btnBWasHeld = false;
-        } else if (input.btnB) {
-            if (_btnBHoldStart == 0) _btnBHoldStart = millis();
-            if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
-                _btnBHoldStart = 0;
-                audio.mute();
-                return false;
-            }
-        } else {
-            _btnBHoldStart = 0;
-        }
-    }
+    // Quitting is the cabinet's Back button (main.cpp, then onQuit()); B
+    // is strafe.
 
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
@@ -138,10 +120,6 @@ bool TankFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
     else if (_attractSlide == SLIDE_INFO) renderAttractInfo(canvas);
     else                                  renderAttractScores(canvas);
 
-    if (input.btnBPressed) {
-        audio.mute();
-        return false;
-    }
     if (input.btnAPressed) startNewGame(audio);
     return true;
 }
@@ -153,7 +131,6 @@ bool TankFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, Audi
     if (_scores.update(input, getRotation())) {
         _phase = PHASE_GAMEOVER;
         _gameOverEnteredMs = millis();
-        _btnBWasHeld = true;   // B from the entry must be released before hold-to-exit counts
         audio.playTone(1047, 80);
     }
     return true;
@@ -166,30 +143,15 @@ bool TankFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
     // Only after the input delay, so mashing at the end doesn't.
     const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
     if (inputOk && input.btnAPressed) { startNewGame(audio); return true; }
-    if (inputOk && input.btnBPressed) { audio.mute(); return false; }
     if (elapsed > GAMEOVER_TIMEOUT_MS) {
         _phase = PHASE_ATTRACT;
         _attractSlide      = SLIDE_GAME;
         _attractSlideTimer = millis();
-        _btnBWasHeld = false;
     }
     return true;
 }
 
 bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (input.btnA && input.btnB) {
-        if (_quitHoldStart == 0) {
-            _quitHoldStart = millis();
-        } else if (millis() - _quitHoldStart > QUIT_HOLD_MS) {
-            _quitHoldStart = 0;
-            recordQuit();
-            audio.mute();
-            return false;
-        }
-    } else {
-        _quitHoldStart = 0;
-    }
-
     updateDriving(input, audio);
     updateKits(audio);
     tryFire(input, audio);
@@ -221,13 +183,11 @@ bool TankFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     drawHUD(canvas);
     drawBossAlert(canvas);
     drawBossBonus(canvas);
-    drawQuitHint(canvas);
 
     if (_health <= 0) {
         // A name for the table first, if the score made it.
         _phase = !inDemo() && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
         _gameOverEnteredMs = millis();
-        _btnBWasHeld = true;   // B held from strafing must be released before hold-to-exit counts
         audio.stopLoop();
         audio.playTone(150, 400);
     }

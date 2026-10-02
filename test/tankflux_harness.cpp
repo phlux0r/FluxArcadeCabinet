@@ -52,7 +52,9 @@ struct Bucket {
 // Scenarios:
 //   play    normal run: the bot dies and restarts, so game-over is covered
 //   god     health pinned, so a long run reaches many bosses and arena resets
-//   menus   exercises attract exit, in-game A+B quit and the game-over timeout
+//   menus   exercises a Back quit from the attract screen and mid-game (as
+//           main.cpp does it: onQuit(), onExit(), init()) and the game-over
+//           timeout
 //   profile god, plus per-frame render cost grouped by what was on screen
 //   idle     no input at all: the attract cycle (title, how-to-play, demo),
 //            reporting how demos went and that they made no sound
@@ -170,14 +172,12 @@ int main(int argc, char** argv) {
             // Strafe now and then, so hold-B is covered.
             long cycle = f % 600;
             if (cycle >= 300 && cycle < 360) { b = true; in.joyX = (f / 600) % 2 ? 1.0f : -1.0f; }
-            // ~720ms of A+B: long enough to show the quit hint, short enough
-            // not to quit.
-            if (f % 5000 >= 4000 && f % 5000 < 4045) { a = true; b = true; }
         }
 
+        // Back (main.cpp's): from the attract screen, then mid-game.
+        const bool backQuit = menus && (f == 200 || f == 700);
         if (menus) {
-            if (f < 300)                 { a = false; b = (f >= 20 && f < 200); }  // attract: hold B to exit
-            else if (f >= 600 && f < 760) { a = true;  b = true; }                  // playing: hold A+B to quit
+            if (f < 300)                 { a = false; b = false; }
             else if (f > 2000 && g._phase == TankFluxGame::PHASE_GAMEOVER) { a = false; b = false; }
         }
 
@@ -201,8 +201,9 @@ int main(int argc, char** argv) {
                            *g._scene, objs, tris);
         }
 
-        if (!keepRunning) {
+        if (!keepRunning || backQuit) {
             // What main.cpp's returnToLauncher() + launchGame() do.
+            if (backQuit) g.onQuit(audio);
             ++quits;
             printf("quit at f=%ld phase=%d\n", f, (int)g._phase);
             g.onExit();

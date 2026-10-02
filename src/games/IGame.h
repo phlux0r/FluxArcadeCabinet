@@ -12,7 +12,8 @@ class Adafruit_ST7735;
 //
 // To add a new game:
 //   1. Create a class that inherits from IGame
-//   2. Implement the four pure virtual methods below (onExit() is optional)
+//   2. Implement the four pure virtual methods below (onQuit() and onExit()
+//      are optional)
 //   3. Add it to gameRegistry[] in src/main.cpp (name + makeGame<YourGame>)
 //
 // Games are built when launched and destroyed on exit (see main.cpp), so
@@ -50,6 +51,12 @@ public:
 
     // Short display name shown in the launcher menu (max ~16 chars)
     virtual const char* getName() const = 0;
+
+    // The player has held the cabinet's Back button to quit (main.cpp
+    // handles it for every game; A and B are the game's own). Put a game in
+    // progress on the high-score table (ScoreBoard::record(), or
+    // finishNow() mid-entry) and stop the game's sounds. onExit() follows.
+    virtual void onQuit(AudioEngine &audio) { audio.mute(); }
 
     // Called when the game hands control back to the launcher (after
     // update() returns false). Free large allocations here so the heap is

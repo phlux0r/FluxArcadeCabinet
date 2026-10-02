@@ -69,10 +69,6 @@ private:
     int _padX;
     const int _padWidth = 24;
 
-    // Button B: release guard, then hold EXIT_HOLD_MS to leave
-    bool _btnBWasHeld = false;
-    unsigned long _btnBHoldStart = 0;
-    static const unsigned long EXIT_HOLD_MS = 2000UL;
 
     // Game-over attract timeout
     unsigned long _gameOverEnteredMs = 0;
@@ -449,37 +445,25 @@ public:
         _attractModeTimer    = millis();
         _titleAWasHeld       = true;
         _showInstructionPage = _showScoresPage = false;
-        _btnBWasHeld         = true;
         _demo                = false;
         initLevel();
         audio.playLanderStartSound();
         audio.preload("/audio/pickup.wav");     // the fuel pickup; loaded now, not on the first
     }
 
+    // Quitting (the Back button): a game in progress still goes on the
+    // table, under the last name entered; a name being entered is kept.
+    void onQuit(AudioEngine &audio) {
+        if (_naming) _scores.finishNow();
+        else if (!_demo && !_isTitleScreen && !_isGameOver && _lander.lives > 0) _scores.record(_score);
+        audio.mute();
+    }
+
     // `input` is for the name entry (the rest of the game reads the raw values).
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
                 int joyX, int joyY, AudioEngine &audio, const InputState &input) {
 
-        // Button B: require release first, then hold 2s to exit — the same
-        // convention Asteroid Flux, Platform Flux and Tank Flux use. A bare
-        // press exited instantly, so brushing the button lost a run.
-        if (_naming) {
-            _btnBHoldStart = 0;            // B steps back a letter there
-        } else if (_btnBWasHeld) {
-            if (!btnB) _btnBWasHeld = false;
-        } else if (btnB) {
-            if (_btnBHoldStart == 0) _btnBHoldStart = millis();
-            if (millis() - _btnBHoldStart > EXIT_HOLD_MS) {
-                _btnBHoldStart = 0;
-                // Quitting mid-game: the score still goes on the table,
-                // under the last name entered.
-                if (!_demo && !_isTitleScreen && _lander.lives > 0) _scores.record(_score);
-                audio.mute();
-                return false;
-            }
-        } else {
-            _btnBHoldStart = 0;
-        }
+        // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
 
         // ---- ATTRACT DEMO: A plays for real, B back to the title ----
         const bool aPressed = btnA && !_prevBtnA, bPressed = btnB && !_prevBtnB;
@@ -505,7 +489,6 @@ public:
                 _isGameOver        = true;
                 _gameOverEnteredMs = millis();
                 _endInputArmed     = false;
-                _btnBWasHeld       = true;   // B from the entry isn't the start of a quit
             }
             return true;
         }
