@@ -47,6 +47,32 @@ neither renderer gets there, the fallbacks, in order: a higher, steeper
 camera (less floor on screen, more sky); narrower courses; coarser tiles.
 The design below doesn't change with the choice.
 
+### Stage 0: built, and what the host shows
+
+`src/games/RollFlux/` (menu entry **Roll**): one course (ramps, a gap, a
+block, a sideways ramp to the goal), the ball with its physics (rolling,
+ramps, steps as walls, falls), the chase camera at three heights (A), and
+both floor renderers (B), with the render time and Jet's triangle count on
+screen. `test/rollflux_harness.cpp` checks the physics, profiles every
+renderer and camera with a scripted driver, and writes frames of both
+renderers to compare.
+
+Host cost per frame (`test/build.sh roll profile`, -O2, same build as
+Tube's `profile`):
+
+| Floor | Camera LOW / MID / HIGH | Jet's triangles |
+|---|---|---|
+| DIRECT | ~46 / 49 / 46 µs | ~20 (the ball) |
+| JET | ~124 / 127 / 114 µs | ~140-230 |
+| Tube Flux, for scale (30fps on the board) | ~55-63 µs | ~30 |
+
+So DIRECT costs about what Tube does, and JET about twice that. The frames
+match (the course and ball line up in both); JET also shows ragged edges
+and loses triangles crossing the near plane close to the camera, which
+DIRECT clips properly. Unless the board says otherwise, DIRECT is the floor
+renderer, and the camera height is free to choose for play rather than
+cost. The board's numbers (the overlay, and `-DSHOW_FPS`) decide.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

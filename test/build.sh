@@ -5,6 +5,7 @@
 #   test/build.sh god 30000        # one Tank Flux scenario
 #   test/build.sh tube god 30000   # one Tube Flux scenario
 #   test/build.sh star god 12000   # one Star Flux scenario
+#   test/build.sh roll profile     # Roll Flux: renderer cost, poses, physics
 #   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
 #   test/build.sh brick play 20000       # one Brick Flux scenario
@@ -60,6 +61,7 @@ build_harness() {   # <name> <sources...>
 build_harness tankflux_harness "$HERE/tankflux_harness.cpp" "$ROOT"/src/games/TankFlux/*.cpp
 build_harness tubeflux_harness "$HERE/tubeflux_harness.cpp" "$ROOT"/src/games/TubeFlux/*.cpp
 build_harness starflux_harness "$HERE/starflux_harness.cpp" "$ROOT"/src/games/StarFlux/*.cpp
+build_harness rollflux_harness "$HERE/rollflux_harness.cpp" "$ROOT"/src/games/RollFlux/*.cpp
 # The 2D games' attract demos. These games include the real (inert) audio
 # engine, so src/ goes ahead of the stubs here; no Jet needed.
 echo "building games2d_harness"
@@ -79,7 +81,7 @@ echo "building cabinet_sim"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-sign-compare \
     -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" -I"$JET_SRC" \
     "$HERE/cabinet_sim.cpp" "$ROOT"/src/games/TankFlux/*.cpp "$ROOT"/src/games/TubeFlux/*.cpp \
-    "$ROOT"/src/games/StarFlux/*.cpp \
+    "$ROOT"/src/games/StarFlux/*.cpp "$ROOT"/src/games/RollFlux/*.cpp \
     "$OUT/libjet.a" -o "$OUT/cabinet_sim"
 # The high-score tables and name entry: the stubs, no Jet.
 echo "building hiscore_test"
@@ -102,6 +104,7 @@ case "${1:-}" in
   tank) game=tankflux; shift ;;
   tube) game=tubeflux; shift ;;
   star) game=starflux; shift ;;
+  roll) game=rollflux; shift ;;
 esac
 if [ $# -gt 0 ]; then
   "./${game}_harness" "$@"
@@ -114,6 +117,11 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
+  for s in physics "profile 3000"; do
+    echo "=== roll $s"
+    # shellcheck disable=SC2086
+    ./rollflux_harness $s | tail -9
+  done
   for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit; do
     echo "=== brick $s"
     # shellcheck disable=SC2086

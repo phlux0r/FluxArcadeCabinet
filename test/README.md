@@ -78,6 +78,19 @@ Its bot is the game's own autopilot (`BrickFluxGame::autopilot()`, in
 with `levels` or `boss`, it writes those frames of every level
 (`brick_L05_001500.ppm` is the Warden 50 seconds in).
 
+## Roll Flux (stage 0)
+
+`test/rollflux_harness.cpp`, run with `test/build.sh roll <scenario>`:
+
+| Scenario | What it does |
+|---|---|
+| `physics` | The ball rolls up a ramp, bounces off a block two steps high, falls into a gap and is back at the start, and is never below the floor it's on at full speed with 100ms frames. PASS/FAIL |
+| `profile [N]` | A scripted driver rolls the ball round the course (up to N frames) with each floor renderer and camera height; prints host µs per frame (mean, 95th percentile, max) and Jet's triangles; fails if it doesn't reach the goal |
+| `pose` | Frames of both renderers at five points on the course, three camera heights each, as `roll_<renderer>_<camera>_<spot>_000000.ppm`: the pairs should match |
+
+Host µs compare the renderers with each other (and with Tube's `profile`,
+whose cost runs at ~30fps on the board), not with a frame budget.
+
 ## Looking at frames
 
 The GFX stub keeps a real framebuffer, so any frame can be written out:
@@ -149,6 +162,7 @@ test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
+├── rollflux_harness.cpp        # Roll Flux stage 0: physics, renderer profile, poses
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
