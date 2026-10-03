@@ -105,7 +105,7 @@ private:
     void stepBall(const InputState &in);
     void rollBall(float dx, float dz);
     void startDash(float dx, float dz, float strength);
-    int  blockedAt(float px, float pz, int ownC, int ownR, float rise);
+    int  blockedAt(float px, float pz, int ownC, int ownR, float base, float rise);
     // Moving parts (RollFluxMovers.cpp).
     void updateMovers();
     void carryBall();

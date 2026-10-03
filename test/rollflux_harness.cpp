@@ -80,6 +80,21 @@ static bool scenarioPhysics() {
     at(g, 5.5f, 28);
     run(g, -1.0f, 0, 40);
     check("rolls up the ramp onto the plateau", g._by >= HEIGHT_STEP - 1 && !g._falling, ok);
+    // At any speed: met fast (up to a boost pad's), the ramp is still a
+    // ramp, not a wall. (The wall test once measured the floor ahead
+    // against where the ball had been, which at speed put the ramp's rise
+    // over the step limit.)
+    int bounced = 0;
+    for (float v : { 400.0f, 800.0f, 1100.0f, BALL_MAX_SPEED, BOOST_SPEED }) {
+        at(g, 5.5f, 27.6f);
+        g._vz = v;
+        g._extraSpeed = v > BALL_MAX_SPEED ? v - BALL_MAX_SPEED : 0;
+        g._extraFade = 0;
+        bool back = false;
+        for (int f = 0; f < 30 && g._by < HEIGHT_STEP - 1; ++f) { run(g, -1.0f, 0, 1); back |= g._vz < 0; }
+        if (back || g._by < HEIGHT_STEP - 1) { ++bounced; printf("    at %.0f: bounced back (y %.0f)\n", v, g._by); }
+    }
+    check("met at any speed up to a boost pad's, a ramp is climbed, not bounced off", bounced == 0, ok);
     // The raised block (height 2, rows 7-8, cols 5-6) from the east: a wall,
     // and the ball stops short of it by about its radius.
     at(g, 7.5f, 7.5f);

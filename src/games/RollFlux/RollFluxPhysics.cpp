@@ -30,15 +30,15 @@ bool RollFluxGame::floorAt(float x, float z, float &y) const {
 }
 
 // What stops the ball moving its probe to (px, pz): 0 nothing, 1 a wall
-// (a rise more than `rise`), 2 a colour gate of the other colour (a cell
-// it isn't already in). A crystal wall met in a dash is smashed, and
-// stops nothing.
-int RollFluxGame::blockedAt(float px, float pz, int ownC, int ownR, float rise) {
+// (a rise more than `rise` over `base`), 2 a colour gate of the other
+// colour (a cell it isn't already in). A crystal wall met in a dash is
+// smashed, and stops nothing.
+int RollFluxGame::blockedAt(float px, float pz, int ownC, int ownR, float base, float rise) {
     const int c = colAt(px), r = rowAt(pz);
     if (solid(c, r) && isGate(_cells[r][c].kind) && needsColour(c, r) != _polarity && !(c == ownC && r == ownR))
         return 2;
     float fy;
-    if (!floorAt(px, pz, fy) || fy <= _by + rise) return 0;
+    if (!floorAt(px, pz, fy) || fy <= base + rise) return 0;
     if (_cells[r][c].kind == K_CRYSTAL && (long)(millis() - _dashUntil) < 0) {
         smashCrystal(c, r);
         return 0;
@@ -193,6 +193,14 @@ void RollFluxGame::stepBall(const InputState &in) {
         // low enough to meet it) or a rise too big to roll up turns it.
         const int cc = colAt(_bx), cr = rowAt(_bz);
         const float rise = _falling ? LAND_LIP : STEP_UP;
+        // The rise ahead is measured from the floor where the ball's about
+        // to be (rolling), not from where it was: at speed the probe runs a
+        // whole substep ahead, and a ramp's rise from the old height would
+        // read as a wall. In the air, from the ball itself.
+        auto baseAt = [&](float x, float z) {
+            float y;
+            return !_falling && floorAt(x, z, y) && y > _by ? y : _by;
+        };
         const bool railHigh = solid(cc, cr) && _by < _cells[cr][cc].h * HEIGHT_STEP + RAIL_HEIGHT;
         // (A gate of the other colour bounces it too; a crystal wall met
         // in a dash is smashed instead.)
@@ -200,7 +208,7 @@ void RollFluxGame::stepBall(const InputState &in) {
             const float nx = _bx + _vx * sdt, px = nx + (_vx > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vx > 0 ? px > cellX0(cc) + CELL && railed(cc, cr, D_E)
                                                    : px < cellX0(cc) && railed(cc, cr, D_W));
-            const int hit = rail ? 1 : blockedAt(px, _bz, cc, cr, rise);
+            const int hit = rail ? 1 : blockedAt(px, _bz, cc, cr, baseAt(nx, _bz), rise);
             if (hit) {
                 if (fabsf(_vx) > _bump) _bump = fabsf(_vx);
                 if (hit == 2) sfx(SFX_GATE);
@@ -211,7 +219,7 @@ void RollFluxGame::stepBall(const InputState &in) {
             const float nz = _bz + _vz * sdt, pz = nz + (_vz > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vz > 0 ? pz > cellZ0(cr) + CELL && railed(cc, cr, D_N)
                                                    : pz < cellZ0(cr) && railed(cc, cr, D_S));
-            const int hit = rail ? 1 : blockedAt(_bx, pz, cc, cr, rise);
+            const int hit = rail ? 1 : blockedAt(_bx, pz, cc, cr, baseAt(_bx, nz), rise);
             if (hit) {
                 if (fabsf(_vz) > _bump) _bump = fabsf(_vz);
                 if (hit == 2) sfx(SFX_GATE);
