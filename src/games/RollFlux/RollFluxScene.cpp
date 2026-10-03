@@ -65,8 +65,9 @@ void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, i
 // read apart; ramps amber; ice pale (whiter in the Ice Relay, where the
 // floor's cold too); checkpoints dark (blue, or violet on the slate; lit
 // once reached); boost pads orange with a yellow arrow; the goal a
-// chequered flag; sides dark.
-const uint16_t FLOOR_COL[2][MAX_FLOOR_LEVEL + 1][2] = {
+// chequered flag; sides dark. The Prism Works is dusky violet, so cyan and
+// magenta stand out on it.
+const uint16_t FLOOR_COL[3][MAX_FLOOR_LEVEL + 1][2] = {
     {   // Orbit Garden: greens
         { rgb565( 5, 30,  9), rgb565( 4, 23,  7) },
         { rgb565( 9, 40, 13), rgb565( 7, 31, 10) },
@@ -81,31 +82,54 @@ const uint16_t FLOOR_COL[2][MAX_FLOOR_LEVEL + 1][2] = {
         { rgb565(14, 40, 25), rgb565(11, 33, 21) },
         { rgb565(17, 47, 28), rgb565(14, 39, 24) },
     },
+    {   // Prism Works: greyed violets
+        { rgb565( 9, 16, 14), rgb565( 7, 12, 11) },
+        { rgb565(12, 22, 17), rgb565( 9, 17, 14) },
+        { rgb565(15, 28, 20), rgb565(12, 22, 16) },
+        { rgb565(18, 34, 23), rgb565(14, 27, 19) },
+        { rgb565(21, 40, 26), rgb565(17, 32, 21) },
+    },
 };
-const uint16_t ICE_COL[2][2] = {
+const uint16_t ICE_COL[3][2] = {
     { rgb565(21, 54, 30), rgb565(17, 46, 27) },
     { rgb565(27, 61, 31), rgb565(23, 55, 30) },
+    { rgb565(24, 56, 31), rgb565(20, 48, 28) },
 };
-// The sky, bottom and top: a dark blue, and a deep violet night.
-const uint16_t SKY_COL[2][2] = {
+// The sky, bottom and top: a dark blue, a deep violet night, a purple dusk.
+const uint16_t SKY_COL[3][2] = {
     { rgb565(8, 10, 18), rgb565(1, 2, 6) },
     { rgb565(10, 4, 16), rgb565(2, 0, 5) },
+    { rgb565(16, 6, 14), rgb565(3, 0, 6) },
 };
 const uint16_t RAMP_COL[2]  = { rgb565(26, 42, 6), rgb565(21, 33, 4) };
-const uint16_t CHECK_COL[2][2] = {
+const uint16_t CHECK_COL[3][2] = {
     { rgb565(4, 18, 24), rgb565(3, 13, 19) },     // blue on the greens
     { rgb565(12, 8, 22), rgb565(9, 6, 17) },      // violet on the slate
+    { rgb565(3, 22, 8), rgb565(2, 17, 6) },       // green on the violet
 };
-const uint16_t CHECK_LIT[2][2] = {
+const uint16_t CHECK_LIT[3][2] = {
     { rgb565(6, 44, 31), rgb565(4, 36, 26) },
     { rgb565(24, 30, 31), rgb565(20, 24, 27) },
+    { rgb565(8, 56, 14), rgb565(6, 46, 11) },
 };
+// The two colours, cyan and magenta: bright (gates' bars, bridges, the
+// ball), and dark (what the ball's own colour lets through looks like).
+const uint16_t POLE_COL[2][2] = {
+    { rgb565(0, 58, 31), rgb565(0, 46, 26) },
+    { rgb565(31, 12, 27), rgb565(26, 8, 22) },
+};
+const uint16_t CRYSTAL_TOP[2]  = { rgb565(26, 56, 31), rgb565(31, 40, 31) };
+const uint16_t CRYSTAL_SIDE[2] = { rgb565(14, 36, 28), rgb565(22, 22, 28) };
+const uint16_t CONVEYOR_COL[2] = { rgb565(9, 18, 10), rgb565(7, 14, 8) };
+const uint16_t STRIPE_COL      = rgb565(26, 44, 4);
+const uint16_t BUMPER_COL[3]   = { rgb565(28, 8, 4), rgb565(31, 30, 20), rgb565(31, 63, 31) };   // side, top, lit
 const uint16_t BOOST_COL[2] = { rgb565(28, 28, 2), rgb565(24, 22, 1) };
 const uint16_t ARROW_COL[2] = { rgb565(31, 63, 10), rgb565(31, 48, 0) };
 const uint16_t GOAL_COL[2]  = { rgb565(31, 63, 31), rgb565(3, 6, 5) };
 const uint16_t SIDE_COL[2]  = { rgb565(4, 14, 8), rgb565(3, 10, 6) };    // north/south faces, east/west
 const uint16_t RAIL_COL[2]  = { rgb565(25, 52, 27), rgb565(19, 40, 21) };
 const uint16_t BALL_COL[3]  = { rgb565(0, 52, 31), rgb565(31, 63, 31), rgb565(31, 54, 2) };   // gores, caps
+const uint16_t BALL_MAGENTA = rgb565(31, 12, 27);   // its coloured gores, magenta
 const uint16_t GEM_COL[2]   = { rgb565(31, 60, 6), rgb565(31, 63, 26) };
 
 // The sun, for the ball: from behind the camera (mostly), high.
@@ -159,6 +183,7 @@ void RollFluxGame::cornerHeights(int c, int r, float out[4]) const {
         case K_RAMP_S: out[0] = out[1] = t; break;
         case K_RAMP_E: out[1] = out[2] = t; break;
         case K_RAMP_W: out[0] = out[3] = t; break;
+        case K_CRYSTAL: out[0] = out[1] = out[2] = out[3] = b + CRYSTAL_HEIGHT; break;
         default: break;
     }
 }
@@ -173,6 +198,7 @@ float RollFluxGame::planeAt(int c, int r, float x, float z) const {
         case K_RAMP_S: y += HEIGHT_STEP * (1.0f - fz); break;
         case K_RAMP_E: y += HEIGHT_STEP * fx; break;
         case K_RAMP_W: y += HEIGHT_STEP * (1.0f - fx); break;
+        case K_CRYSTAL: y += CRYSTAL_HEIGHT; break;
         default: break;
     }
     return y;
@@ -283,6 +309,19 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
     cornerHeights(c, r, hgt);
     const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
     const float cx[4] = { x0, x1, x1, x0 }, cz[4] = { z0, z0, z1, z1 };
+    // A phase bridge of the other colour: just a dim ghost of a tile, set
+    // in from its edges, nothing to stand on.
+    if (isBridge(k.kind) && needsColour(c, r) != _polarity) {
+        const float in = CELL * 0.12f, y = hgt[0];
+        float q[4][3];
+        toCam(x0 + in, y, z0 + in, q[0]);
+        toCam(x1 - in, y, z0 + in, q[1]);
+        toCam(x1 - in, y, z1 - in, q[2]);
+        toCam(x0 + in, y, z1 - in, q[3]);
+        drawPoly(buf, w, h, q, 4, fog(shade565(POLE_COL[needsColour(c, r)][1], 0.35f), depth));
+        return;
+    }
+    const float sideDepth = isBridge(k.kind) ? BRIDGE_DEPTH : SIDE_DEPTH;
     float top[4][3];
     for (int i = 0; i < 4; ++i) toCam(cx[i], hgt[i], cz[i], top[i]);
     const float camX = (float)_camera.position.x, camZ = (float)_camera.position.z;
@@ -294,14 +333,16 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
         float nh[4];
         const bool nsolid = solid(c + e.dc, r + e.dr);
         if (nsolid) cornerHeights(c + e.dc, r + e.dr, nh);
-        const float ba = nsolid ? nh[e.na] : hgt[e.a] - SIDE_DEPTH;
-        const float bb = nsolid ? nh[e.nb] : hgt[e.b] - SIDE_DEPTH;
+        const float ba = nsolid ? nh[e.na] : hgt[e.a] - sideDepth;
+        const float bb = nsolid ? nh[e.nb] : hgt[e.b] - sideDepth;
         if (hgt[e.a] <= ba + 1 && hgt[e.b] <= bb + 1) continue;
         float q[4][3];
         for (int i = 0; i < 3; ++i) { q[0][i] = top[e.a][i]; q[1][i] = top[e.b][i]; }
         toCam(cx[e.b], fminf(bb, hgt[e.b]), cz[e.b], q[2]);
         toCam(cx[e.a], fminf(ba, hgt[e.a]), cz[e.a], q[3]);
-        drawPoly(buf, w, h, q, 4, fog(SIDE_COL[e.col], depth));
+        const uint16_t sc = k.kind == K_CRYSTAL ? CRYSTAL_SIDE[e.col]
+                          : isBridge(k.kind) ? POLE_COL[needsColour(c, r)][1] : SIDE_COL[e.col];
+        drawPoly(buf, w, h, q, 4, fog(sc, depth));
     }
     const int chk = (c + r) & 1;
     if (k.kind == K_GOAL) {
@@ -320,7 +361,10 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
         return;
     }
     uint16_t col;
-    if (isRamp(k.kind)) col = RAMP_COL[chk];
+    if (k.kind == K_CRYSTAL) col = CRYSTAL_TOP[chk];
+    else if (isBridge(k.kind)) col = POLE_COL[needsColour(c, r)][chk];
+    else if (isConveyor(k.kind)) col = CONVEYOR_COL[chk];
+    else if (isRamp(k.kind)) col = RAMP_COL[chk];
     else if (k.kind == K_ICE) col = ICE_COL[_skyWorld][chk];
     else if (k.kind == K_CHECK) col = (r == _checkR ? CHECK_LIT : CHECK_COL)[_skyWorld][chk];
     else if (isBoost(k.kind)) col = BOOST_COL[chk];
@@ -338,6 +382,92 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
             toCam(mx + (pts[i][0] * rx + pts[i][1] * fx) * CELL, y,
                   mz + (pts[i][0] * rz + pts[i][1] * fz) * CELL, q[i]);
         drawPoly(buf, w, h, q, 3, fog(ARROW_COL[(millis() / 150) & 1], depth));
+    }
+    if (isConveyor(k.kind)) {
+        // Two stripes across the belt, moving the way it carries.
+        static const float FX[4] = { 0, 0, 1, -1 }, FZ[4] = { 1, -1, 0, 0 };
+        const int d = k.kind - K_CONV_N;
+        const float fx = FX[d], fz = FZ[d], rx = fz, rz = -fx;
+        const float mx = x0 + CELL * 0.5f, mz = z0 + CELL * 0.5f, y = hgt[0] + 1.0f;
+        const float run = (millis() % 1000) * (CONVEYOR_SPEED / 1000.0f) / CELL;   // cells moved this second
+        for (int i = 0; i < 2; ++i) {
+            float s0 = run + i * 0.5f;
+            s0 -= floorf(s0);
+            const float s1 = fminf(s0 + 0.16f, 1.0f);
+            float q[4][3];
+            const float f0 = (s0 - 0.5f) * CELL, f1 = (s1 - 0.5f) * CELL, half = CELL * 0.5f;
+            toCam(mx + f0 * fx - half * rx, y, mz + f0 * fz - half * rz, q[0]);
+            toCam(mx + f0 * fx + half * rx, y, mz + f0 * fz + half * rz, q[1]);
+            toCam(mx + f1 * fx + half * rx, y, mz + f1 * fz + half * rz, q[2]);
+            toCam(mx + f1 * fx - half * rx, y, mz + f1 * fz - half * rz, q[3]);
+            drawPoly(buf, w, h, q, 4, fog(STRIPE_COL, depth));
+        }
+    }
+}
+
+// A colour gate's bars along one edge of its cell: two strips in its
+// colour, bright to a ball of the other colour (shut), dark to its own
+// (open).
+void RollFluxGame::drawGateBars(uint16_t* buf, int w, int h, int c, int r, int dir, float depth) {
+    const float x0 = cellX0(c), x1 = x0 + CELL, z0 = cellZ0(r), z1 = z0 + CELL;
+    const float base = (float)(_cells[r][c].h * HEIGHT_STEP);
+    float ax, az, bx, bz;
+    switch (dir) {
+        case D_N: ax = x0; az = z1; bx = x1; bz = z1; break;
+        case D_S: ax = x0; az = z0; bx = x1; bz = z0; break;
+        case D_E: ax = x1; az = z0; bx = x1; bz = z1; break;
+        default:  ax = x0; az = z0; bx = x0; bz = z1; break;
+    }
+    const int colour = needsColour(c, r);
+    const uint16_t col = colour == _polarity ? shade565(POLE_COL[colour][1], 0.45f) : POLE_COL[colour][(millis() / 200) & 1];
+    for (int bar = 0; bar < 2; ++bar) {
+        const float y0 = base + GATE_HEIGHT * (bar ? 0.70f : 0.30f), y1 = y0 + GATE_HEIGHT * 0.18f;
+        float q[4][3];
+        toCam(ax, y0, az, q[0]);
+        toCam(bx, y0, bz, q[1]);
+        toCam(bx, y1, bz, q[2]);
+        toCam(ax, y1, az, q[3]);
+        drawPoly(buf, w, h, q, 4, fog(col, depth));
+    }
+}
+
+// A bumper: an eight-sided red post with a pale top, white when it's just
+// knocked the ball.
+void RollFluxGame::drawBumper(uint16_t* buf, int w, int h, int c, int r) {
+    const float mx = cellX0(c) + CELL * 0.5f, mz = cellZ0(r) + CELL * 0.5f;
+    const float y0 = _cells[r][c].h * HEIGHT_STEP, y1 = y0 + BUMPER_HEIGHT;
+    const bool lit = c == _bumpC && r == _bumpR && (long)(millis() - _bumpUntil) < 0;
+    float lo[8][3], hi[8][3];
+    for (int i = 0; i < 8; ++i) {
+        const float a = i * (float)PI / 4;
+        toCam(mx + cosf(a) * BUMPER_RADIUS, y0, mz + sinf(a) * BUMPER_RADIUS, lo[i]);
+        toCam(mx + cosf(a) * BUMPER_RADIUS, y1, mz + sinf(a) * BUMPER_RADIUS, hi[i]);
+    }
+    float centre[3];
+    toCam(mx, (y0 + y1) * 0.5f, mz, centre);
+    for (int i = 0; i < 8; ++i) {
+        const int j = (i + 1) & 7;
+        const float fx = (lo[i][0] + lo[j][0]) * 0.5f, fz = (lo[i][2] + lo[j][2]) * 0.5f, fy = (lo[i][1] + hi[i][1]) * 0.5f;
+        if ((fx - centre[0]) * fx + (fy - centre[1]) * fy + (fz - centre[2]) * fz >= 0) continue;
+        float q[4][3];
+        for (int e = 0; e < 3; ++e) { q[0][e] = lo[i][e]; q[1][e] = lo[j][e]; q[2][e] = hi[j][e]; q[3][e] = hi[i][e]; }
+        drawPoly(buf, w, h, q, 4, fog(lit ? BUMPER_COL[2] : shade565(BUMPER_COL[0], 0.7f + 0.3f * (i & 1)), centre[2]));
+    }
+    drawPoly(buf, w, h, hi, 8, fog(lit ? BUMPER_COL[2] : BUMPER_COL[1], centre[2]));
+}
+
+// A smashed crystal's shards: specks flying and falling.
+void RollFluxGame::drawShards(uint16_t* buf, int w, int h) {
+    if ((long)(millis() - _shardsUntil) >= 0) return;
+    const float f = _camera.fovFactor;
+    for (const Shard &s : _shards) {
+        float p[3];
+        toCam(s.x, s.y, s.z, p);
+        if (p[2] < CAMERA_NEAR) continue;
+        const int sx = (int)(w / 2 + p[0] * f / p[2]), sy = (int)(h / 2 - p[1] * f / p[2]);
+        for (int dy = 0; dy < 2; ++dy)
+            for (int dx = 0; dx < 2; ++dx)
+                if (sx + dx >= 0 && sx + dx < w && sy + dy >= 0 && sy + dy < h) buf[(sy + dy) * w + sx + dx] = s.colour;
     }
 }
 
@@ -400,6 +530,7 @@ void RollFluxGame::drawBall(uint16_t* buf, int w, int h) {
             const float len = sqrtf(wx * wx + wy * wy + wz * wz) + 1e-6f;
             const float lit = (wx * SUN[0] + wy * SUN[1] + wz * SUN[2]) / len;
             uint16_t base = (band == 0 || band == BALL_RINGS) ? BALL_COL[2] : BALL_COL[g & 1];
+            if (base == BALL_COL[0] && _polarity == 1) base = BALL_MAGENTA;
             if (glow && (band == 0 || band == BALL_RINGS || (g & 1) == 0)) base = ArcadeConfig::COLOR_WHITE;
             float q[4][3];
             for (int k = 0; k < n; ++k)
@@ -480,6 +611,18 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             if ((fabsf(p[0]) - margin) * f > (w / 2) * zz) continue;
             if ((fabsf(p[1]) - margin) * f > (h / 2) * zz) continue;
             _draw[count++] = DrawEntry{ (int16_t)p[2], P_CELL, (uint8_t)c, (uint8_t)r, 0, 0 };
+            // A gate's bars, on each edge not shared with a gate of its colour.
+            if (isGate(_cells[r][c].kind)) {
+                static const int GDC[4] = { 0, 0, 1, -1 }, GDR[4] = { -1, 1, 0, 0 };
+                static const float MX[4] = { 0.5f, 0.5f, 1.0f, 0.0f }, MZ[4] = { 1.0f, 0.0f, 0.5f, 0.5f };
+                for (int d = 0; d < 4; ++d) {
+                    const int nc = c + GDC[d], nr = r + GDR[d];
+                    if (solid(nc, nr) && _cells[nr][nc].kind == _cells[r][c].kind) continue;
+                    float q[3];
+                    toCam(cellX0(c) + MX[d] * CELL, base + GATE_HEIGHT * 0.5f, cellZ0(r) + MZ[d] * CELL, q);
+                    _draw[count++] = DrawEntry{ (int16_t)q[2], P_GATE, (uint8_t)c, (uint8_t)r, (uint8_t)d, 0 };
+                }
+            }
             if (!(_cells[r][c].flags & F_RAIL)) continue;
             for (int d = 0; d < 4; ++d) {
                 if (!railed(c, r, d)) continue;
@@ -508,7 +651,16 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
     }
     for (int i = 0; i < count && items < MAX_ITEMS; ++i) {
         const DrawEntry &e = _draw[i];
-        if (e.type != P_CELL || (_cells[e.r][e.c].flags & (F_GEM | F_TAKEN)) != F_GEM) continue;
+        if (e.type != P_CELL) continue;
+        if (_cells[e.r][e.c].kind == K_BUMPER) {
+            const float bxx = cellX0(e.c) + CELL * 0.5f, bzz = cellZ0(e.r) + CELL * 0.5f;
+            const float by0 = (float)(_cells[e.r][e.c].h * HEIGHT_STEP);
+            float pc[3];
+            toCam(bxx, by0 + BUMPER_HEIGHT * 0.5f, bzz, pc);
+            _items[items++] = Item{ pc[2], by0, bxx, bzz, I_BUMPER, e.c, e.r };
+            continue;
+        }
+        if ((_cells[e.r][e.c].flags & (F_GEM | F_TAKEN)) != F_GEM) continue;
         const float gx = cellX0(e.c) + CELL * 0.5f, gz = cellZ0(e.r) + CELL * 0.5f, gy = gemY(e.c, e.r);
         float gc[3];
         toCam(gx, gy, gz, gc);
@@ -526,6 +678,8 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             if (e.z >= it.depth) continue;
             const bool hides = e.type == P_RAIL
                 ? it.bottom < _cells[e.r][e.c].h * HEIGHT_STEP + RAIL_HEIGHT - 2.0f
+                : e.type == P_GATE
+                ? it.bottom < _cells[e.r][e.c].h * HEIGHT_STEP + GATE_HEIGHT - 2.0f
                 : it.bottom < planeAt(e.c, e.r, it.x, it.z) - 20.0f;
             if (hides) slot = j + 1;
         }
@@ -543,6 +697,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
         for (int i = start[s]; i < start[s + 1]; ++i) {
             const DrawEntry &e = _drawSorted[i];
             if (e.type == P_CELL) drawCell(buf, w, h, e.c, e.r, (float)e.z);
+            else if (e.type == P_GATE) drawGateBars(buf, w, h, e.c, e.r, e.dir, (float)e.z);
             else drawRail(buf, w, h, e.c, e.r, e.dir, (float)e.z);
         }
         if (s == items) break;
@@ -552,6 +707,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
                            drawBall(buf, w, h);
                            break;
             case I_SHADOW: drawShadow(buf, w, h, it.bottom); break;
+            case I_BUMPER: drawBumper(buf, w, h, it.c, it.r); break;
             default:       drawGem(buf, w, h, it.c, it.r); break;
         }
     }
@@ -563,6 +719,7 @@ void RollFluxGame::renderFrame(GFXcanvas16 &canvas, bool withBall) {
     drawSky(canvas);
     drawStars(canvas);
     drawWorld(canvas, withBall);
+    drawShards(canvas.getBuffer(), canvas.width(), canvas.height());
 }
 
 // While a dash charges: a dashed line on the floor ahead of the ball, the

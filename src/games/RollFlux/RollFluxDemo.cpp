@@ -17,7 +17,7 @@ const int16_t FAR = 32767;
 
 // --- The attract cycle -----------------------------------------------------------
 
-// Title, how to roll, how to dash, the high scores, all over a slow orbit
+// Title, how to roll, how to dash, the colours, the high scores, all over a slow orbit
 // of course 1; then the demo. A starts a game from any of them.
 void RollFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
@@ -47,8 +47,9 @@ bool RollFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
     renderFrame(canvas, false);
     switch (_slide) {
         case SLIDE_TITLE:  renderTitle(canvas); break;
-        case SLIDE_ROLL:   renderHowTo(canvas, false); break;
-        case SLIDE_DASH:   renderHowTo(canvas, true); break;
+        case SLIDE_ROLL:   renderHowTo(canvas, 0); break;
+        case SLIDE_DASH:   renderHowTo(canvas, 1); break;
+        case SLIDE_PRISM:  renderHowTo(canvas, 2); break;
         default:           renderScores(canvas); break;
     }
     return true;
@@ -78,6 +79,7 @@ void RollFluxGame::startDemo(AudioEngine &audio) {
     _score = 0;
     _lives = START_LIVES;
     _gemsTotal = _goals = _falls = _dashes = 0;
+    _crystals = _bumps = _swaps = 0;
     _dashGems = 2 * DASH_GEMS_PER_STEP;
     _course = (int)random(COURSE_COUNT);
     _loop = 0;
@@ -154,9 +156,12 @@ void RollFluxGame::planDistances(int c0, int r0) {
             const int j = nr * MAX_COURSE_W + nc;
             if (done[j]) continue;
             int cost = 2;
+            const uint8_t nk = _cells[nr][nc].kind;
             if (exposed(nc, nr)) cost += 3;
-            if (_cells[nr][nc].kind == K_ICE) cost += 2;
+            if (nk == K_ICE) cost += 2;
             if (drop) cost += 6;
+            if (nk == K_BUMPER) cost += 6;
+            if (isConveyor(nk) && nk - K_CONV_N == (d ^ 1)) cost += 3;   // against its run
             if (_dist[best] + cost < _dist[j]) {
                 if (_dist[j] == FAR && count < n) open[count++] = (uint16_t)j;
                 _dist[j] = (int16_t)(_dist[best] + cost);
@@ -298,6 +303,11 @@ InputState RollFluxGame::pilot(bool useDash) {
     if (here == K_RAMP_S) az -= SLOPE_GRAVITY;
     if (here == K_RAMP_E) ax += SLOPE_GRAVITY;
     if (here == K_RAMP_W) ax -= SLOPE_GRAVITY;
+    if (isConveyor(here)) {
+        static const float CX[4] = { 0, 0, 1, -1 }, CZ[4] = { 1, -1, 0, 0 };
+        const int cd = here - K_CONV_N;
+        if (_vx * CX[cd] + _vz * CZ[cd] < CONVEYOR_SPEED) { ax -= CX[cd] * CONVEYOR_ACCEL; az -= CZ[cd] * CONVEYOR_ACCEL; }
+    }
     ax /= BALL_ACCEL * grip;
     az /= BALL_ACCEL * grip;
     const float m = sqrtf(ax * ax + az * az);
@@ -306,6 +316,38 @@ InputState RollFluxGame::pilot(bool useDash) {
     const float fx = sinf(_yaw), fz = cosf(_yaw), rx = cosf(_yaw), rz = -sinf(_yaw);
     in.joyX = -(ax * fx + az * fz);
     in.joyY = ax * rx + az * rz;
+
+    // Colour: the first cell ahead that needs one (a gate, a bridge). If
+    // it's not the ball's, swap: straight away if nothing between needs
+    // the ball's colour as it is; on a bridge of its own colour (or in a
+    // gate), only at the edge into the next cell. A swap is a tap of B,
+    // the stick still for that frame.
+    if (_pilotB) {
+        _pilotB = false;                       // let go: that's the tap
+    } else if ((long)(millis() - _swapReadyAt) >= 0 && !_charging) {
+        const int ownNeed = needsColour(bc, br);
+        for (int k = _pathPos + 1; k < _pathLen && k <= _pathPos + 4; ++k) {
+            const int nc = _path[k] % MAX_COURSE_W, nr = _path[k] / MAX_COURSE_W;
+            const int need = needsColour(nc, nr);
+            if (need < 0) continue;
+            if (need != _polarity) {
+                bool now = ownNeed < 0 || ownNeed == need;
+                if (!now && k == _pathPos + 1) {
+                    // At the edge into it: within reach of the boundary.
+                    const float ex = cellX0(nc) + CELL * 0.5f - _bx, ez = cellZ0(nr) + CELL * 0.5f - _bz;
+                    const float toEdge = fmaxf(fabsf(ex), fabsf(ez)) - CELL * 0.5f;
+                    now = toEdge < 20.0f + sqrtf(_vx * _vx + _vz * _vz) * 0.04f;
+                }
+                if (now) {
+                    _pilotB = true;
+                    in.btnB = true;
+                    in.joyX = in.joyY = 0;
+                    return in;
+                }
+            }
+            break;
+        }
+    }
 
     // A dash: hold A a full charge, then let go.
     if (_charging || (long)(millis() - _pilotChargeUntil) < 0) {

@@ -17,11 +17,17 @@
 //   *   floor with a gem over it
 //   C   a checkpoint (floor)
 //   ^ v > <  a boost pad pushing north, south, east or west
+//   c m  a colour gate, cyan or magenta: only a ball of its colour passes
+//   ( )  a phase bridge, cyan or magenta: solid only to a ball of its colour
+//   X    a crystal wall (CRYSTAL_HEIGHT high): a dash smashes it
+//   o    a bumper (on floor)
+//   8 2 6 4  a conveyor carrying north, south, east or west (as a keypad)
 // =============================================================================
 
 namespace rollflux {
 
-// code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice Relay).
+// code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice
+// Relay, 2 Prism Works).
 struct CourseDef { const char* code; const char* name; int world, w, h, seconds; const char* const* rows; };
 
 // 1-1: a tour of the basics: a railed run-up over a boost pad and up a ramp, a
@@ -273,6 +279,107 @@ static const char* const COURSE_2_4_ROWS[] PROGMEM = {
     "........0#0#0#0#........",
 };
 
+// 3-1: A cyan gate to start, a crystal wall a dash can smash for the gems behind it, a magenta gate, bumpers on the plaza, and cyan again to the goal.
+static const char* const COURSE_3_1_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "........1c1c1c1c........",
+    "........1#1#1#1#........",
+    "....1*1#1#1o1#1#1#1*....",
+    "....1#1#1#1#1#1o1#1#....",
+    "....1#1o1#1#1#1#1#1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..........1#1#..........",
+    "..........1m1m..........",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "..0#0#0#0#0#0#0#0#0#0#..",
+    "..0#......0X0X......0#..",
+    "..0#......0*0*......0#..",
+    "..0#......0#0#......0#..",
+    "..0#0#0#0#0#0#0#0#0#0#..",
+    "..........0c0c..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-2: Phase bridges over the void: cyan, magenta with a floor cell to swap on, then cyan, magenta and cyan straight after each other.
+static const char* const COURSE_3_2_ROWS[] PROGMEM = {
+    "......2#2#2G2G2#2#......",
+    "......2#2#2#2#2#2#......",
+    "..........2(2(..........",
+    "..........2)2)..........",
+    "..........2(2(..........",
+    "......2#2#2#2#2#2#......",
+    "......2*2#2C2C2#2*......",
+    "......2#2#2#2#2#2#......",
+    "..........1n1n..........",
+    "..........1#1#..........",
+    "..........1)1)..........",
+    "..........1)1)..........",
+    "..........1#1#..........",
+    "..........1(1(..........",
+    "..........1(1(..........",
+    "..1*1#1#1#1#1#1#1#1#1*..",
+    "..........0n0n..........",
+    "..........0#0#..........",
+    "..........0(0(..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-3: Three conveyor rows carrying you east, west and east across the way, a magenta gate the width of the course, bumpers, and a conveyor up to the goal.
+static const char* const COURSE_3_3_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "........18181818........",
+    "........18181818........",
+    "........1#1#1#1#........",
+    "....1*1m1m1m1m1m1m1*....",
+    "....1#1#1#1#1#1#1#1#....",
+    "....1#1o1#1#1#1#1o1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..........1#1#..........",
+    "..16161616161616161616..",
+    "..14141414141414141414..",
+    "..16161616161616161616..",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0*0#0#0*........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-4: Ice, a magenta gate in the middle (or round it), a narrow cyan bridge, crystals in the plaza, a magenta bridge, a conveyor and a cyan gate.
+static const char* const COURSE_3_4_ROWS[] PROGMEM = {
+    "....2#2G2G2#............",
+    "....2#2#2#2#............",
+    "....2c2c2c2c............",
+    "....2#2#2#2#............",
+    "....1n1n................",
+    "....1#1#1#1#1#1#1#1*....",
+    "....1#1414141414141#....",
+    "..................1)....",
+    "..................1)....",
+    "..................1#....",
+    "..1*1#1#1#1o1#1#1#1#....",
+    "..1#1C1C1C1C1C1C1#1#....",
+    "..1#1#1#1X1X1#1#1#1#....",
+    "............1(..........",
+    "............1(..........",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "....0#0#0#0#0#0#0#0#....",
+    "....0i0i0i0i0i0i0i0i....",
+    "....0*0#0#0m0m0#0#0*....",
+    "....0#0#0#0#0#0#0#0#....",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
 static const CourseDef COURSES[] = {
     { "1-1", "FIRST ROLL", 0, 12, 36, 60, COURSE_1_1_ROWS },
     { "1-2", "TERRACES", 0, 12, 25, 70, COURSE_1_2_ROWS },
@@ -282,6 +389,10 @@ static const CourseDef COURSES[] = {
     { "2-2", "SLIPWAY", 1, 12, 25, 75, COURSE_2_2_ROWS },
     { "2-3", "RELAY", 1, 12, 23, 75, COURSE_2_3_ROWS },
     { "2-4", "FROST LINE", 1, 12, 24, 80, COURSE_2_4_ROWS },
+    { "3-1", "PRISM GATES", 2, 12, 21, 75, COURSE_3_1_ROWS },
+    { "3-2", "PHASE BRIDGES", 2, 12, 22, 80, COURSE_3_2_ROWS },
+    { "3-3", "CONVEYORS", 2, 12, 19, 80, COURSE_3_3_ROWS },
+    { "3-4", "PRISM RUN", 2, 12, 23, 85, COURSE_3_4_ROWS },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
 

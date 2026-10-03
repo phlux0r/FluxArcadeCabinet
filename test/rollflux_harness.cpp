@@ -182,6 +182,63 @@ static bool scenarioPhysics() {
     check(dashLine, !g._falling && !g._dashBrakeDue && g._bx - dashX0 < 3.5f * CELL &&
           g._vx <= DASH_RETURN_MIN + 60, ok);
     g.loadCourse(0);
+    // The Prism Works' pieces (stage 2), on 3-1, 3-2 and 3-3.
+    // A colour gate (3-1 row 9, magenta) turns a cyan ball back; magenta
+    // passes.
+    auto throughGate = [&](int polarity) {
+        g.loadCourse(8);
+        at(g, 5.5f, 10.4f);
+        g._polarity = polarity;
+        g._vz = 500;
+        for (int f = 0; f < 30; ++f) run(g, -0.5f, 0, 1);
+        const int row = g.rowAt(g._bz);
+        g.loadCourse(0);
+        return row < 9;
+    };
+    check("a magenta gate turns a cyan ball back", !throughGate(0), ok);
+    check("and lets a magenta one through", throughGate(1), ok);
+    // A phase bridge (3-2 row 10, magenta) holds a magenta ball and drops a
+    // cyan one; swapped to magenta in the air over it, it lands on it.
+    auto onBridge = [&](int polarity, float drop) {
+        g.loadCourse(9);
+        g._polarity = 1;                       // on it to start with, at its height
+        at(g, 5, 10.5f);
+        g._polarity = polarity;
+        if (drop > 0) { g._by += drop; g._falling = true; }
+        for (int f = 0; f < 15; ++f) run(g, 0, 0, 1);
+        const bool held = !g._falling && g._by > 50.0f;
+        g.loadCourse(0);
+        return held;
+    };
+    check("a magenta bridge holds a magenta ball", onBridge(1, 0), ok);
+    check("and drops a cyan one", !onBridge(0, 0), ok);
+    check("swapped to magenta in the air over it, the ball lands on it", onBridge(1, 30.0f), ok);
+    // A crystal wall (3-1 row 13) is a wall to a roll, smashed by a dash.
+    g.loadCourse(8);
+    at(g, 5, 14);
+    g._vz = 600;
+    for (int f = 0; f < 20; ++f) run(g, -1.0f, 0, 1);
+    check("a crystal wall stops a rolling ball", g.rowAt(g._bz) == 14 && g._cells[13][5].kind == RollFluxGame::K_CRYSTAL, ok);
+    at(g, 5, 14);
+    const long scoreBefore = g._score;
+    g.startDash(0, 1, DASH_SPEED_MAX);
+    for (int f = 0; f < 20; ++f) run(g, 0, 0, 1);
+    check("a dash smashes it (floor now, 50 points) and goes on through",
+          g._cells[13][5].kind == RollFluxGame::K_FLOOR && g._score == scoreBefore + CRYSTAL_POINTS && g.rowAt(g._bz) < 13, ok);
+    // A bumper (3-1 row 4, col 5) kicks the ball back off it, hard.
+    at(g, 5, 5.0f);
+    g._vz = 600;
+    float kick = 0;
+    for (int f = 0; f < 20; ++f) { run(g, 0, 0, 1); if (g._vz < 0) kick = fmaxf(kick, -g._vz); }
+    snprintf(line, sizeof(line), "a bumper kicks the ball off it (600 in, %.0f back)", kick);
+    check(line, kick > BUMPER_KICK * 0.8f, ok);
+    // A conveyor (3-3 row 10, east) carries a ball at rest along.
+    g.loadCourse(10);
+    at(g, 3, 10);
+    for (int f = 0; f < 20; ++f) run(g, 0, 0, 1);
+    snprintf(line, sizeof(line), "a conveyor carries a ball at rest along (%.0f east)", g._vx);
+    check(line, g._vx > CONVEYOR_SPEED * 0.6f, ok);
+    g.loadCourse(0);
     // Turning as it rolls: rolled east, the top of the ball has gone east;
     // rolled south, south; by the distance over the radius.
     at(g, 5.5f, 33);
@@ -373,6 +430,28 @@ static bool scenarioRules() {
     for (int f = 0; f < 60 && g._courseGemsTaken == taken; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
     check("a gem goes on the dash meter", g._dashGems == meter + 1, ok);
 
+    // B tapped (the stick left alone) swaps the ball's colour, on the
+    // release; held with the stick, it doesn't; nor again inside the
+    // cooldown.
+    at(g, 5.5f, 33);
+    g._polarity = 0;
+    InputState b{}; b.btnB = true;
+    frame(g, audio, canvas, b);
+    check("B pressed: no swap yet", g._polarity == 0, ok);
+    frame(g, audio, canvas);
+    check("B let go: magenta", g._polarity == 1, ok);
+    frame(g, audio, canvas, b);
+    frame(g, audio, canvas);
+    check("a second tap inside the cooldown: no swap", g._polarity == 1, ok);
+    for (int f = 0; f < 10; ++f) frame(g, audio, canvas);
+    InputState bTurn{}; bTurn.btnB = true; bTurn.joyY = 1.0f;
+    frame(g, audio, canvas, bTurn);
+    frame(g, audio, canvas);
+    check("B with the stick (turning the camera): no swap", g._polarity == 1, ok);
+    frame(g, audio, canvas, b);
+    frame(g, audio, canvas);
+    check("a tap after the cooldown: cyan again", g._polarity == 0, ok);
+
     // B and the stick turn the camera, not the course: the ball isn't
     // pushed. Let go, and the camera stays turned until the ball rolls off
     // a new way; rolling the way it now faces, it stays put.
@@ -476,7 +555,7 @@ static bool scenarioGod(long frames) {
         g._loop = 0;
         g._dashGems = 0;
         g.startCourse(audio);
-        const long falls0 = g._falls, dashes0 = g._dashes;
+        const long falls0 = g._falls, dashes0 = g._dashes, swaps0 = g._swaps;
         long f = 0;
         int timeUps = 0;
         for (; f < frames && g._phase == RollFluxGame::PHASE_PLAYING; ++f) {
@@ -487,9 +566,9 @@ static bool scenarioGod(long frames) {
         }
         const bool cleared = g._phase == RollFluxGame::PHASE_CLEAR && timeUps == 0;
         char line[128];
-        snprintf(line, sizeof(line), "%s %-12s %4.1fs of %2lds left, %ld falls, gems %d/%d, %ld dashes",
+        snprintf(line, sizeof(line), "%s %-13s %4.1fs of %2ds, %ld falls, gems %d/%d, %ld dashes, %ld swaps",
                  COURSES[k].code, COURSES[k].name, g._timeMs / 1000.0, COURSES[k].seconds,
-                 g._falls - falls0, g._courseGemsTaken, g._courseGems, g._dashes - dashes0);
+                 g._falls - falls0, g._courseGemsTaken, g._courseGems, g._dashes - dashes0, g._swaps - swaps0);
         check(line, cleared, ok);
         g._phase = RollFluxGame::PHASE_PLAYING;
     }
@@ -549,7 +628,7 @@ static bool scenarioIdle() {
     bool ok = true;
     printf("idle:\n");
     const hiscore::Table before = g._scores.table();
-    int seen[5] = {};
+    int seen[6] = {};
     long demoFrames = 0, demoMoved = 0;
     float lastX = 0;
     const int audible0 = audio.tones + audio.melodies + audio.wavs;
@@ -568,8 +647,8 @@ static bool scenarioIdle() {
         if (f > 100 && !g._demo && g._slide == RollFluxGame::SLIDE_TITLE && demoFrames > 0) break;
     }
     (void)audible0;
-    check("title, how to roll, how to dash, scores each shown",
-          seen[0] > 0 && seen[1] > 0 && seen[2] > 0 && seen[3] > 0, ok);
+    check("title, how to roll, how to dash, the colours, scores each shown",
+          seen[0] > 0 && seen[1] > 0 && seen[2] > 0 && seen[3] > 0 && seen[4] > 0, ok);
     char line[96];
     snprintf(line, sizeof(line), "then the demo, rolling (%ld of %ld frames moving)", demoMoved, demoFrames);
     check(line, demoFrames > 300 && demoMoved > demoFrames / 2, ok);
@@ -619,7 +698,7 @@ static bool scenarioMenus() {
     hiscore::clear(empty);
     hiscore::save("roll", empty);
     InputState a{}; a.btnA = a.btnAPressed = true;
-    for (int slide = 0; slide < 4; ++slide) {
+    for (int slide = 0; slide < 5; ++slide) {
         g.init(audio);
         while (g._slide != slide) frame(g, audio, canvas);
         frame(g, audio, canvas, a);
@@ -673,6 +752,14 @@ static void scenarioPose() {
         { "frost",    7, 5.5f, 21.5f, 0,    0,  0, 0, false },
         // Charging a dash: the aim line ahead, a little to the right.
         { "aim",      0, 5.5f, 23.5f, 0,    0,  0, 0, false },
+        // The Prism Works: a magenta gate ahead of a cyan ball, the crystal
+        // wall, the bumpers' plaza, phase bridges, the conveyors.
+        { "gate",     8, 5.5f, 11.5f, 0,    0,  0, 0, false },
+        { "crystal",  8, 5.5f, 16.5f, 0,    0,  0, 0, false },
+        { "bumpers",  8, 5.5f, 7.5f,  0,    0,  0, 0, false },
+        { "bridges",  9, 5.5f, 12.5f, 0,    0,  0, 0, false },
+        { "bridges2", 9, 5.5f, 6.0f,  0,    0,  0, 0, false },
+        { "conveyor", 10, 5.5f, 13.5f, 0,   0,  0, 0, false },
     };
     for (const Spot &s : spots) {
         g.loadCourse(s.course);

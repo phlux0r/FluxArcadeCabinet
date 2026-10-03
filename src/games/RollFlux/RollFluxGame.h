@@ -41,18 +41,36 @@ public:
 private:
     // NAME: entering a name for the high-score table, after the last ball.
     enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_CLEAR, PHASE_NAME, PHASE_GAMEOVER };
-    enum AttractSlide { SLIDE_TITLE, SLIDE_ROLL, SLIDE_DASH, SLIDE_SCORES, SLIDE_DEMO };
+    enum AttractSlide { SLIDE_TITLE, SLIDE_ROLL, SLIDE_DASH, SLIDE_PRISM, SLIDE_SCORES, SLIDE_DEMO };
     enum Kind : uint8_t { K_VOID, K_FLOOR, K_START, K_GOAL, K_RAMP_N, K_RAMP_S, K_RAMP_E, K_RAMP_W,
-                          K_ICE, K_CHECK, K_BOOST_N, K_BOOST_S, K_BOOST_E, K_BOOST_W };
+                          K_ICE, K_CHECK, K_BOOST_N, K_BOOST_S, K_BOOST_E, K_BOOST_W,
+                          // Stage 2 (the Prism Works): colour gates and phase bridges, cyan
+                          // then magenta; crystal walls; bumpers; conveyors.
+                          K_GATE_C, K_GATE_M, K_BRIDGE_C, K_BRIDGE_M, K_CRYSTAL, K_BUMPER,
+                          K_CONV_N, K_CONV_S, K_CONV_E, K_CONV_W };
     enum CellFlag : uint8_t { F_RAIL = 1, F_GEM = 2, F_TAKEN = 4 };
     enum Dir : uint8_t { D_N, D_S, D_E, D_W };
     struct Cell { uint8_t kind = K_VOID, h = 0, flags = 0; };
     // Optional sounds on the card, each with a fallback (RollFluxGame.cpp).
     enum Sfx : uint8_t { SFX_BUMP, SFX_GEM, SFX_BOOST, SFX_CHARGE, SFX_DASH, SFX_CHECK, SFX_FALL,
-                         SFX_GOAL, SFX_COUNT };
+                         SFX_GOAL, SFX_SWAP, SFX_GATE, SFX_CRYSTAL, SFX_BUMPER, SFX_COUNT };
 
     static bool isRamp(uint8_t k)  { return k >= K_RAMP_N && k <= K_RAMP_W; }
     static bool isBoost(uint8_t k) { return k >= K_BOOST_N && k <= K_BOOST_W; }
+    static bool isGate(uint8_t k)   { return k == K_GATE_C || k == K_GATE_M; }
+    static bool isBridge(uint8_t k) { return k == K_BRIDGE_C || k == K_BRIDGE_M; }
+    static bool isConveyor(uint8_t k) { return k >= K_CONV_N && k <= K_CONV_W; }
+    // The colour a cell needs the ball to be (a gate's to pass, a bridge's
+    // to stand on): 0 cyan, 1 magenta, -1 either.
+    int  needsColour(int c, int r) const {
+        if (!solid(c, r)) return -1;
+        const uint8_t k = _cells[r][c].kind;
+        return k == K_GATE_C || k == K_BRIDGE_C ? 0 : k == K_GATE_M || k == K_BRIDGE_M ? 1 : -1;
+    }
+    // There and solid to this ball: a phase bridge only in its own colour.
+    bool standable(int c, int r) const {
+        return solid(c, r) && !(isBridge(_cells[r][c].kind) && needsColour(c, r) != _polarity);
+    }
 
     // --- RollFluxGame.cpp ---
     void updateFrameScale();
@@ -67,6 +85,7 @@ private:
     void collectGems(AudioEngine &audio);
     void reachGoal(AudioEngine &audio);
     void updateDash(const InputState &in);
+    void updateSwap(const InputState &in);
     void dashDirection(const InputState &in, float &dx, float &dz) const;
     void updateLean(const InputState &in);
     void updateCamera(bool snap);
@@ -86,6 +105,10 @@ private:
     void stepBall(const InputState &in);
     void rollBall(float dx, float dz);
     void startDash(float dx, float dz, float strength);
+    int  blockedAt(float px, float pz, int ownC, int ownR, float rise);
+    void smashCrystal(int c, int r);
+    void bumpers();
+    void swapColour();
     bool floorAt(float x, float z, float &y) const;
     void stickToWorld(const InputState &in, float &ax, float &az) const;
     bool railed(int c, int r, int dir) const;
@@ -128,6 +151,9 @@ private:
     void drawShadow(uint16_t* buf, int w, int h, float floorY);
     void drawGem(uint16_t* buf, int w, int h, int c, int r);
     void drawAim(uint16_t* buf, int w, int h);
+    void drawGateBars(uint16_t* buf, int w, int h, int c, int r, int dir, float depth);
+    void drawBumper(uint16_t* buf, int w, int h, int c, int r);
+    void drawShards(uint16_t* buf, int w, int h);
     void renderFrame(GFXcanvas16 &canvas, bool withBall = true);
     uint16_t fog(uint16_t col, float depth) const;
     float gemY(int c, int r) const;
@@ -138,7 +164,7 @@ private:
     void renderClear(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
     void renderTitle(GFXcanvas16 &canvas);
-    void renderHowTo(GFXcanvas16 &canvas, bool dash);
+    void renderHowTo(GFXcanvas16 &canvas, int page);
     void renderScores(GFXcanvas16 &canvas);
 
     // Cell (c, r) is r rows from the north end. World x, z of its corners:
@@ -183,6 +209,19 @@ private:
     float _extraSpeed = 0, _extraFade = 0;
     unsigned long _extraHoldUntil = 0;   // a dash's extra holds until then, then fades
     bool  _falling = false;
+    // Its colour, 0 cyan or 1 magenta: B tapped swaps it (on the release,
+    // the stick untouched: B held with the stick turns the camera).
+    int   _polarity = 0;
+    unsigned long _swapReadyAt = 0;
+    bool  _bDown = false, _bStick = false;
+    unsigned long _bDownAt = 0;
+    // A bumper lit by a knock, and shards of smashed crystal.
+    int   _bumpC = -1, _bumpR = -1;
+    unsigned long _bumpUntil = 0;
+    struct Shard { float x, y, z, vx, vy, vz; uint16_t colour; };
+    Shard _shards[SHARD_COUNT];
+    unsigned long _shardsUntil = 0;
+    long  _crystals = 0, _bumps = 0, _swaps = 0;
     bool  _fellOut = false;           // set by stepBall: below the course
     float _bump = 0;                  // the hardest knock this frame (wall or rail)
     int   _boostCell = -1;            // the boost pad it's on, for the sound
@@ -239,6 +278,7 @@ private:
     unsigned long _pilotChargeUntil = 0;   // holding A for a dash until then
     unsigned long _pilotNextDash = 0;
     unsigned long _pilotRepickAt = 0;      // heading for the goal, it looks for gems again then
+    bool  _pilotB = false;                 // tapping B for a colour swap
 
     // --- Drawing ---
     int      _skyWorld = -1;
@@ -247,10 +287,10 @@ private:
     uint16_t _starCol[STAR_COUNT];
     // Floor pieces in view, far to near; slot says which item each must
     // follow (RollFluxScene.cpp's drawWorld).
-    enum Piece : uint8_t { P_CELL, P_RAIL };
+    enum Piece : uint8_t { P_CELL, P_RAIL, P_GATE };
     struct DrawEntry { int16_t z; uint8_t type, c, r, dir, slot; };
     DrawEntry _draw[MAX_DRAW], _drawSorted[MAX_DRAW];
-    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM };
+    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM, I_BUMPER };
     struct Item { float depth, bottom, x, z; uint8_t type, c, r; };
     Item _items[MAX_ITEMS];
     unsigned long _renderUs = 0;

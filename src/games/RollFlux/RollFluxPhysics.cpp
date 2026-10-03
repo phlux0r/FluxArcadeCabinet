@@ -2,11 +2,12 @@
 
 namespace rollflux {
 
-// The floor's height under (x, z), or false over the void. Ramps rise
-// across their cell from their low edge.
+// The floor's height under (x, z), or false over the void (or a phase
+// bridge of the other colour). Ramps rise across their cell from their low
+// edge; a crystal wall's top is CRYSTAL_HEIGHT up.
 bool RollFluxGame::floorAt(float x, float z, float &y) const {
     const int c = colAt(x), r = rowAt(z);
-    if (!solid(c, r)) return false;
+    if (!standable(c, r)) return false;
     const Cell &cell = _cells[r][c];
     const float fx = (x - cellX0(c)) / CELL, fz = (z - cellZ0(r)) / CELL;
     float base = (float)(cell.h * HEIGHT_STEP);
@@ -15,10 +16,77 @@ bool RollFluxGame::floorAt(float x, float z, float &y) const {
         case K_RAMP_S: base += HEIGHT_STEP * (1.0f - fz); break;
         case K_RAMP_E: base += HEIGHT_STEP * fx; break;
         case K_RAMP_W: base += HEIGHT_STEP * (1.0f - fx); break;
+        case K_CRYSTAL: base += CRYSTAL_HEIGHT; break;
         default: break;
     }
     y = base;
     return true;
+}
+
+// What stops the ball moving its probe to (px, pz): 0 nothing, 1 a wall
+// (a rise more than `rise`), 2 a colour gate of the other colour (a cell
+// it isn't already in). A crystal wall met in a dash is smashed, and
+// stops nothing.
+int RollFluxGame::blockedAt(float px, float pz, int ownC, int ownR, float rise) {
+    const int c = colAt(px), r = rowAt(pz);
+    if (solid(c, r) && isGate(_cells[r][c].kind) && needsColour(c, r) != _polarity && !(c == ownC && r == ownR))
+        return 2;
+    float fy;
+    if (!floorAt(px, pz, fy) || fy <= _by + rise) return 0;
+    if (_cells[r][c].kind == K_CRYSTAL && (long)(millis() - _dashUntil) < 0) {
+        smashCrystal(c, r);
+        return 0;
+    }
+    return 1;
+}
+
+// A crystal wall goes: its cell is floor now, the points scored, shards
+// flying from where it stood.
+void RollFluxGame::smashCrystal(int c, int r) {
+    Cell &k = _cells[r][c];
+    k.kind = K_FLOOR;
+    ++_crystals;
+    _score += CRYSTAL_POINTS;
+    const float cx = cellX0(c) + CELL * 0.5f, cz = cellZ0(r) + CELL * 0.5f;
+    const float y = k.h * HEIGHT_STEP + CRYSTAL_HEIGHT * 0.5f;
+    uint32_t seed = (uint32_t)(c * 977 + r * 131 + millis());
+    auto rnd = [&seed]() { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.0f - 0.5f; };
+    for (int i = 0; i < SHARD_COUNT; ++i) {
+        Shard &s = _shards[i];
+        s.x = cx + rnd() * CELL * 0.6f; s.z = cz + rnd() * CELL * 0.6f; s.y = y + rnd() * CRYSTAL_HEIGHT * 0.6f;
+        s.vx = rnd() * 900.0f + _vx * 0.3f; s.vz = rnd() * 900.0f + _vz * 0.3f; s.vy = 300.0f + rnd() * 500.0f;
+        s.colour = (i & 1) ? 0xF81F : 0x07FF;
+    }
+    _shardsUntil = millis() + SHARD_MS;
+    sfx(SFX_CRYSTAL);
+}
+
+// Bumpers near the ball: inside one's reach, the ball's put back out and
+// sent off it at BUMPER_KICK at least, the bumper lit.
+void RollFluxGame::bumpers() {
+    const int c0 = colAt(_bx), r0 = rowAt(_bz);
+    for (int r = r0 - 1; r <= r0 + 1; ++r)
+        for (int c = c0 - 1; c <= c0 + 1; ++c) {
+            if (!solid(c, r) || _cells[r][c].kind != K_BUMPER) continue;
+            if (_by > _cells[r][c].h * HEIGHT_STEP + BUMPER_HEIGHT) continue;
+            const float dx = _bx - (cellX0(c) + CELL * 0.5f), dz = _bz - (cellZ0(r) + CELL * 0.5f);
+            const float reach = BUMPER_RADIUS + BALL_RADIUS * 0.8f;
+            const float d = sqrtf(dx * dx + dz * dz);
+            if (d >= reach) continue;
+            const float nx = d > 1e-3f ? dx / d : 1.0f, nz = d > 1e-3f ? dz / d : 0.0f;
+            _bx += nx * (reach - d);
+            _bz += nz * (reach - d);
+            float vn = _vx * nx + _vz * nz;
+            if (vn < 0) { _vx -= 2.0f * vn * nx; _vz -= 2.0f * vn * nz; vn = -vn; }
+            if (vn < BUMPER_KICK) { _vx += nx * (BUMPER_KICK - vn); _vz += nz * (BUMPER_KICK - vn); }
+            if ((long)(millis() - _bumpUntil) >= 0 || _bumpC != c || _bumpR != r) {
+                ++_bumps;
+                _score += BUMPER_POINTS;
+                sfx(SFX_BUMPER);
+            }
+            _bumpC = c; _bumpR = r;
+            _bumpUntil = millis() + 200;
+        }
 }
 
 // A rail runs along a railed cell's edge wherever it borders the void.
@@ -55,7 +123,7 @@ void RollFluxGame::stepBall(const InputState &in) {
     const bool held = (long)(millis() - _holdUntil) < 0;
     if (!held) stickToWorld(in, ax, az);
     const int c = colAt(_bx), r = rowAt(_bz);
-    const uint8_t kind = solid(c, r) ? _cells[r][c].kind : (uint8_t)K_VOID;
+    const uint8_t kind = standable(c, r) ? _cells[r][c].kind : (uint8_t)K_VOID;
     float friction = BALL_FRICTION;
     if (_falling) { ax *= 0.3f; az *= 0.3f; }        // a little steering in the air
     else {
@@ -66,6 +134,14 @@ void RollFluxGame::stepBall(const InputState &in) {
             case K_RAMP_W: ax += SLOPE_GRAVITY; break;
             case K_ICE: ax *= ICE_GRIP; az *= ICE_GRIP; friction *= ICE_FRICTION; break;
             default: break;
+        }
+        if (isConveyor(kind)) {
+            static const float CX[4] = { 0, 0, 1, -1 }, CZ[4] = { 1, -1, 0, 0 };
+            const int d = kind - K_CONV_N;
+            if (_vx * CX[d] + _vz * CZ[d] < CONVEYOR_SPEED) {
+                ax += CX[d] * CONVEYOR_ACCEL;
+                az += CZ[d] * CONVEYOR_ACCEL;
+            }
         }
         if (isBoost(kind)) {
             static const float BX[4] = { 0, 0, 1, -1 }, BZ[4] = { 1, -1, 0, 0 };
@@ -107,30 +183,36 @@ void RollFluxGame::stepBall(const InputState &in) {
     if (n < 1) n = 1;
     const float sdt = dt / n;
     for (int i = 0; i < n; ++i) {
-        float fy;
         // Across, then along. A rail on the edge ahead (while the ball's
         // low enough to meet it) or a rise too big to roll up turns it.
         const int cc = colAt(_bx), cr = rowAt(_bz);
         const float rise = _falling ? LAND_LIP : STEP_UP;
         const bool railHigh = solid(cc, cr) && _by < _cells[cr][cc].h * HEIGHT_STEP + RAIL_HEIGHT;
+        // (A gate of the other colour bounces it too; a crystal wall met
+        // in a dash is smashed instead.)
         if (_vx != 0) {
             const float nx = _bx + _vx * sdt, px = nx + (_vx > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vx > 0 ? px > cellX0(cc) + CELL && railed(cc, cr, D_E)
                                                    : px < cellX0(cc) && railed(cc, cr, D_W));
-            if (rail || (floorAt(px, _bz, fy) && fy > _by + rise)) {
+            const int hit = rail ? 1 : blockedAt(px, _bz, cc, cr, rise);
+            if (hit) {
                 if (fabsf(_vx) > _bump) _bump = fabsf(_vx);
-                _vx = -_vx * (rail ? RAIL_BOUNCE : WALL_BOUNCE);
+                if (hit == 2) sfx(SFX_GATE);
+                _vx = -_vx * (rail ? RAIL_BOUNCE : hit == 2 ? GATE_BOUNCE : WALL_BOUNCE);
             } else _bx = nx;
         }
         if (_vz != 0) {
             const float nz = _bz + _vz * sdt, pz = nz + (_vz > 0 ? WALL_PROBE : -WALL_PROBE);
             const bool rail = railHigh && (_vz > 0 ? pz > cellZ0(cr) + CELL && railed(cc, cr, D_N)
                                                    : pz < cellZ0(cr) && railed(cc, cr, D_S));
-            if (rail || (floorAt(_bx, pz, fy) && fy > _by + rise)) {
+            const int hit = rail ? 1 : blockedAt(_bx, pz, cc, cr, rise);
+            if (hit) {
                 if (fabsf(_vz) > _bump) _bump = fabsf(_vz);
-                _vz = -_vz * (rail ? RAIL_BOUNCE : WALL_BOUNCE);
+                if (hit == 2) sfx(SFX_GATE);
+                _vz = -_vz * (rail ? RAIL_BOUNCE : hit == 2 ? GATE_BOUNCE : WALL_BOUNCE);
             } else _bz = nz;
         }
+        bumpers();
         // Down: on the floor it follows it; off it (or over a drop), it falls.
         float gy;
         const bool ground = floorAt(_bx, _bz, gy);
@@ -148,6 +230,9 @@ void RollFluxGame::stepBall(const InputState &in) {
     }
     rollBall(_bx - x0, _bz - z0);
     _fellOut = _by < -FALL_DEPTH;
+    // The shards of a smashed crystal fly and fall.
+    if ((long)(millis() - _shardsUntil) < 0)
+        for (Shard &s : _shards) { s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt; s.vy -= GRAVITY * dt; }
 }
 
 // A dash: the ball's speed jumps to `strength` times its usual top speed

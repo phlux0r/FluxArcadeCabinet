@@ -20,7 +20,7 @@ void RollFluxGame::drawCentred(GFXcanvas16 &canvas, const char* text, int y, uin
 // Top strip: score on the left (DEMO in the demo), gems and spare balls
 // on the right, and the clock big in the middle (red, flashing, in the
 // last ten seconds). A banner line under it for news; the dash meter along
-// the bottom.
+// the bottom. The balls and the meter are in the ball's colour.
 void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
     canvas.setFont();
     canvas.fillRect(0, 0, W, 10, ArcadeConfig::COLOR_BLACK);
@@ -34,12 +34,13 @@ void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
         canvas.print(_score);
     }
 
-    // Spare balls, right-aligned (a number past five).
+    // Spare balls, right-aligned (a number past five), in the ball's colour.
+    const uint16_t pole = _polarity ? ArcadeConfig::COLOR_MAGENTA : ArcadeConfig::COLOR_CYAN;
     int x = W - 6;
     const int shown = _lives > 5 ? 1 : _lives;
-    for (int i = 0; i < shown; ++i, x -= 8) canvas.fillCircle(x, 4, 3, ArcadeConfig::COLOR_CYAN);
+    for (int i = 0; i < shown; ++i, x -= 8) canvas.fillCircle(x, 4, 3, pole);
     if (_lives > 5) {
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+        canvas.setTextColor(pole);
         canvas.setCursor(x - 8, 1);
         canvas.print(_lives);
         x -= 14;
@@ -74,9 +75,9 @@ void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
         if (fill < 0) fill = 0;
         canvas.fillRect(x, H - 4, segW, 3, 0x2104);
         const bool full = fill == DASH_GEMS_PER_STEP;
-        const uint16_t col = !full ? 0x0451
+        const uint16_t col = !full ? (_polarity ? 0x4009 : 0x0451)
                            : (_charging && i == dashSteps() - 1 && ((millis() / 80) & 1)) ? ArcadeConfig::COLOR_WHITE
-                           : ArcadeConfig::COLOR_CYAN;
+                           : pole;
         canvas.fillRect(x, H - 4, segW * fill / DASH_GEMS_PER_STEP, 3, col);
     }
 }
@@ -109,11 +110,20 @@ void RollFluxGame::renderTitle(GFXcanvas16 &canvas) {
     drawCentred(canvas, _scores.bestLine(buf, sizeof(buf), "HI: "), 116, ArcadeConfig::COLOR_YELLOW);
 }
 
-// How to play: rolling and the course first, then the dash and the pads.
-void RollFluxGame::renderHowTo(GFXcanvas16 &canvas, bool dash) {
+// How to play: rolling and the course first, then the dash and the pads,
+// then the colours and the Prism Works' pieces.
+void RollFluxGame::renderHowTo(GFXcanvas16 &canvas, int page) {
     canvas.setFont();
     canvas.fillRect(10, 14, W - 20, 96, PANEL);
-    if (!dash) {
+    if (page == 2) {
+        drawCentred(canvas, "COLOURS", 18, ArcadeConfig::COLOR_MAGENTA);
+        drawCentred(canvas, "TAP B: SWAP COLOUR", 30, ArcadeConfig::COLOR_WHITE);
+        drawCentred(canvas, "GATES: ONLY YOUR", 40, ArcadeConfig::COLOR_CYAN);
+        drawCentred(canvas, "COLOUR GETS THROUGH", 50, ArcadeConfig::COLOR_CYAN);
+        drawCentred(canvas, "BRIDGES: SOLID ONLY", 60, ArcadeConfig::COLOR_MAGENTA);
+        drawCentred(canvas, "IN THEIR COLOUR", 70, ArcadeConfig::COLOR_MAGENTA);
+        drawCentred(canvas, "DASH SMASHES CRYSTAL", 82, ArcadeConfig::COLOR_YELLOW);
+    } else if (page == 0) {
         drawCentred(canvas, "HOW TO PLAY", 18, ArcadeConfig::COLOR_CYAN);
         drawCentred(canvas, "STICK: TILT THE COURSE", 30, ArcadeConfig::COLOR_WHITE);
         drawCentred(canvas, "ROLL TO THE CHEQUERS", 40, ArcadeConfig::COLOR_WHITE);

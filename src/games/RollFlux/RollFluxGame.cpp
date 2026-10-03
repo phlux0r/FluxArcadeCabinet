@@ -4,20 +4,25 @@ namespace rollflux {
 
 namespace {
 
-// The optional sounds on the SD card: each falls back to a tone (or, for
-// the checkpoint, a fall and the goal, a short melody) without it.
-struct SfxDef { const char* path; int hz, ms; };
+// The optional sounds on the SD card: each falls back to another WAV, or
+// a tone (or, for the checkpoint, a fall and the goal, a short melody)
+// without it.
+struct SfxDef { const char* path; const char* fallback; int hz, ms; };
 const SfxDef ROLL_SFX[] = {
-    { "/audio/roll_bump.wav",   160,  30 },   // SFX_BUMP
-    { "/audio/pickup.wav",     1568,  50 },   // SFX_GEM (shared)
-    { "/audio/roll_boost.wav", 1300,  60 },   // SFX_BOOST
-    { "/audio/roll_charge.wav", 600,  90 },   // SFX_CHARGE
-    { "/audio/roll_dash.wav",  1200, 120 },   // SFX_DASH
-    { "/audio/roll_check.wav",    0,   0 },   // SFX_CHECK
-    { "/audio/roll_fall.wav",     0,   0 },   // SFX_FALL
-    { "/audio/roll_goal.wav",     0,   0 },   // SFX_GOAL
+    { "/audio/roll_bump.wav",    nullptr,  160,  30 },   // SFX_BUMP
+    { "/audio/pickup.wav",       nullptr, 1568,  50 },   // SFX_GEM (shared)
+    { "/audio/roll_boost.wav",   nullptr, 1300,  60 },   // SFX_BOOST
+    { "/audio/roll_charge.wav",  nullptr,  600,  90 },   // SFX_CHARGE
+    { "/audio/roll_dash.wav",    nullptr, 1200, 120 },   // SFX_DASH
+    { "/audio/roll_check.wav",   nullptr,    0,   0 },   // SFX_CHECK
+    { "/audio/roll_fall.wav",    nullptr,    0,   0 },   // SFX_FALL
+    { "/audio/roll_goal.wav",    nullptr,    0,   0 },   // SFX_GOAL
+    { "/audio/roll_swap.wav",    nullptr, 1400,  40 },   // SFX_SWAP (high cyan, low magenta)
+    { "/audio/roll_gate.wav",    nullptr,  220,  50 },   // SFX_GATE
+    { "/audio/roll_crystal.wav", "/audio/explosion.wav", 0, 0 },   // SFX_CRYSTAL
+    { "/audio/roll_bumper.wav",  nullptr,  990,  40 },   // SFX_BUMPER
 };
-static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 8, "one SfxDef per Sfx");
+static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 12, "one SfxDef per Sfx");
 
 // While the demo runs, new sounds are dropped (lifted again whichever way
 // update() returns).
@@ -47,6 +52,7 @@ void RollFluxGame::findSounds(AudioEngine &audio) {
     for (int i = 0; i < SFX_COUNT; ++i) {
         _sfxOnCard[i] = audio.exists(ROLL_SFX[i].path);
         if (_sfxOnCard[i]) audio.preload(ROLL_SFX[i].path);
+        else if (ROLL_SFX[i].fallback) audio.preload(ROLL_SFX[i].fallback);
     }
     _musicOnCard = audio.exists(MUSIC);
 }
@@ -54,7 +60,9 @@ void RollFluxGame::findSounds(AudioEngine &audio) {
 void RollFluxGame::sfx(Sfx s) {
     if (_silent || !_audio) return;
     if (_sfxOnCard[s]) { _audio->playWAV(ROLL_SFX[s].path); return; }
+    if (ROLL_SFX[s].fallback) { _audio->playWAV(ROLL_SFX[s].fallback); return; }
     switch (s) {
+        case SFX_SWAP: _audio->playTone(_polarity == 0 ? 1400 : 700, 40); break;
         case SFX_CHECK: { static const int n[] = { 880, 1175 }, d[] = { 60, 100 }; sfxMelody(n, d, 2); break; }
         case SFX_FALL:  { static const int n[] = { 700, 500, 330, 200 }, d[] = { 60, 60, 60, 120 }; sfxMelody(n, d, 4); break; }
         case SFX_GOAL:  { static const int n[] = { 523, 659, 784, 1047, 784, 1047 }, d[] = { 80, 80, 80, 120, 80, 240 };
@@ -91,6 +99,7 @@ void RollFluxGame::startNewGame(AudioEngine &audio) {
     _score = 0;
     _lives = START_LIVES;
     _gemsTotal = _goals = _falls = _dashes = 0;
+    _crystals = _bumps = _swaps = 0;
     _dashGems = 0;
     _course = _loop = 0;
     _prevA = true;                    // the A that started it isn't a dash
@@ -134,6 +143,16 @@ void RollFluxGame::loadCourse(int index) {
                 case 'v': cell.kind = K_BOOST_S; break;
                 case '>': cell.kind = K_BOOST_E; break;
                 case '<': cell.kind = K_BOOST_W; break;
+                case 'c': cell.kind = K_GATE_C; break;
+                case 'm': cell.kind = K_GATE_M; break;
+                case '(': cell.kind = K_BRIDGE_C; break;
+                case ')': cell.kind = K_BRIDGE_M; break;
+                case 'X': cell.kind = K_CRYSTAL; break;
+                case 'o': cell.kind = K_BUMPER; break;
+                case '8': cell.kind = K_CONV_N; break;
+                case '2': cell.kind = K_CONV_S; break;
+                case '6': cell.kind = K_CONV_E; break;
+                case '4': cell.kind = K_CONV_W; break;
                 default:  cell.kind = K_VOID; break;
             }
         }
@@ -152,6 +171,8 @@ void RollFluxGame::loadCourse(int index) {
     _rot[1] = _rot[2] = _rot[3] = _rot[5] = _rot[6] = _rot[7] = 0;
     _pathLen = 0;
     _targetC = _targetR = -1;
+    _polarity = 0;                    // every course starts cyan
+    _bumpUntil = _shardsUntil = 0;
     respawn();
 }
 
@@ -256,6 +277,26 @@ void RollFluxGame::updateDash(const InputState &in) {
     _dashGems -= DASH_GEMS_PER_STEP;
     ++_dashes;
     sfx(SFX_DASH);
+}
+
+// B tapped, the stick left alone, swaps the ball's colour (on the
+// release, so a B held for the camera doesn't); not again within the
+// cooldown.
+void RollFluxGame::updateSwap(const InputState &in) {
+    const unsigned long now = millis();
+    if (in.btnB && !_bDown) { _bDown = true; _bDownAt = now; _bStick = false; }
+    if (in.btnB && (fabsf(in.joyX) > 0.3f || fabsf(in.joyY) > 0.3f)) _bStick = true;
+    if (!in.btnB && _bDown) {
+        _bDown = false;
+        if (!_bStick && now - _bDownAt < SWAP_TAP_MS && (long)(now - _swapReadyAt) >= 0) swapColour();
+    }
+}
+
+void RollFluxGame::swapColour() {
+    _polarity ^= 1;
+    _swapReadyAt = millis() + SWAP_COOLDOWN_MS;
+    ++_swaps;
+    sfx(SFX_SWAP);
 }
 
 // The way a dash goes: the stick's, or the ball's own with the stick
@@ -438,6 +479,7 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 }
 
 bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    updateSwap(input);
     // B held: the stick turns the camera instead of the course.
     InputState in = input;
     if (input.btnB) {

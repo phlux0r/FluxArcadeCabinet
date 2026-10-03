@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 8 courses in 2 worlds |
+| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 12 courses in 3 worlds |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
@@ -176,10 +176,21 @@ three); then it brakes back to the speed it had, so a dash on open floor
 is over within about three cells. A checkpoint row (dark, lit once reached) is where a
 fall puts you back, with the time you had there; out of time, it's a ball
 gone and the course from the top. At the goal: 100 a second left, 2,000
-for no falls, 5,000 for every gem. Eight courses in two worlds: the Orbit
-Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb) and the Ice
-Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash); after 2-4
-it goes round again with 15% less time, to 60%. The camera follows
+for no falls, 5,000 for every gem. Twelve courses in three worlds: the
+Orbit Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb), the
+Ice Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash) and the
+Prism Works (3-1 to 3-4); after 3-4 it goes round again with 15% less
+time, to 60%. In the Prism Works the ball's colour matters: tap B to swap
+it between cyan and magenta (on the release, the stick left alone, at
+most every 0.25s; it shows on the ball, the spare balls and the dash
+meter). Colour gates (bright bars round a cell) let only their colour
+through and bounce the other; phase bridges (thin cyan or magenta slabs)
+are solid only to their colour, a dim ghost to the other, so swapping on
+one drops you through, and swapping in the air over one lands you on it.
+Crystal walls (pale blocks) stop a rolling ball but a dash smashes them
+(50 points); bumpers (red posts) kick the ball away hard (10 points);
+conveyors (moving yellow stripes) carry it along. Every course starts
+cyan. The camera follows
 behind, turning slowly to the way you roll (but not round to face you
 when you roll back), and the course leans with the stick. Hold B and the
 stick turns the camera instead (the ball rolls on by itself); let go and
@@ -187,9 +198,8 @@ it stays turned until you set off a new way. Everything is
 drawn straight into the canvas with Jet's camera maths (not its Scene):
 stage 0 measured that at ~55fps on the board against ~25 through Jet. The
 attract cycle orbits course 1 under the title (drawn live, not an image),
-two how-to-play slides and the scores. Still to come (stage 2): colour
-gates and phase bridges, crystal walls, bumpers, conveyors, moving parts,
-worlds 3-4 and the guardians.
+three how-to-play slides and the scores. Still to come (the rest of stage
+2): moving parts, world 4 and the guardians.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -206,7 +216,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
-| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, and dashes on long safe straights |
+| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), and dashes on long safe straights |
 
 ## Build
 
@@ -324,7 +334,8 @@ the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
 to charge the Flux Dash, let go to dash. Hold B and the stick turns the
-camera left or right instead.
+camera left or right instead; a quick tap of B (stick left alone) swaps
+the ball's colour.
 
 Star Flux: the joystick flies the ship round the screen. A fires twin
 lasers, once per press as fast as you tap, or steadily while held. Press B
@@ -611,6 +622,10 @@ Roll Flux's optional sounds, the same again (none on the card yet):
 | `roll_check.wav` | a checkpoint reached | ~0.4s | two notes |
 | `roll_fall.wav` | off the course | ~0.8s | a falling run of notes |
 | `roll_goal.wav` | the goal | ~1.2s | a short fanfare |
+| `roll_swap.wav` | the ball's colour swapped | ~60ms | a tone (high cyan, low magenta) |
+| `roll_gate.wav` | bounced off a gate of the other colour | ~80ms | a tone |
+| `roll_crystal.wav` | a crystal wall smashed | ~0.6s | `explosion.wav` |
+| `roll_bumper.wav` | a bumper's kick | ~80ms | a tone |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-roll.wav`, `flux-runner.wav`,

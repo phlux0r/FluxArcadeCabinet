@@ -143,6 +143,25 @@ made the dash hard to aim, so B held turns the camera with the stick (the
 ball isn't pushed meanwhile), and it holds that heading until the ball
 sets off a new way. A quick tap of B stays free for stage 2's colour swap.
 
+### Stage 2, part 1: the Prism Works, built
+
+World 3's pieces and four courses (3-1 to 3-4; its guardian course comes
+with the guardians). Polarity as section 6, a swap on B's release when
+the stick wasn't used (B held with the stick turns the camera). Colour
+gates are cells with bars round them (on edges not shared with a gate of
+their colour), bouncing the other colour at GATE_BOUNCE; phase bridges
+are thin slabs (BRIDGE_DEPTH) that `floorAt` treats as void to the other
+colour, drawn to it as a dim ghost tile. Crystal walls are cells
+CRYSTAL_HEIGHT up, so the ordinary wall test stops a roll; met in a dash
+they're smashed (floor from then on, shards flying). Bumpers are posts
+(BUMPER_RADIUS) kicking the ball off at BUMPER_KICK; conveyors push along
+their run up to CONVEYOR_SPEED. The autopilot pays to cross bumpers and
+to go against a conveyor, compensates for a conveyor's push, and swaps
+colour for the first cell ahead that needs one, at the edge when it's on
+a bridge of its own colour. `god` clears all twelve courses, no falls.
+Points: 50 a crystal, 10 a bumper's kick (design section 7 had crystals
+only). The how-to-play gains a third slide, on the colours.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

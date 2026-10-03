@@ -73,6 +73,31 @@ inline constexpr unsigned long DASH_BRAKE_MS = 150;
 inline constexpr float DASH_GRAVITY    = 0.5f;
 inline constexpr float DASH_RETURN_MIN = 400.0f;
 
+// --- Stage 2's pieces (the Prism Works) -----------------------------------------
+// Polarity: B tapped (released within SWAP_TAP_MS, the stick untouched)
+// swaps the ball between cyan and magenta, at most every SWAP_COOLDOWN_MS.
+inline constexpr unsigned long SWAP_TAP_MS      = 400;
+inline constexpr unsigned long SWAP_COOLDOWN_MS = 250;
+// Colour gates: bars round a cell, passable only in their colour.
+inline constexpr float GATE_HEIGHT = 60.0f;
+inline constexpr float GATE_BOUNCE = 0.5f;
+// Phase bridges: thin slabs, solid only in their colour.
+inline constexpr float BRIDGE_DEPTH = 30.0f;
+// Crystal walls: blocks this high on their cell; a dash smashes them.
+inline constexpr float CRYSTAL_HEIGHT = 160.0f;
+inline constexpr long  CRYSTAL_POINTS = 50;
+inline constexpr int   SHARD_COUNT = 12;
+inline constexpr unsigned long SHARD_MS = 600;
+// Bumpers: a post in the middle of a cell that kicks the ball off at
+// BUMPER_KICK at least.
+inline constexpr float BUMPER_RADIUS = 40.0f;
+inline constexpr float BUMPER_HEIGHT = 90.0f;
+inline constexpr float BUMPER_KICK   = 900.0f;
+inline constexpr long  BUMPER_POINTS = 10;
+// Conveyors: carry the ball along at up to CONVEYOR_SPEED.
+inline constexpr float CONVEYOR_SPEED = 350.0f;
+inline constexpr float CONVEYOR_ACCEL = 800.0f;
+
 // --- Rules -------------------------------------------------------------------
 inline constexpr int   START_LIVES    = 4;
 inline constexpr int   MAX_LIVES      = 9;
