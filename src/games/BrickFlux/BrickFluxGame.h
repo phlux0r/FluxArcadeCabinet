@@ -44,7 +44,8 @@ public:
     const char* getName() const override { return "Brick Flux"; }
 
 private:
-    enum Phase : uint8_t { PHASE_ATTRACT, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    // PICK: the stage-select cheat, choosing a level to start a test run on.
+    enum Phase : uint8_t { PHASE_ATTRACT, PHASE_PICK, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
     enum Slide : uint8_t { SLIDE_TITLE, SLIDE_INFO, SLIDE_INFO2, SLIDE_INFO3, SLIDE_SCORES, SLIDE_DEMO };
     // Within a game: the level dropping in, play, the pause after the last
     // ball's gone, and the level-clear tally.
@@ -56,12 +57,14 @@ private:
 
     // ---- Phases (this file) ----
     void enterAttract();
-    void startNewGame(AudioEngine &audio);
+    void startNewGame(AudioEngine &audio, int first = -1);
     void resetRun(int level);
     void enterGameOver(AudioEngine &audio);
     void startDemo();
     void endDemo();
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    void enterPicker();
+    bool updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void updateFrameTime();
@@ -135,6 +138,7 @@ private:
     void renderTitle(GFXcanvas16 &cv);
     void renderInfo(GFXcanvas16 &cv, int page);
     void renderScores(GFXcanvas16 &cv);
+    void renderPicker(GFXcanvas16 &cv);
     void renderGameOver(GFXcanvas16 &cv);
     void drawDemoOverlay(GFXcanvas16 &cv);
     static void panel(GFXcanvas16 &cv, int x, int y, int w, int h);
@@ -199,6 +203,12 @@ private:
     unsigned long _wallElapsed = 0;
     bool _warned = false;
     bool _serving = true;                     // a ball on the bat, waiting for A
+
+    // The stage-select cheat: a test run puts nothing on the table
+    bool _test = false;
+    int  _testFrom = 1;                       // the level it started on (A at its game over)
+    int  _pick = 1, _pickDir = 0;             // the picker's level; the stick's last step
+    unsigned long _pickRepeatAt = 0, _pickAt = 0;
 
     // Demo
     bool _demo = false;
@@ -317,6 +327,7 @@ inline bool BrickFluxGame::update(GFXcanvas16 &canvas, const InputState &input, 
     // swaps the bat's colour.
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
+        case PHASE_PICK:     return updatePicker(canvas, input, audio);
         case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
         default: break;
@@ -328,15 +339,17 @@ inline bool BrickFluxGame::update(GFXcanvas16 &canvas, const InputState &input, 
 }
 
 // Quitting (the Back button): a game in progress still goes on the table,
-// under the last name entered; a name being entered is kept.
+// under the last name entered (not a test run's); a name being entered is
+// kept.
 inline void BrickFluxGame::onQuit(AudioEngine &audio) {
     if (_phase == PHASE_NAME) _scores.finishNow();
-    else if (_phase == PHASE_PLAYING) _scores.record(_score);
+    else if (_phase == PHASE_PLAYING && !_test) _scores.record(_score);
     audio.mute();
 }
 
 inline void BrickFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
+    _test = false;
     _slide = SLIDE_TITLE;
     _phaseAt = _slideAt = millis();
 }
@@ -361,8 +374,12 @@ inline void BrickFluxGame::resetRun(int level) {
     loadLevel();
 }
 
-inline void BrickFluxGame::startNewGame(AudioEngine &audio) {
-    resetRun(1);
+// `first`, if given, is the stage-select cheat's level: a test run that
+// starts there and puts nothing on the table.
+inline void BrickFluxGame::startNewGame(AudioEngine &audio, int first) {
+    _test = first > 0;
+    _testFrom = _test ? first : 1;
+    resetRun(_testFrom);
     _phase = PHASE_PLAYING;
     _phaseAt = millis();
     _aHeld = true;                 // the A that started it isn't a serve or a charge
@@ -371,9 +388,10 @@ inline void BrickFluxGame::startNewGame(AudioEngine &audio) {
     if (_musicOnCard) audio.loopWAV(MUSIC);
 }
 
-// The last life's gone: a name for the table first, if the score made it.
+// The last life's gone: a name for the table first, if the score made it
+// (never for a test run).
 inline void BrickFluxGame::enterGameOver(AudioEngine &audio) {
-    _phase = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+    _phase = !_test && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseAt = millis();
     audio.stopLoop();
     static const int n[] = { 520, 390, 260, 130 };
@@ -403,8 +421,13 @@ inline void BrickFluxGame::endDemo() {
 }
 
 // Title, three how-to-play slides, the high scores (ATTRACT_SLIDE_MS each),
-// then the demo, round and round. A starts a game from any of them.
+// then the demo, round and round. A starts a game from any of them; B held
+// with A (not in the demo) opens the stage select.
 inline bool BrickFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (input.btnAPressed && input.btnB && _slide != SLIDE_DEMO) {
+        enterPicker();
+        return updatePicker(canvas, InputState{}, audio);
+    }
     if (input.btnAPressed) {
         if (_demo) endDemo();
         startNewGame(audio);
@@ -440,6 +463,53 @@ inline bool BrickFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &
     return true;
 }
 
+// The stage-select cheat, for trying any level without playing up to it:
+// the stick steps through one loop's levels (left and right by one, up and
+// down by five, so boss to boss), each shown behind its number; A starts a
+// test run there, B goes back to the title, as does leaving it alone.
+inline void BrickFluxGame::enterPicker() {
+    _phase = PHASE_PICK;
+    _pick = 1;
+    _pickDir = 0;
+    _pickAt = _now;
+    resetRun(_pick);
+}
+
+inline bool BrickFluxGame::updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (input.btnAPressed) {
+        startNewGame(audio, _pick);
+        renderPlay(canvas);
+        return true;
+    }
+    if (input.btnBPressed || _now - _pickAt > PICK_TIMEOUT_MS) {
+        resetRun(1);
+        enterAttract();
+        renderTitle(canvas);
+        return true;
+    }
+    bool up, down, left, right;
+    hiscore::screenDirs(input, getRotation(), up, down, left, right);
+    const int dir = right ? 1 : left ? -1 : up ? BOSS_EVERY : down ? -BOSS_EVERY : 0;
+    bool step = false;
+    if (dir != _pickDir) {
+        _pickDir = dir;
+        _pickRepeatAt = _now + PICK_REPEAT_DELAY_MS;
+        step = dir != 0;
+    } else if (dir != 0 && (long)(_now - _pickRepeatAt) >= 0) {
+        _pickRepeatAt = _now + PICK_REPEAT_MS;
+        step = true;
+    }
+    if (step) {
+        _pick = (_pick - 1 + dir + LEVELS_PER_LOOP) % LEVELS_PER_LOOP + 1;
+        _pickAt = _now;
+        resetRun(_pick);
+        audio.playTone(1200, 15);
+    }
+    drawField(canvas);
+    renderPicker(canvas);
+    return true;
+}
+
 // The board stays behind the name entry; when it's done (or timed out),
 // the game-over screen.
 inline bool BrickFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
@@ -460,7 +530,7 @@ inline bool BrickFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState 
     renderGameOver(canvas);
     const unsigned long elapsed = _now - _phaseAt;
     if (elapsed > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) {
-        startNewGame(audio);
+        startNewGame(audio, _test ? _testFrom : -1);   // a test run: from its level again
     } else if (elapsed > GAMEOVER_TIMEOUT_MS) {
         resetRun(1);
         enterAttract();

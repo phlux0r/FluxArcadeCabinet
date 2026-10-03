@@ -26,6 +26,9 @@
 //   idle N      the attract cycle into its demo: silent, high score
 //               untouched, and the demo ends back at the title
 //   demoexit    A mid-demo starts a clean real game
+//   pick        the stage-select cheat: B held with A on the title opens
+//               it, the stick steps the level, A starts a test run there
+//               that puts nothing on the table; plain A still starts level 1
 //   all         everything (the default)
 //
 // DUMP_AT=frame,frame writes those frames of `play` as brick_<frame>.ppm,
@@ -541,6 +544,93 @@ static bool scenarioDemoExit() {
     return ok;
 }
 
+// The stage-select cheat: B held with A on the attract screens opens the
+// picker; the stick steps the level (left/right by one, up/down by five,
+// wrapping round one loop); A starts a test run there, B goes back. A test
+// run puts nothing on the table, at game over or on quitting, and A at its
+// game over starts the same level again. Plain A still starts level 1.
+static bool scenarioPick() {
+    static BrickFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    bool ok = true;
+    auto check = [&](const char* what, bool cond) {
+        printf("  %-50s %s\n", what, cond ? "ok" : "FAIL");
+        ok &= cond;
+    };
+    auto frame = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+    // Portrait (rotation 2): screen up is joyDown, down is joyUp.
+    auto push = [&](bool right, bool left, bool up, bool down) {
+        InputState in{};
+        in.joyRight = right; in.joyLeft = left; in.joyDown = up; in.joyUp = down;
+        frame(in);
+        frame();
+    };
+    printf("pick:\n");
+    hiscore::Table empty;
+    hiscore::clear(empty);
+    hiscore::save("brick", empty);
+    InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    InputState b{}; b.btnB = b.btnBPressed = true;
+    InputState stillB{}; stillB.btnB = true;
+    g.init(audio);
+    for (int f = 0; f < 10; ++f) frame();
+    frame(ba);
+    check("B+A on the title: the picker", g._phase == BrickFluxGame::PHASE_PICK && g._pick == 1);
+    frame(stillB);
+    check("B still held from opening it doesn't close it", g._phase == BrickFluxGame::PHASE_PICK);
+    push(true, false, false, false);
+    push(true, false, false, false);
+    check("right twice: level 3, and its bricks shown", g._pick == 3 && g._level == 3);
+    push(false, false, true, false);
+    check("up: five on, level 8", g._pick == 8);
+    push(false, false, false, true);
+    push(false, false, false, true);
+    check("down twice: wraps to level 18", g._pick == 18);
+    push(false, true, false, false);
+    check("left: level 17", g._pick == 17);
+    frame(b);
+    check("B: back to the title", g._phase == BrickFluxGame::PHASE_ATTRACT && !g._test);
+    frame(ba);
+    frame();
+    push(false, false, true, false);
+    push(false, false, true, false);
+    check("up twice: level 11", g._pick == 11);
+    frame(a);
+    InputState held{}; held.btnA = true;
+    for (int f = 0; f < 60; ++f) frame(held);
+    check("A: a test run on 11, fresh, still serving",
+          g._phase == BrickFluxGame::PHASE_PLAYING && g._test && g._level == 11 && g._score == 0 &&
+          g._lives == LIVES && g._serving && !g._demo);
+    g._score = 54320;
+    g._lives = 1;
+    g.loseLife();
+    for (unsigned long t = 0; t <= LOST_MS + STEP_MS; t += STEP_MS) frame();
+    check("test game over: no name entry", g._phase == BrickFluxGame::PHASE_GAMEOVER);
+    g._scores.begin("brick");
+    check("  and nothing on the table", g._scores.best() == 0);
+    for (unsigned long t = 0; t <= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS + STEP_MS; t += STEP_MS) frame();
+    frame(a);
+    check("A at its game over: level 11 again, still a test",
+          g._phase == BrickFluxGame::PHASE_PLAYING && g._test && g._level == 11);
+    g._score = 43210;
+    g.onQuit(audio);
+    g._scores.begin("brick");
+    check("Back mid test run: nothing on the table", g._scores.best() == 0);
+    g.init(audio);
+    frame();
+    frame(a);
+    check("plain A: level 1, not a test", g._phase == BrickFluxGame::PHASE_PLAYING && !g._test && g._level == 1);
+    g.init(audio);
+    frame();
+    frame(ba);
+    for (unsigned long t = 0; t <= PICK_TIMEOUT_MS + STEP_MS; t += STEP_MS) frame();
+    check("idle picker: back to the title, level 1 loaded", g._phase == BrickFluxGame::PHASE_ATTRACT && g._level == 1);
+    printf("pick -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 int main(int argc, char** argv) {
     const char* which = argc > 1 ? argv[1] : "all";
     const long frames = argc > 2 ? atol(argv[2]) : 0;
@@ -556,5 +646,6 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "boss"))     ok &= scenarioBoss(frames ? frames : 15000);
     if (all || !strcmp(which, "idle"))     ok &= scenarioIdle(frames ? frames : 6000);
     if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
+    if (all || !strcmp(which, "pick"))     ok &= scenarioPick();
     return ok ? 0 : 1;
 }

@@ -148,12 +148,18 @@ inline void BrickFluxGame::drawHud(GFXcanvas16 &cv) {
     cv.setTextSize(1);
     cv.setTextColor(ArcadeConfig::COLOR_WHITE);
     cv.setCursor(1, 1);
+    // A stage-select test run: an orange T before the score.
+    if (_test) {
+        cv.setTextColor(ArcadeConfig::COLOR_ORANGE);
+        cv.print("T ");
+        cv.setTextColor(ArcadeConfig::COLOR_WHITE);
+    }
     snprintf(buf, sizeof(buf), "%ld", _score);
     cv.print(buf);
     // The chain, beside the score, in the colour it's running in.
     if (_chain > 1) {
         cv.setTextColor(polColour(_batPol));
-        cv.setCursor(1 + (int)strlen(buf) * 6 + 3, 1);
+        cv.setCursor(1 + (int)(strlen(buf) + (_test ? 2 : 0)) * 6 + 3, 1);
         snprintf(buf, sizeof(buf), "x%d", _chain);
         cv.print(buf);
     }
@@ -354,6 +360,20 @@ inline void BrickFluxGame::renderGameOver(GFXcanvas16 &cv) {
     }
     if (millis() - _phaseAt > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && millis() % 1000 < 600)
         hiscore::printCentred(cv, "A: PLAY AGAIN", 104, ArcadeConfig::COLOR_CYAN);
+}
+
+// The stage select, over the level it would start on: its number big
+// (a boss's name under it), how to step and start.
+inline void BrickFluxGame::renderPicker(GFXcanvas16 &cv) {
+    panel(cv, 8, 40, W - 16, 48);
+    hiscore::printCentred(cv, "START AT", 44, ArcadeConfig::COLOR_ORANGE);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "LEVEL %d", _pick);
+    hiscore::printCentred(cv, buf, 56, _boss ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2);
+    if (_boss) hiscore::printCentred(cv, bossName(), 75, ArcadeConfig::COLOR_WHITE);
+    panel(cv, 2, 128, W - 4, 30);
+    hiscore::printCentred(cv, "<> LEVEL  ^v BY 5", 132, ArcadeConfig::COLOR_WHITE);
+    hiscore::printCentred(cv, "A: TEST  B: BACK", 145, ArcadeConfig::COLOR_YELLOW);
 }
 
 inline void BrickFluxGame::drawDemoOverlay(GFXcanvas16 &cv) {

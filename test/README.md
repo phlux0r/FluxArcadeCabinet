@@ -73,6 +73,7 @@ Its bot is the game's own autopilot (`BrickFluxGame::autopilot()`, in
 | `boss [N]` | The same for each of the four bosses (default 15000 frames) |
 | `idle [N]` | No input: title, how-to-play, scores, then the demo: silent, high score untouched, and it ends back at the title |
 | `demoexit` | A mid-demo starts a clean game (level 1, no score, three lives, a ball waiting to be served) |
+| `pick` | The stage-select cheat: B held with A on the title opens it (B still held doesn't close it); the stick steps the level by one and by five, wrapping round the loop, loading each; B goes back; A starts a test run on the chosen level, whose game over skips the name entry and whose quit saves nothing, and A at its game over starts the same level again; plain A still starts level 1; left alone the picker goes back to the title |
 
 `DUMP_AT=20,400 test/build.sh brick play 401` writes `brick_000020.ppm` etc.;
 with `levels` or `boss`, it writes those frames of every level
@@ -93,7 +94,8 @@ with `levels` or `boss`, it writes those frames of every level
 | `idle` | No input: title, the three how-to-play slides and the scores, then the demo (rolling, making no sound) and back to the title, the high scores untouched. PASS/FAIL |
 | `demoexit` | A mid-demo: a real game starts clean (1-1, no score, all balls, an empty dash meter, sound back on). PASS/FAIL |
 | `menus` | A starts a game from each attract screen; Back (`onQuit()`) mid-game puts the score on the table, and during name entry keeps it. PASS/FAIL |
-| `pose` | Frames at fixed points as `roll_<spot>_000000.ppm`: course 1-1 (start, rails, ramp, gap, railed bridge, ice and checkpoint, block, a sideways view, the goal, the lean with the stick, a ball fallen just behind the near edge, which must hide its lower half), 1-4's levels, the Ice Relay's palette with the ball glowing in a dash, the aim line while a dash charges, the Prism Works (a shut gate, the crystal wall, the bumpers, phase bridges with ghosts, conveyors), the Flux Core (a shuttle, a lift, the sweeper's plaza, a ball riding a turning bridge), the four guardians' arenas, and the title over the orbiting course |
+| `pick` | The stage-select cheat: B held with A on the title opens it (B still held doesn't close it); the stick steps the course by one and by a world, wrapping, loading each; B goes back; A starts a test run on the chosen course (full balls, empty meter), whose game over skips the name entry and whose quit saves nothing, and A at its game over starts the same course again; plain A still starts 1-1; left alone the picker goes back to the title. PASS/FAIL |
+| `pose` | Frames at fixed points as `roll_<spot>_000000.ppm`: course 1-1 (start, rails, ramp, gap, railed bridge, ice and checkpoint, block, a sideways view, the goal, the lean with the stick, a ball fallen just behind the near edge, which must hide its lower half), 1-4's levels, the Ice Relay's palette with the ball glowing in a dash, the aim line while a dash charges, the Prism Works (a shut gate, the crystal wall, the bumpers, phase bridges with ghosts, conveyors), the Flux Core (a shuttle, a lift, the sweeper's plaza, a ball riding a turning bridge), the four guardians' arenas, the title over the orbiting course, and the stage select on 4-5 (`roll_pick`) |
 
 Host µs compare runs with each other (and with Tube's `profile`, whose
 cost runs at ~30fps on the board), not with a frame budget.

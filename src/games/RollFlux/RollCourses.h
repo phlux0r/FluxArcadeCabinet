@@ -620,6 +620,7 @@ static const CourseDef COURSES[] = {
     { "4-5", "THE GYRE", 3, 12, 14, 95, COURSE_4_5_ROWS, nullptr, 0, 4 },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
+inline constexpr int COURSES_PER_WORLD = 5;
 
 }  // namespace rollflux
 

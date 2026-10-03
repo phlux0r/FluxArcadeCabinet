@@ -81,7 +81,7 @@ void RollFluxGame::sfx(Sfx s) {
 // entered is kept. Nothing from the demo.
 void RollFluxGame::onQuit(AudioEngine &audio) {
     if (_phase == PHASE_NAME) _scores.finishNow();
-    else if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_CLEAR)) _scores.record(_score);
+    else if (!_demo && !_test && (_phase == PHASE_PLAYING || _phase == PHASE_CLEAR)) _scores.record(_score);
     audio.mute();
 }
 
@@ -97,8 +97,12 @@ void RollFluxGame::updateFrameScale() {
     _dt = dt / 1000.0f;
 }
 
-void RollFluxGame::startNewGame(AudioEngine &audio) {
+// `first`, if given, is the stage-select cheat's course: a test run that
+// starts there and puts nothing on the table.
+void RollFluxGame::startNewGame(AudioEngine &audio, int first) {
     _demo = false;
+    _test = first >= 0;
+    _testFrom = _test ? first : 0;
     _silent = false;
     _scores.forget();
     _score = 0;
@@ -106,7 +110,8 @@ void RollFluxGame::startNewGame(AudioEngine &audio) {
     _gemsTotal = _goals = _falls = _dashes = 0;
     _crystals = _bumps = _swaps = 0;
     _dashGems = 0;
-    _course = _loop = 0;
+    _course = _testFrom;
+    _loop = 0;
     _prevA = true;                    // the A that started it isn't a dash
     startCourse(audio);
     // Music plays during a game only: not on the attract screens or in the
@@ -256,9 +261,10 @@ void RollFluxGame::loseLife(AudioEngine &audio, const char* why) {
     banner(_checkC >= 0 ? "BACK TO CHECKPOINT" : "TRY AGAIN", ArcadeConfig::COLOR_ORANGE);
 }
 
-// The last ball's gone: a name for the table first, if the score made it.
+// The last ball's gone: a name for the table first, if the score made it
+// (never for a test run).
 void RollFluxGame::enterGameOver(AudioEngine &audio) {
-    _phase = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+    _phase = !_test && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseAt = millis();
     _charging = false;
     audio.stopLoop();
@@ -499,6 +505,7 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     }
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
+        case PHASE_PICK:     return updatePicker(canvas, input, audio);
         case PHASE_CLEAR:    return updateClear(canvas, input, audio);
         case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
@@ -586,7 +593,8 @@ bool RollFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, 
     renderFrame(canvas);
     renderGameOver(canvas);
     const unsigned long t = millis() - _phaseAt;
-    if (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) startNewGame(audio);
+    // A plays again (a test run from the course it started on).
+    if (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) startNewGame(audio, _test ? _testFrom : -1);
     else if (t > GAMEOVER_TIMEOUT_MS) enterAttract();
     return true;
 }

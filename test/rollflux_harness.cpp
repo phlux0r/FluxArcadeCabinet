@@ -17,6 +17,8 @@
 //                (roll_<spot>.ppm), to look at by eye: the ball on the
 //                floor, its stripes and shadow, rails, gems, a ball fallen
 //                behind an edge hidden by it
+//   pick         the stage-select cheat: opening, stepping, a test run
+//                that saves nothing, and back
 //   all          everything but pose (the default)
 //
 // The driver steers for waypoints along course 1, as a stand-in for the
@@ -895,6 +897,89 @@ static bool scenarioMenus() {
     return ok;
 }
 
+// The stage-select cheat: B held with A on the attract screens opens the
+// picker; the stick steps the course (left/right by one, up/down by a
+// world, wrapping); A starts a test run there, B goes back. A test run
+// puts nothing on the table, at game over or on quitting, and A at its
+// game over starts the same course again. Plain A still starts at 1-1.
+static bool scenarioPick() {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    bool ok = true;
+    printf("pick:\n");
+    hiscore::Table empty;
+    hiscore::clear(empty);
+    hiscore::save("roll", empty);
+    // Landscape (rotation 1): screen right is joyDown, up is joyLeft.
+    auto push = [&](bool right, bool left, bool up, bool down) {
+        InputState in{};
+        in.joyDown = right; in.joyUp = left; in.joyLeft = up; in.joyRight = down;
+        frame(g, audio, canvas, in);
+        frame(g, audio, canvas);
+    };
+    InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    InputState b{}; b.btnB = b.btnBPressed = true;
+    g.init(audio);
+    for (int f = 0; f < 10; ++f) frame(g, audio, canvas);
+    frame(g, audio, canvas, ba);
+    check("B+A on the title: the picker", g._phase == RollFluxGame::PHASE_PICK && g._pick == 0, ok);
+    InputState stillB{}; stillB.btnB = true;
+    frame(g, audio, canvas, stillB);
+    check("B still held from opening it doesn't close it", g._phase == RollFluxGame::PHASE_PICK, ok);
+    push(true, false, false, false);
+    push(true, false, false, false);
+    check("right twice: 1-3", g._pick == idx("1-3"), ok);
+    push(false, false, true, false);
+    check("up: a world on, 2-3", g._pick == idx("2-3"), ok);
+    push(false, false, false, true);
+    push(false, false, false, true);
+    check("down twice: wraps to 4-3", g._pick == idx("4-3"), ok);
+    push(false, true, false, false);
+    check("left: 4-2, and its course shown", g._pick == idx("4-2") && g.courseDef().code == COURSES[idx("4-2")].code, ok);
+    frame(g, audio, canvas, b);
+    check("B: back to the title", g._phase == RollFluxGame::PHASE_ATTRACT && !g._test, ok);
+    // Through to the Prism (3-5), and start there.
+    frame(g, audio, canvas, ba);
+    frame(g, audio, canvas);
+    for (int i = 0; i < 2; ++i) push(false, false, true, false);
+    for (int i = 0; i < 4; ++i) push(true, false, false, false);
+    check("stepped to 3-5", g._pick == idx("3-5"), ok);
+    frame(g, audio, canvas, a);
+    check("A: a test run on 3-5, full balls, empty meter",
+          g._phase == RollFluxGame::PHASE_PLAYING && g._test && g._course == idx("3-5") && g._loop == 0 &&
+          g._score == 0 && g._lives == START_LIVES && g._dashGems == 0 && !g._demo, ok);
+    // The last ball gone with a big score: no name entry, nothing saved.
+    g._score = 54320;
+    g._lives = 1;
+    g.loseLife(audio, nullptr);
+    check("test game over: no name entry", g._phase == RollFluxGame::PHASE_GAMEOVER, ok);
+    g._scores.begin("roll");
+    check("  and nothing on the table", g._scores.best() == 0, ok);
+    for (unsigned long t = 0; t <= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS + STEP_MS; t += STEP_MS) frame(g, audio, canvas);
+    frame(g, audio, canvas, a);
+    check("A at its game over: 3-5 again, still a test", g._phase == RollFluxGame::PHASE_PLAYING && g._test &&
+          g._course == idx("3-5"), ok);
+    g._score = 43210;
+    g.onQuit(audio);
+    g._scores.begin("roll");
+    check("Back mid test run: nothing on the table", g._scores.best() == 0, ok);
+    // Plain A still starts a real game at 1-1.
+    g.init(audio);
+    frame(g, audio, canvas);
+    frame(g, audio, canvas, a);
+    check("plain A: 1-1, not a test", g._phase == RollFluxGame::PHASE_PLAYING && !g._test && g._course == 0, ok);
+    // Left alone, the picker goes back to the title.
+    g.init(audio);
+    frame(g, audio, canvas);
+    frame(g, audio, canvas, ba);
+    for (unsigned long t = 0; t <= PICK_TIMEOUT_MS + STEP_MS; t += STEP_MS) frame(g, audio, canvas);
+    check("idle picker: back to the title", g._phase == RollFluxGame::PHASE_ATTRACT, ok);
+    printf("pick -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 static void scenarioPose() {
     static RollFluxGame g;
     AudioEngine audio;
@@ -979,6 +1064,17 @@ static void scenarioPose() {
     FrameDumper d("roll_title");
     d.n = 1; d.at[0] = 0;
     d.maybeDump(0, canvas);
+    // The stage select, on the Gyre (4-5).
+    InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+    frame(g, audio, canvas, ba);
+    InputState up{}; up.joyLeft = true;
+    for (int i = 0; i < 3; ++i) { frame(g, audio, canvas, up); frame(g, audio, canvas); }
+    InputState right{}; right.joyDown = true;
+    for (int i = 0; i < 4; ++i) { frame(g, audio, canvas, right); frame(g, audio, canvas); }
+    for (int f = 0; f < 30; ++f) frame(g, audio, canvas);
+    FrameDumper dp("roll_pick");
+    dp.n = 1; dp.at[0] = 0;
+    dp.maybeDump(0, canvas);
 }
 
 int main(int argc, char** argv) {
@@ -996,6 +1092,7 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "idle")) ok &= scenarioIdle();
     if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
     if (all || !strcmp(which, "menus")) ok &= scenarioMenus();
+    if (all || !strcmp(which, "pick")) ok &= scenarioPick();
     if (!strcmp(which, "pose")) scenarioPose();
     return ok ? 0 : 1;
 }

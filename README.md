@@ -351,13 +351,21 @@ far you push) and tilts it with up/down (past a third of the way, so a
 sloppy sideways push doesn't tilt it): up raises the right end, sending the
 ball left. A serves, lets a caught ball go, or fires the lasers; held with
 the meter full, it charges the Flux Smash. Tap B to swap the bat's colour
-(on the press, so it's instant).
+(on the press, so it's instant). Stage select, for testing: on the title,
+how-to or scores screens, hold B and press A; the stick picks the level
+(left/right by one, up/down by five, boss to boss), A starts a test run
+there (a T before the score; nothing goes on the high-score table), B goes
+back.
 
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
 to charge the Flux Dash, let go to dash. Hold B and the stick turns the
 camera left or right instead; a quick tap of B (stick left alone) swaps
-the ball's colour.
+the ball's colour. Stage select, for testing: on the title, how-to or
+scores screens, hold B and press A; the stick picks the course (left/right
+by one, up/down by a world), shown orbiting behind its name, and A starts
+a test run there (full balls, an empty dash meter, a T before the score;
+nothing goes on the high-score table), B goes back.
 
 Star Flux: the joystick flies the ship round the screen. A fires twin
 lasers, once per press as fast as you tap, or steadily while held. Press B

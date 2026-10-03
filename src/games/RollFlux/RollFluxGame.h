@@ -40,7 +40,8 @@ public:
 
 private:
     // NAME: entering a name for the high-score table, after the last ball.
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_CLEAR, PHASE_NAME, PHASE_GAMEOVER };
+    // PICK: the stage-select cheat, choosing a course to start a test run on.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PICK, PHASE_PLAYING, PHASE_CLEAR, PHASE_NAME, PHASE_GAMEOVER };
     enum AttractSlide { SLIDE_TITLE, SLIDE_ROLL, SLIDE_DASH, SLIDE_PRISM, SLIDE_SCORES, SLIDE_DEMO };
     enum Kind : uint8_t { K_VOID, K_FLOOR, K_START, K_GOAL, K_RAMP_N, K_RAMP_S, K_RAMP_E, K_RAMP_W,
                           K_ICE, K_CHECK, K_BOOST_N, K_BOOST_S, K_BOOST_E, K_BOOST_W,
@@ -80,7 +81,7 @@ private:
     void updateFrameScale();
     void findSounds(AudioEngine &audio);
     void sfx(Sfx s);
-    void startNewGame(AudioEngine &audio);
+    void startNewGame(AudioEngine &audio, int first = -1);
     void loadCourse(int index);
     void startCourse(AudioEngine &audio);
     void respawn();
@@ -148,6 +149,8 @@ private:
     void orbitCamera();
     void startDemo(AudioEngine &audio);
     void endDemo();
+    void enterPicker();
+    bool updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool canRoll(int c, int r, int nc, int nr, bool &drop) const;
     bool exposed(int c, int r) const;
     void planTo(int tc, int tr);
@@ -196,6 +199,7 @@ private:
     void renderTitle(GFXcanvas16 &canvas);
     void renderHowTo(GFXcanvas16 &canvas, int page);
     void renderScores(GFXcanvas16 &canvas);
+    void renderPicker(GFXcanvas16 &canvas);
 
     // Cell (c, r) is r rows from the north end. World x, z of its corners:
     float cellX0(int c) const { return (float)(c * CELL); }
@@ -207,6 +211,11 @@ private:
     AttractSlide _slide = SLIDE_TITLE;
     unsigned long _slideAt = 0;
     bool  _demo = false;              // the attract demo: silent, nothing kept
+    bool  _test = false;              // a stage-select test run: nothing goes on the table
+    int   _testFrom = 0;              // the course it started on (A at its game over)
+    int   _pick = 0;                  // the picker's course
+    int   _pickDir = 0;               // the stick direction last stepped, for auto-repeat
+    unsigned long _pickRepeatAt = 0, _pickAt = 0;
     unsigned long _demoUntil = 0;
     bool  _silent = false;
     AudioEngine* _audio = nullptr;    // for sfx() from deep in play

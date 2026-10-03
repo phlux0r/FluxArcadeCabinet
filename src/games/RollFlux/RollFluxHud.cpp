@@ -17,7 +17,8 @@ void RollFluxGame::drawCentred(GFXcanvas16 &canvas, const char* text, int y, uin
     canvas.setTextSize(1);
 }
 
-// Top strip: score on the left (DEMO in the demo), gems and spare balls
+// Top strip: score on the left (DEMO in the demo, an orange T before it in
+// a stage-select test run), gems and spare balls
 // on the right, and the clock big in the middle (red, flashing, in the
 // last ten seconds). A banner line under it for news; the dash meter along
 // the bottom. The balls and the meter are in the ball's colour.
@@ -30,6 +31,10 @@ void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
         canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
         canvas.print("DEMO");
     } else {
+        if (_test) {
+            canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+            canvas.print("T ");
+        }
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
         canvas.print(_score);
     }
@@ -142,6 +147,19 @@ void RollFluxGame::renderTitle(GFXcanvas16 &canvas) {
     };
     if (millis() % 1000 < 600) centred("[BTN A] TO PLAY", 106, ArcadeConfig::COLOR_WHITE);
     centred(_scores.bestLine(buf, sizeof(buf), "HI: "), 117, ArcadeConfig::COLOR_YELLOW);
+}
+
+// The stage select, over the course it would start on: its code big, its
+// name, how to step and start.
+void RollFluxGame::renderPicker(GFXcanvas16 &canvas) {
+    canvas.setFont();
+    canvas.fillRect(24, 2, W - 48, 42, PANEL);
+    drawCentred(canvas, "START AT", 5, ArcadeConfig::COLOR_ORANGE);
+    drawCentred(canvas, courseDef().code, 15, guardianCourse() ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2);
+    drawCentred(canvas, courseDef().name, 33, ArcadeConfig::COLOR_WHITE);
+    canvas.fillRect(4, 104, W - 8, 23, PANEL);
+    drawCentred(canvas, "< > COURSE  ^ v WORLD", 106, ArcadeConfig::COLOR_WHITE);
+    drawCentred(canvas, "A: TEST RUN  B: BACK", 117, ArcadeConfig::COLOR_YELLOW);
 }
 
 // How to play: rolling and the course first, then the dash and the pads,

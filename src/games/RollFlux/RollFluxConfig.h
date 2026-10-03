@@ -170,6 +170,10 @@ inline constexpr unsigned long ATTRACT_SLIDE_MS = 6000;
 inline constexpr unsigned long DEMO_MS          = 35000;
 inline constexpr float ORBIT_RADIUS = 1500.0f, ORBIT_HEIGHT = 1300.0f;
 inline constexpr float ORBIT_SPEED  = 0.12f;      // radians a second
+// The stage-select cheat (B held with A on the attract screens): the stick
+// steps through the courses, repeating while held; left alone it goes back.
+inline constexpr unsigned long PICK_TIMEOUT_MS = 20000;
+inline constexpr unsigned long PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
 
 // --- Sound -------------------------------------------------------------------
 inline constexpr const char* MUSIC = "/audio/flux-roll.wav";

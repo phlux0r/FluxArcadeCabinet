@@ -18,12 +18,14 @@ const int16_t FAR = 32767;
 // --- The attract cycle -----------------------------------------------------------
 
 // Title, how to roll, how to dash, the colours, the high scores, all over a slow orbit
-// of course 1; then the demo. A starts a game from any of them.
+// of course 1; then the demo. A starts a game from any of them; B held with
+// A opens the stage select.
 void RollFluxGame::enterAttract() {
     _phase = PHASE_ATTRACT;
     _slide = SLIDE_TITLE;
     _slideAt = millis();
     _demo = false;
+    _test = false;
     _silent = false;
     _course = 0;
     _loop = 0;
@@ -31,6 +33,10 @@ void RollFluxGame::enterAttract() {
 }
 
 bool RollFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (input.btnAPressed && input.btnB) {
+        enterPicker();
+        return updatePicker(canvas, InputState{}, audio);
+    }
     if (input.btnAPressed) {
         startNewGame(audio);
         return updatePlaying(canvas, InputState{}, audio);
@@ -53,6 +59,54 @@ bool RollFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
         case SLIDE_PRISM:  renderHowTo(canvas, 2); break;
         default:           renderScores(canvas); break;
     }
+    return true;
+}
+
+// The stage-select cheat, for trying any course without playing up to it:
+// the stick steps through them (left and right by one, up and down by a
+// world), each orbiting behind its name; A starts a test run there, B goes
+// back to the title, as does leaving it alone.
+void RollFluxGame::enterPicker() {
+    _phase = PHASE_PICK;
+    _pick = 0;
+    _pickDir = 0;
+    _pickAt = millis();
+    loadCourse(_pick);
+}
+
+bool RollFluxGame::updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    const unsigned long now = millis();
+    if (input.btnAPressed) {
+        audio.playTone(900, 80);
+        startNewGame(audio, _pick);
+        return updatePlaying(canvas, InputState{}, audio);
+    }
+    if (input.btnBPressed || now - _pickAt > PICK_TIMEOUT_MS) {
+        enterAttract();
+        return updateAttract(canvas, InputState{}, audio);
+    }
+    bool up, down, left, right;
+    hiscore::screenDirs(input, getRotation(), up, down, left, right);
+    const int dir = right ? 1 : left ? -1 : up ? COURSES_PER_WORLD : down ? -COURSES_PER_WORLD : 0;
+    bool step = false;
+    if (dir != _pickDir) {
+        _pickDir = dir;
+        _pickRepeatAt = now + PICK_REPEAT_DELAY_MS;
+        step = dir != 0;
+    } else if (dir != 0 && (long)(now - _pickRepeatAt) >= 0) {
+        _pickRepeatAt = now + PICK_REPEAT_MS;
+        step = true;
+    }
+    if (step) {
+        _pick = (_pick + dir + COURSE_COUNT) % COURSE_COUNT;
+        _pickAt = now;
+        loadCourse(_pick);
+        audio.playTone(1200, 15);
+    }
+    orbitCamera();
+    updateMovers();
+    renderFrame(canvas, false);
+    renderPicker(canvas);
     return true;
 }
 
