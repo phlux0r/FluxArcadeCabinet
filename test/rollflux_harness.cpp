@@ -937,7 +937,7 @@ static bool scenarioPick() {
     push(false, false, false, true);
     check("down twice: wraps to 4-3", g._pick == idx("4-3"), ok);
     push(false, true, false, false);
-    check("left: 4-2, and its course shown", g._pick == idx("4-2") && g.courseDef().code == COURSES[idx("4-2")].code, ok);
+    check("left: 4-2, and its course shown", g._pick == idx("4-2") && !strcmp(g.courseDef().code, "4-2"), ok);
     frame(g, audio, canvas, b);
     check("B: back to the title", g._phase == RollFluxGame::PHASE_ATTRACT && !g._test, ok);
     // Through to the Prism (3-5), and start there.
