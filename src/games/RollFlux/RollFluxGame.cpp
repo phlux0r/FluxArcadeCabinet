@@ -21,8 +21,12 @@ const SfxDef ROLL_SFX[] = {
     { "/audio/roll_gate.wav",    nullptr,  220,  50 },   // SFX_GATE
     { "/audio/roll_crystal.wav", "/audio/explosion.wav", 0, 0 },   // SFX_CRYSTAL
     { "/audio/roll_bumper.wav",  nullptr,  990,  40 },   // SFX_BUMPER
+    { "/audio/roll_boss_warn.wav", nullptr, 0,   0 },   // SFX_GUARD_WARN
+    { "/audio/roll_boss_hit.wav", nullptr,  660,  90 },  // SFX_GUARD_HIT
+    { "/audio/roll_boss_down.wav", "/audio/star_boss_die.wav", 0, 0 },   // SFX_GUARD_DOWN
+    { "/audio/roll_slam.wav",    nullptr,  110,  80 },   // SFX_SLAM
 };
-static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 12, "one SfxDef per Sfx");
+static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 16, "one SfxDef per Sfx");
 
 // While the demo runs, new sounds are dropped (lifted again whichever way
 // update() returns).
@@ -63,6 +67,7 @@ void RollFluxGame::sfx(Sfx s) {
     if (ROLL_SFX[s].fallback) { _audio->playWAV(ROLL_SFX[s].fallback); return; }
     switch (s) {
         case SFX_SWAP: _audio->playTone(_polarity == 0 ? 1400 : 700, 40); break;
+        case SFX_GUARD_WARN: { static const int n[] = { 220, 0, 220, 0, 220 }, d[] = { 120, 60, 120, 60, 240 }; sfxMelody(n, d, 5); break; }
         case SFX_CHECK: { static const int n[] = { 880, 1175 }, d[] = { 60, 100 }; sfxMelody(n, d, 2); break; }
         case SFX_FALL:  { static const int n[] = { 700, 500, 330, 200 }, d[] = { 60, 60, 60, 120 }; sfxMelody(n, d, 4); break; }
         case SFX_GOAL:  { static const int n[] = { 523, 659, 784, 1047, 784, 1047 }, d[] = { 80, 80, 80, 120, 80, 240 };
@@ -154,6 +159,9 @@ void RollFluxGame::loadCourse(int index) {
                 case '2': cell.kind = K_CONV_S; break;
                 case '6': cell.kind = K_CONV_E; break;
                 case '4': cell.kind = K_CONV_W; break;
+                case 'P': cell.kind = K_PISTON; break;
+                case 'K': cell.kind = K_CORE; break;
+                case 'O': cell.kind = K_RING; break;
                 default:  cell.kind = K_VOID; break;
             }
         }
@@ -185,6 +193,8 @@ void RollFluxGame::loadCourse(int index) {
         mv.px = mv.x; mv.pz = mv.z; mv.py = mv.y; mv.pang = mv.ang;
         mv.vx = mv.vz = 0;
     }
+    _clearGuardian = 0;
+    guardianSetup();
     respawn();
 }
 
@@ -196,8 +206,9 @@ void RollFluxGame::startCourse(AudioEngine &audio) {
     _phase = PHASE_PLAYING;
     _phaseAt = millis();
     snprintf(_bannerBuf, sizeof(_bannerBuf), "%s %s", courseDef().code, courseDef().name);
-    banner(_bannerBuf, ArcadeConfig::COLOR_CYAN, 2000);
-    sfxTone(900, 80);
+    banner(_bannerBuf, guardianCourse() ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2000);
+    if (guardianCourse()) sfx(SFX_GUARD_WARN);
+    else sfxTone(900, 80);
 }
 
 // Back at the start or the last checkpoint, still, facing the way it was.
@@ -388,6 +399,9 @@ void RollFluxGame::collectGems(AudioEngine &audio) {
             cell.flags |= F_TAKEN;
             ++_courseGemsTaken;
             ++_gemsTotal;
+            // A guardian's arena grows its gems back.
+            if (guardianCourse() && _regrowCount < 12)
+                _regrow[_regrowCount++] = Regrow{ (int8_t)c, (int8_t)r, millis() + GEM_REGROW_MS };
             _score += GEM_POINTS;
             _timeMs += GEM_TIME_MS;
             const int before = dashSteps();
@@ -403,14 +417,14 @@ void RollFluxGame::collectGems(AudioEngine &audio) {
 }
 
 // The tally: a hundred a second left, a bonus for no falls and another for
-// every gem; then the next course.
+// every gem (and one for a guardian beaten); then the next course.
 void RollFluxGame::reachGoal(AudioEngine &audio) {
     (void)audio;
     ++_goals;
     _clearTime = (_timeMs / 1000) * TIME_POINTS;
     _clearNoFall = _courseFalls == 0 ? NO_FALL_BONUS : 0;
     _clearAllGems = _courseGems > 0 && _courseGemsTaken == _courseGems ? ALL_GEMS_BONUS : 0;
-    _score += _clearTime + _clearNoFall + _clearAllGems;
+    _score += _clearTime + _clearNoFall + _clearAllGems + _clearGuardian;
     _phase = PHASE_CLEAR;
     _phaseAt = millis();
     _charging = false;
@@ -506,9 +520,11 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     }
     updateDash(in);
     updateMovers();
+    updateGuardian();
     carryBall();
     stepBall(in);
     findOnMover();
+    guardianHits();
     updateLean(in);
     updateCamera(false);
     stepRules(audio);

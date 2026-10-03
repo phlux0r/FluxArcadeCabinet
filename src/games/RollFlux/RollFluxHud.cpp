@@ -65,6 +65,8 @@ void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
     if ((long)(millis() - _bannerUntil) < 0) drawCentred(canvas, _banner, 21, _bannerColour);
     if (_demo && ((millis() / 500) & 1)) drawCentred(canvas, "PRESS A TO PLAY", 31, ArcadeConfig::COLOR_WHITE);
 
+    if (guardianCourse()) drawGuardianBar(canvas);
+
     // The dash meter along the bottom: three steps, each filling with gems;
     // full steps bright, flickering while it charges.
     const int H = canvas.height(), segW = (W - 8) / DASH_STEPS;
@@ -82,10 +84,22 @@ void RollFluxGame::drawHUD(GFXcanvas16 &canvas) {
     }
 }
 
+// A guardian's health: three red blocks over the dash meter.
+void RollFluxGame::drawGuardianBar(GFXcanvas16 &canvas) {
+    const int H = canvas.height(), bw = 14;
+    const int x0 = (W - (GUARDIAN_HP * (bw + 2))) / 2;
+    for (int i = 0; i < GUARDIAN_HP; ++i) {
+        const bool left = i < _gHp;
+        const bool flash = (long)(millis() - _gHitUntil) < 0 && i == _gHp && ((millis() / 100) & 1);
+        canvas.fillRect(x0 + i * (bw + 2), H - 10, bw, 4,
+                        flash ? ArcadeConfig::COLOR_WHITE : left ? ArcadeConfig::COLOR_RED : 0x2104);
+    }
+}
+
 // The tally over the goal: what each bonus added.
 void RollFluxGame::renderClear(GFXcanvas16 &canvas) {
     canvas.fillRect(18, 26, W - 36, 74, PANEL);
-    drawCentred(canvas, "COURSE CLEAR", 31, ArcadeConfig::COLOR_GREEN, 1);
+    drawCentred(canvas, _clearGuardian ? "GUARDIAN DOWN!" : "COURSE CLEAR", 31, ArcadeConfig::COLOR_GREEN, 1);
     char buf[28];
     snprintf(buf, sizeof(buf), "TIME     %6ld", _clearTime);
     drawCentred(canvas, buf, 46, ArcadeConfig::COLOR_WHITE);
@@ -93,8 +107,12 @@ void RollFluxGame::renderClear(GFXcanvas16 &canvas) {
     drawCentred(canvas, buf, 56, _clearNoFall ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_GREY);
     snprintf(buf, sizeof(buf), "ALL GEMS %6ld", _clearAllGems);
     drawCentred(canvas, buf, 66, _clearAllGems ? ArcadeConfig::COLOR_YELLOW : ArcadeConfig::COLOR_GREY);
+    if (_clearGuardian) {
+        snprintf(buf, sizeof(buf), "GUARDIAN %6ld", _clearGuardian);
+        drawCentred(canvas, buf, 74, ArcadeConfig::COLOR_RED);
+    }
     snprintf(buf, sizeof(buf), "SCORE %ld", _score);
-    drawCentred(canvas, buf, 82, ArcadeConfig::COLOR_YELLOW);
+    drawCentred(canvas, buf, 86, ArcadeConfig::COLOR_YELLOW);
 }
 
 // Text with a black shadow a pixel down and right, to read over the course.

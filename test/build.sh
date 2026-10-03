@@ -117,7 +117,7 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
-  for s in physics rules courses god "play 20000" idle demoexit menus; do
+  for s in physics rules courses guardians god "play 20000" idle demoexit menus; do
     echo "=== roll $s"
     # shellcheck disable=SC2086
     ./rollflux_harness $s | tail -24

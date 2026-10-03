@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 16 courses in 4 worlds |
+| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
@@ -176,11 +176,12 @@ three); then it brakes back to the speed it had, so a dash on open floor
 is over within about three cells. A checkpoint row (dark, lit once reached) is where a
 fall puts you back, with the time you had there; out of time, it's a ball
 gone and the course from the top. At the goal: 100 a second left, 2,000
-for no falls, 5,000 for every gem. Sixteen courses in four worlds: the
+for no falls, 5,000 for every gem. Twenty courses in four worlds: the
 Orbit Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb), the
 Ice Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash), the
-Prism Works (3-1 to 3-4) and the Flux Core (4-1 to 4-4); after 4-4 it
-goes round again with 15% less time, to 60%. In the Prism Works the ball's colour matters: tap B to swap
+Prism Works (3-1 to 3-4) and the Flux Core (4-1 to 4-4), each ending with
+a guardian (x-5); after 4-5 it goes round again with 15% less time, to
+60%. In the Prism Works the ball's colour matters: tap B to swap
 it between cyan and magenta (on the release, the stick left alone, at
 most every 0.25s; it shows on the ball, the spare balls and the dash
 meter). Colour gates (bright bars round a cell) let only their colour
@@ -195,7 +196,23 @@ and lifts rise between levels, each waiting a moment at either end;
 steel bridges turn about their middles, lined up with the way across for
 a few seconds at a time; all of them carry a ball riding them. Sweepers
 (glowing red arms) turn about a post and knock the ball away; their
-plazas are railed. The camera follows
+plazas are railed.
+
+Each world ends with a guardian in a railed arena, beaten by three hits
+with a dash on its lit weak point (a big diamond flashing white; dark red
+when shut); plain bumps do nothing. Its health shows as three red blocks
+over the dash meter, and its arena's gems grow back (after 7s) so the
+meter can be filled again. Beaten, the course is clear, with 5,000 more
+in the tally (500 a hit). **The Sweeper** (1-5): a two-armed bar spins
+over the arena; its weak points, the bar's two ends and its middle, light
+in turn. **The Piston** (2-5): pistons under half the arena at a time
+flash orange, then slam up and throw a ball on them; after each slam the
+core drops to the floor, glowing, for a few seconds. **The Prism** (3-5):
+its core is ringed by cyan and magenta panels that swap colours (faster
+as it's hit); come in through one of your colour and dash into it. **The
+Gyre** (4-5): the arena tilts itself against your stick, its ring of floor
+opens a quarter at a time (flashing red first), and its three weak points
+ride round the rim. The camera follows
 behind, turning slowly to the way you roll (but not round to face you
 when you roll back), and the course leans with the stick. Hold B and the
 stick turns the camera instead (the ball rolls on by itself); let go and
@@ -204,7 +221,7 @@ drawn straight into the canvas with Jet's camera maths (not its Scene):
 stage 0 measured that at ~55fps on the board against ~25 through Jet. The
 attract cycle orbits course 1 under the title (drawn live, not an image),
 three how-to-play slides and the scores; the title runs along the top,
-over the course. Still to come (the rest of stage 2): the guardians.
+over the course.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -221,7 +238,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
-| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights |
+| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights; at a guardian, it fills its dash meter from the arena's gems, then lines up on the lit weak point (leading a moving one) and dashes into it |
 
 ## Build
 
@@ -631,6 +648,10 @@ Roll Flux's optional sounds, the same again (none on the card yet):
 | `roll_gate.wav` | bounced off a gate of the other colour | ~80ms | a tone |
 | `roll_crystal.wav` | a crystal wall smashed | ~0.6s | `explosion.wav` |
 | `roll_bumper.wav` | a bumper's kick | ~80ms | a tone |
+| `roll_boss_warn.wav` | a guardian's course starts | ~1.5s | three low beeps |
+| `roll_boss_hit.wav` | a hit on a guardian | ~0.3s | a tone |
+| `roll_boss_down.wav` | a guardian beaten | ~2.5s | `star_boss_die.wav` |
+| `roll_slam.wav` | the Piston's pistons slam | ~0.2s | a tone |
 
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-roll.wav`, `flux-runner.wav`,

@@ -20,7 +20,7 @@ void RollFluxGame::moverAt(const MoverDef &m, unsigned long t, float &x, float &
     y = m.h * HEIGHT_STEP;
     ang = m.ang0 * (float)PI / 180.0f;
     if (m.type == M_SWEEPER) {
-        ang = m.ang0 * (float)PI / 180.0f * (t / 1000.0f);
+        ang = (m.ang1 + m.ang0 * (t / 1000.0f)) * (float)PI / 180.0f;
         return;
     }
     const unsigned long cycle = 2UL * (m.pauseMs + m.moveMs);

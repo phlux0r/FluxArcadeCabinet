@@ -127,6 +127,15 @@ const uint16_t CHECK_LIT[4][2] = {
 // Moving parts: platforms and lifts hazard orange, bridges pale steel,
 // sweepers' arms glowing red; tops then sides.
 const uint16_t PLATFORM_COL[2] = { rgb565(29, 34, 2), rgb565(16, 16, 1) };
+// The guardians: pistons steel (orange flashing as they warn), the core
+// dark red (glowing yellow when it's open to a hit), the ring teal (red
+// flashing as it's about to open).
+const uint16_t PISTON_COL[2] = { rgb565(14, 28, 16), rgb565(11, 22, 13) };
+const uint16_t WARN_COL[2]   = { rgb565(31, 30, 0), rgb565(28, 12, 0) };
+const uint16_t CORE_COL[2]   = { rgb565(18, 4, 4), rgb565(11, 2, 3) };
+const uint16_t CORE_LIT[2]   = { rgb565(31, 52, 6), rgb565(31, 30, 2) };
+const uint16_t RING_COL[2]   = { rgb565(8, 22, 18), rgb565(6, 18, 15) };
+const uint16_t NODE_COL[3]   = { rgb565(14, 4, 4), rgb565(31, 63, 31), rgb565(31, 56, 0) };   // shut, lit, lit
 const uint16_t BRIDGE_COL[2]   = { rgb565(20, 44, 26), rgb565(10, 22, 14) };
 const uint16_t SWEEPER_COL[2]  = { rgb565(31, 22, 2), rgb565(22, 6, 2) };
 // The two colours, cyan and magenta: bright (gates' bars, bridges, the
@@ -201,6 +210,7 @@ void RollFluxGame::cornerHeights(int c, int r, float out[4]) const {
         case K_RAMP_E: out[1] = out[2] = t; break;
         case K_RAMP_W: out[0] = out[3] = t; break;
         case K_CRYSTAL: out[0] = out[1] = out[2] = out[3] = b + CRYSTAL_HEIGHT; break;
+        case K_PISTON: case K_CORE: out[0] = out[1] = out[2] = out[3] = b + extraLift(c, r); break;
         default: break;
     }
 }
@@ -216,6 +226,7 @@ float RollFluxGame::planeAt(int c, int r, float x, float z) const {
         case K_RAMP_E: y += HEIGHT_STEP * fx; break;
         case K_RAMP_W: y += HEIGHT_STEP * (1.0f - fx); break;
         case K_CRYSTAL: y += CRYSTAL_HEIGHT; break;
+        case K_PISTON: case K_CORE: y += extraLift(c, r); break;
         default: break;
     }
     return y;
@@ -348,7 +359,7 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
         if ((e.dc > 0 && camX <= ex) || (e.dc < 0 && camX >= ex) ||
             (e.dr > 0 && camZ >= ez) || (e.dr < 0 && camZ <= ez)) continue;
         float nh[4];
-        const bool nsolid = solid(c + e.dc, r + e.dr);
+        const bool nsolid = present(c + e.dc, r + e.dr);
         if (nsolid) cornerHeights(c + e.dc, r + e.dr, nh);
         const float ba = nsolid ? nh[e.na] : hgt[e.a] - sideDepth;
         const float bb = nsolid ? nh[e.nb] : hgt[e.b] - sideDepth;
@@ -358,6 +369,7 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
         toCam(cx[e.b], fminf(bb, hgt[e.b]), cz[e.b], q[2]);
         toCam(cx[e.a], fminf(ba, hgt[e.a]), cz[e.a], q[3]);
         const uint16_t sc = k.kind == K_CRYSTAL ? CRYSTAL_SIDE[e.col]
+                          : k.kind == K_CORE ? (courseDef().guardian == 3 ? CRYSTAL_SIDE[e.col] : CORE_COL[1])
                           : isBridge(k.kind) ? POLE_COL[needsColour(c, r)][1] : SIDE_COL[e.col];
         drawPoly(buf, w, h, q, 4, fog(sc, depth));
     }
@@ -378,7 +390,13 @@ void RollFluxGame::drawCell(uint16_t* buf, int w, int h, int c, int r, float dep
         return;
     }
     uint16_t col;
-    if (k.kind == K_CRYSTAL) col = CRYSTAL_TOP[chk];
+    if (k.kind == K_CORE) {
+        if (courseDef().guardian == 3) col = CRYSTAL_TOP[(millis() / 250) & 1];
+        else col = _gLit >= 0 ? CORE_LIT[(millis() / 120) & 1] : CORE_COL[0];
+    }
+    else if (k.kind == K_PISTON) col = pistonWarning(c, r) ? WARN_COL[(millis() / 120) & 1] : PISTON_COL[chk];
+    else if (k.kind == K_RING) col = ringWarning(c, r) ? WARN_COL[1 - ((millis() / 120) & 1)] : RING_COL[chk];
+    else if (k.kind == K_CRYSTAL) col = CRYSTAL_TOP[chk];
     else if (isBridge(k.kind)) col = POLE_COL[needsColour(c, r)][chk];
     else if (isConveyor(k.kind)) col = CONVEYOR_COL[chk];
     else if (isRamp(k.kind)) col = RAMP_COL[chk];
@@ -523,6 +541,34 @@ void RollFluxGame::drawMover(uint16_t* buf, int w, int h, int k, float depth) {
             drawBox(buf, w, h, mv.x, mv.z, 0, PLATFORM_HALF, PLATFORM_HALF, mv.y - MOVER_THICK, mv.y,
                     PLATFORM_COL[0], PLATFORM_COL[1], depth);
             break;
+    }
+}
+
+// A guardian's weak point: a big spinning diamond, dark red when shut,
+// flashing white and yellow when open to a hit.
+void RollFluxGame::drawNode(uint16_t* buf, int w, int h, int n) {
+    const float s = NODE_RADIUS * 0.8f, spin = millis() * 0.006f;
+    {
+        const float mx = _gNodeX[n], my = _gNodeY[n], mz = _gNodeZ[n];
+        float tip[2][3], ring[4][3], centre[3];
+        toCam(mx, my + s * 1.4f, mz, tip[0]);
+        toCam(mx, my - s * 1.4f, mz, tip[1]);
+        for (int i = 0; i < 4; ++i) {
+            const float a = spin + i * (float)PI / 2;
+            toCam(mx + cosf(a) * s, my, mz + sinf(a) * s, ring[i]);
+        }
+        toCam(mx, my, mz, centre);
+        const bool lit = n == _gLit;
+        for (int half = 0; half < 2; ++half)
+            for (int i = 0; i < 4; ++i) {
+                float q[3][3];
+                for (int e = 0; e < 3; ++e) { q[0][e] = tip[half][e]; q[1][e] = ring[i][e]; q[2][e] = ring[(i + 1) & 3][e]; }
+                const float fx = (q[0][0] + q[1][0] + q[2][0]) / 3, fy = (q[0][1] + q[1][1] + q[2][1]) / 3,
+                            fz = (q[0][2] + q[1][2] + q[2][2]) / 3;
+                if ((fx - centre[0]) * fx + (fy - centre[1]) * fy + (fz - centre[2]) * fz >= 0) continue;
+                const uint16_t col = lit ? NODE_COL[1 + (((millis() / 120) + i + half) & 1)] : shade565(NODE_COL[0], 0.8f + 0.3f * ((i + half) & 1));
+                drawPoly(buf, w, h, q, 3, fog(col, centre[2]));
+            }
     }
 }
 
@@ -672,7 +718,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
     const float margin = CELL * 0.9f;
     for (int r = 0; r < _h; ++r)
         for (int c = 0; c < _w; ++c) {
-            if (!solid(c, r) || count >= MAX_DRAW - 4) continue;
+            if (!present(c, r) || count >= MAX_DRAW - 4) continue;
             float p[3];
             const float base = (float)(_cells[r][c].h * HEIGHT_STEP);
             toCam(cellX0(c) + CELL * 0.5f, base, cellZ0(r) + CELL * 0.5f, p);
@@ -728,6 +774,13 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             _items[items++] = Item{ fmaxf(sc[2], bc[2] + 1.0f), fy, _bx, _bz, I_SHADOW, 0, 0 };
         }
         _items[items++] = Item{ bc[2], _by, _bx, _bz, I_BALL, 0, 0 };
+    }
+    // A guardian's weak points, as items.
+    for (int i = 0; i < _gNodes && _gHp > 0 && items < MAX_ITEMS; ++i) {
+        float p[3];
+        toCam(_gNodeX[i], _gNodeY[i], _gNodeZ[i], p);
+        if (p[2] < -CELL || p[2] > VIEW_DIST) continue;
+        _items[items++] = Item{ p[2], _gNodeY[i] - NODE_RADIUS, _gNodeX[i], _gNodeZ[i], I_NODE, (uint8_t)i, 0 };
     }
     // Sweepers' arms, as items: at their middles, standing on their floor.
     for (int k = 0; k < _moverCount && items < MAX_ITEMS; ++k) {
@@ -804,6 +857,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             case I_SHADOW: drawShadow(buf, w, h, it.bottom); break;
             case I_BUMPER: drawBumper(buf, w, h, it.c, it.r); break;
             case I_SWEEPER: drawMover(buf, w, h, it.c, it.depth); break;
+            case I_NODE:    drawNode(buf, w, h, it.c); break;
             default:       drawGem(buf, w, h, it.c, it.r); break;
         }
     }

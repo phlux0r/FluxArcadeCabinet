@@ -22,6 +22,9 @@
 //   X    a crystal wall (CRYSTAL_HEIGHT high): a dash smashes it
 //   o    a bumper (on floor)
 //   8 2 6 4  a conveyor carrying north, south, east or west (as a keypad)
+//   P    a piston (the Piston's arena): floor that slams up, throwing the ball
+//   K    a guardian's core: a block, its weak point (the Piston's drops to the floor)
+//   O    the Gyre's ring: floor that opens a quarter at a time
 // =============================================================================
 
 namespace rollflux {
@@ -33,7 +36,7 @@ namespace rollflux {
 // long, a cell wide) turns about a between ang0 and ang1 degrees (0 lies
 // north-south); each waits pauseMs at either end and takes moveMs between.
 // A sweeper is an arm len cells long turning about a at ang0 degrees a
-// second. The landings are the cells either end that it links (for the
+// second, starting at ang1 degrees. The landings are the cells either end that it links (for the
 // autopilot), -1 for none.
 enum MoverType : uint8_t { M_SLIDER, M_LIFT, M_BRIDGE, M_SWEEPER };
 struct MoverDef {
@@ -48,9 +51,12 @@ struct MoverDef {
 
 // code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice
 // Relay, 2 Prism Works, 3 Flux Core); movers, its moving parts if any.
+// guardian: a world's fifth course has one (1 the Sweeper, 2 the Piston,
+// 3 the Prism, 4 the Gyre; 0 none): beaten, the course is clear.
 struct CourseDef {
     const char* code; const char* name; int world, w, h, seconds; const char* const* rows;
     const MoverDef* movers; int moverCount;
+    int guardian;
 };
 
 // 1-1: a tour of the basics: a railed run-up over a boost pad and up a ramp, a
@@ -515,23 +521,103 @@ static const MoverDef COURSE_4_4_MOVERS[] = {
     { M_LIFT, 7.0f, 5.0f, 7.0f, 5.0f, 1, 2, 0.0f, 0, 0, 1500, 1500, 7, 6, 7, 4 },
 };
 
+// 1-5: the Sweeper: a two-armed bar spinning over a railed arena; its weak points (the bar's ends and middle) light in turn.
+static const char* const COURSE_1_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+static const MoverDef COURSE_1_5_MOVERS[] = {
+    { M_SWEEPER, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.2f, 40, 0, 0, 0, -1, -1, -1, -1 },
+    { M_SWEEPER, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.2f, 40, 180, 0, 0, -1, -1, -1, -1 },
+};
+
+// 2-5: the Piston: pistons slam up under half the arena at a time; after each slam the core drops to the floor, glowing.
+static const char* const COURSE_2_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1P1#1P1#1P1*1R....",
+    "..1R1P1#1P1#1P1#1P1R....",
+    "..1R1#1P1#1#1#1P1#1R....",
+    "..1R1P1#1#1K1#1#1P1R....",
+    "..1R1#1P1#1#1#1P1#1R....",
+    "..1R1P1#1P1#1P1#1P1R....",
+    "..1R1*1P1#1P1#1P1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
+// 3-5: the Prism: a core shielded by cyan and magenta panels that swap colours; through one of yours and dash into it.
+static const char* const COURSE_3_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1#1o1#1#1#1o1#1R....",
+    "..1R1#1#1#1c1#1#1#1R....",
+    "..1R1#1#1m1K1m1#1#1R....",
+    "..1R1#1#1#1c1#1#1#1R....",
+    "..1R1#1o1#1#1#1o1#1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
+// 4-5: the Gyre: the arena tilts itself against the stick, a ring of floor opens a quarter at a time, weak points ride round the rim.
+static const char* const COURSE_4_5_ROWS[] PROGMEM = {
+    "......1R1R1R1R1R........",
+    "....1R1#1#1#1#1#1R......",
+    "..1R1#1O1O1O1O1O1#1R....",
+    "..1R1#1O1*1#1*1O1#1R....",
+    "..1R1#1O1#1#1#1O1#1R....",
+    "..1R1#1O1*1#1*1O1#1R....",
+    "..1R1#1O1O1O1O1O1#1R....",
+    "....1R1#1#1#1#1#1R......",
+    "......1R1R1#1R1R........",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
 static const CourseDef COURSES[] = {
     { "1-1", "FIRST ROLL", 0, 12, 36, 60, COURSE_1_1_ROWS },
     { "1-2", "TERRACES", 0, 12, 25, 70, COURSE_1_2_ROWS },
     { "1-3", "ISLANDS", 0, 12, 26, 70, COURSE_1_3_ROWS },
     { "1-4", "THE CLIMB", 0, 12, 30, 80, COURSE_1_4_ROWS },
+    { "1-5", "THE SWEEPER", 0, 12, 14, 90, COURSE_1_5_ROWS, COURSE_1_5_MOVERS, 2, 1 },
     { "2-1", "COLD START", 1, 12, 25, 70, COURSE_2_1_ROWS },
     { "2-2", "SLIPWAY", 1, 12, 25, 75, COURSE_2_2_ROWS },
     { "2-3", "RELAY", 1, 12, 23, 75, COURSE_2_3_ROWS },
     { "2-4", "FROST LINE", 1, 12, 24, 80, COURSE_2_4_ROWS },
+    { "2-5", "THE PISTON", 1, 12, 14, 90, COURSE_2_5_ROWS, nullptr, 0, 2 },
     { "3-1", "PRISM GATES", 2, 12, 21, 75, COURSE_3_1_ROWS },
     { "3-2", "PHASE BRIDGES", 2, 12, 22, 80, COURSE_3_2_ROWS },
     { "3-3", "CONVEYORS", 2, 12, 19, 80, COURSE_3_3_ROWS },
     { "3-4", "PRISM RUN", 2, 12, 23, 85, COURSE_3_4_ROWS },
+    { "3-5", "THE PRISM", 2, 12, 14, 90, COURSE_3_5_ROWS, nullptr, 0, 3 },
     { "4-1", "SHUTTLES", 3, 12, 19, 80, COURSE_4_1_ROWS, COURSE_4_1_MOVERS, 2 },
     { "4-2", "LIFTS", 3, 12, 15, 80, COURSE_4_2_ROWS, COURSE_4_2_MOVERS, 2 },
     { "4-3", "TURNSTILES", 3, 12, 19, 85, COURSE_4_3_ROWS, COURSE_4_3_MOVERS, 3 },
     { "4-4", "FLUX CORE", 3, 12, 24, 95, COURSE_4_4_ROWS, COURSE_4_4_MOVERS, 4 },
+    { "4-5", "THE GYRE", 3, 12, 14, 95, COURSE_4_5_ROWS, nullptr, 0, 4 },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
 

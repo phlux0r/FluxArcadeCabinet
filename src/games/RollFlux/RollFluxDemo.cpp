@@ -218,6 +218,21 @@ void RollFluxGame::pickTarget() {
                 gem = d; gemC = c; gemR = r;
             }
         }
+    if (guardianCourse()) {
+        // In a guardian's arena: with a dash to spend, into the arena (its
+        // south side); else the nearest gem, however far.
+        if (dashSteps() > 0) { planTo(_gCentreC, _gCentreR + 3); return; }
+        gem = -1;
+        for (int r = 0; r < _h; ++r)
+            for (int c = 0; c < _w; ++c) {
+                const int d = planDist(c, r);
+                if (d == FAR || (_cells[r][c].flags & (F_GEM | F_TAKEN)) != F_GEM) continue;
+                if (gem < 0 || d < gem) { gem = d; gemC = c; gemR = r; }
+            }
+        if (gem >= 0) planTo(gemC, gemR);
+        else _pathLen = 0;
+        return;
+    }
     if (gem >= 0) planTo(gemC, gemR);
     else if (gc >= 0) planTo(gc, gr);
     else _pathLen = 0;
@@ -233,9 +248,14 @@ InputState RollFluxGame::pilot(bool useDash) {
     if ((long)(millis() - _holdUntil) < 0 || _phase != PHASE_PLAYING) { _pathLen = 0; _pilotLink = -1; return in; }
     if (_falling) return in;
     if (_pilotLink >= 0) return linkPilot();
+    // A guardian with a dash step to spend (or one charging): go for it,
+    // once in its arena (getting there, and to gems, is by the plan).
+    const bool inArena = guardianCourse() && abs(colAt(_bx) - _gCentreC) <= 3 && abs(rowAt(_bz) - _gCentreR) <= 3;
+    if (inArena && _gHp > 0 && (dashSteps() > 0 || _charging || (long)(millis() - _pilotChargeUntil) < 0))
+        return guardianPilot();
     const int bc = colAt(_bx), br = rowAt(_bz);
     const bool targetGone = _targetC >= 0 && (_cells[_targetR][_targetC].flags & F_TAKEN);
-    const bool forGoal = _targetC >= 0 && _cells[_targetR][_targetC].kind == K_GOAL;
+    const bool forGoal = _targetC >= 0 && (_cells[_targetR][_targetC].kind == K_GOAL || guardianCourse());
     if (_pathLen == 0 || targetGone || (forGoal && (long)(millis() - _pilotRepickAt) >= 0)) {
         pickTarget();
         _pilotRepickAt = millis() + 1000;
@@ -327,6 +347,13 @@ InputState RollFluxGame::pilot(bool useDash) {
         if (_cells[r][c].kind == K_ICE) want = fminf(want, 240.0f);
         if (exposed(c, r)) want = fminf(want, 340.0f);
     }
+    // The Gyre's ring: off it quickly if it's about to open under the ball;
+    // wait for the next cell if that's open or about to be.
+    if (_cells[br][bc].kind == K_RING && (ringOpen(bc, br) || ringWarning(bc, br))) want = 520.0f;
+    else if (_pathPos + 1 < _pathLen) {
+        const int nc = _path[_pathPos + 1] % MAX_COURSE_W, nr = _path[_pathPos + 1] / MAX_COURSE_W;
+        if (_cells[nr][nc].kind == K_RING && (ringOpen(nc, nr) || ringWarning(nc, nr))) want = 0;
+    }
     float dx = tx - _bx, dz = tz - _bz;
     const float d = sqrtf(dx * dx + dz * dz) + 1e-3f;
     if (aim == _pathLen - 1) want = fminf(want, 120.0f + d * 2.0f);
@@ -342,6 +369,8 @@ InputState RollFluxGame::pilot(bool useDash) {
     if (here == K_RAMP_S) az -= SLOPE_GRAVITY;
     if (here == K_RAMP_E) ax += SLOPE_GRAVITY;
     if (here == K_RAMP_W) ax -= SLOPE_GRAVITY;
+    ax -= _gyreTiltX;
+    az -= _gyreTiltZ;
     if (isConveyor(here)) {
         static const float CX[4] = { 0, 0, 1, -1 }, CZ[4] = { 1, -1, 0, 0 };
         const int cd = here - K_CONV_N;
@@ -407,12 +436,108 @@ InputState RollFluxGame::pilot(bool useDash) {
     return in;
 }
 
+// At a guardian, with a dash to spend: line up on its open weak point
+// (where it'll be, for one that moves) from about a cell and a half off,
+// charge, and let go aimed at it. The Piston's core: wait south of it,
+// off the pistons, until it's down. The Prism's core: come in along one
+// of its panels, in that panel's colour.
+InputState RollFluxGame::guardianPilot() {
+    InputState in{};
+    const int g = courseDef().guardian;
+    const float cx = cellX0(_gCentreC) + CELL * 0.5f, cz = cellZ0(_gCentreR) + CELL * 0.5f;
+    float tx, tz;                  // what to hit
+    float ax, az;                  // where to dash from
+    bool open = _gLit >= 0 || g == 3;
+    if (g == 3) {
+        // The panel side nearest the ball; its colour, to match.
+        static const int PDC[4] = { 0, 0, 1, -1 }, PDR[4] = { -1, 1, 0, 0 };
+        int best = 0;
+        float bestD = 1e30f;
+        for (int d = 0; d < 4; ++d) {
+            const float px = cx + PDC[d] * CELL * 2, pz = cz - PDR[d] * CELL * 2;
+            const float dd = (px - _bx) * (px - _bx) + (pz - _bz) * (pz - _bz);
+            if (dd < bestD) { bestD = dd; best = d; }
+        }
+        tx = cx; tz = cz;
+        ax = cx + PDC[best] * CELL * 1.9f;
+        az = cz - PDR[best] * CELL * 1.9f;
+        const int pc = _gCentreC + PDC[best], pr = _gCentreR + PDR[best];
+        const int need = needsColour(pc, pr);
+        if (_pilotB) { _pilotB = false; }
+        else if (need >= 0 && need != _polarity && !_charging && (long)(millis() - _swapReadyAt) >= 0 &&
+                 !isGate(_cells[rowAt(_bz)][colAt(_bx)].kind)) {
+            _pilotB = true;
+            in.btnB = true;
+            return in;
+        }
+        open = open && (long)(millis() - _gHitUntil) >= 0 && need == _polarity;
+    } else if (g == 2) {
+        tx = cx; tz = cz;
+        ax = cx; az = cz - CELL * 2.0f;          // two cells south, off the pistons
+    } else {
+        // The lit one (or the next to light, to be near it), where it'll be.
+        const int n = _gLit >= 0 ? _gLit : 0;
+        const float lead = 0.35f;
+        tx = _gNodeX[n] + _gNodeVX[n] * lead;
+        tz = _gNodeZ[n] + _gNodeVZ[n] * lead;
+        float dx = _bx - tx, dz = _bz - tz;
+        const float d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+        ax = tx + dx / d * CELL * 1.5f;
+        az = tz + dz / d * CELL * 1.5f;
+    }
+    // Charging: aim at it; let go when charged.
+    const bool holding = (long)(millis() - _pilotChargeUntil) < 0;
+    float dx = tx - _bx, dz = tz - _bz;
+    const float dist = sqrtf(dx * dx + dz * dz) + 1e-3f;
+    auto aimed = [&]() {
+        // A full push of the stick towards it, camera-relative.
+        const float wx = dx / dist, wz = dz / dist;
+        const float fx = sinf(_yaw), fz = cosf(_yaw), rx = cosf(_yaw), rz = -sinf(_yaw);
+        InputState a{};
+        a.joyX = -(wx * fx + wz * fz);
+        a.joyY = wx * rx + wz * rz;
+        return a;
+    };
+    if (_charging || holding) {
+        in = aimed();
+        in.btnA = holding;
+        return in;
+    }
+    const float ex = ax - _bx, ez = az - _bz, toStart = sqrtf(ex * ex + ez * ez);
+    if (open && dist > CELL * 0.9f && dist < CELL * 2.4f && toStart < CELL * 0.6f &&
+        (long)(millis() - _pilotGuardNext) >= 0 && dashSteps() > 0) {
+        _pilotChargeUntil = millis() + DASH_CHARGE_MS + 20;
+        _pilotGuardNext = millis() + 1500;
+        in = aimed();
+        in.btnA = true;
+        return in;
+    }
+    // To the place to dash from, slowing as it gets there; but not on to
+    // the Gyre's ring where it's open or about to be (wait where it is, or
+    // back off towards the middle if it's on it).
+    float v = fminf(320.0f, toStart * 3.0f);
+    float wx = ex / (toStart + 1e-3f), wz = ez / (toStart + 1e-3f);
+    if (g == 4) {
+        auto risky = [&](float x, float z) {
+            const int c = colAt(x), r = rowAt(z);
+            return solid(c, r) && _cells[r][c].kind == K_RING && (ringOpen(c, r) || ringWarning(c, r));
+        };
+        if (risky(_bx, _bz)) {
+            const float mx = cx - _bx, mz = cz - _bz, md = sqrtf(mx * mx + mz * mz) + 1e-3f;
+            wx = mx / md; wz = mz / md; v = 300.0f;
+        } else if (risky(_bx + wx * CELL * 0.6f, _bz + wz * CELL * 0.6f)) {
+            v = 0;
+        }
+    }
+    return stickFor(wx * v, wz * v);
+}
+
 // The stick that closes the gap to the velocity wanted (with friction's
 // drag allowed for), camera-relative.
 InputState RollFluxGame::stickFor(float wantVx, float wantVz) const {
     InputState in{};
-    float ax = (wantVx - _vx) * 5.0f + BALL_FRICTION * _vx;
-    float az = (wantVz - _vz) * 5.0f + BALL_FRICTION * _vz;
+    float ax = (wantVx - _vx) * 5.0f + BALL_FRICTION * _vx - _gyreTiltX;
+    float az = (wantVz - _vz) * 5.0f + BALL_FRICTION * _vz - _gyreTiltZ;
     ax /= BALL_ACCEL;
     az /= BALL_ACCEL;
     const float m = sqrtf(ax * ax + az * az);

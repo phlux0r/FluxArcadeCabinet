@@ -35,6 +35,13 @@ using namespace rollflux;
 
 static const unsigned long STEP_MS = 33;
 
+// A course's index, by its code ("2-1").
+static int idx(const char* code) {
+    for (int k = 0; k < COURSE_COUNT; ++k) if (!strcmp(COURSES[k].code, code)) return k;
+    printf("no course %s\n", code);
+    exit(1);
+}
+
 static bool check(const char* what, bool cond, bool &ok) {
     printf("  %-66s %s\n", what, cond ? "ok" : "BAD");
     ok &= cond;
@@ -180,13 +187,13 @@ static bool scenarioPhysics() {
         g.loadCourse(0);
         return landed;
     };
-    check("a full dash clears a two-cell gap", jump(4, 9, true), ok);
-    check("but not a three-cell one", !jump(7, 12, true), ok);
-    check("and rolling at top speed doesn't clear the two", !jump(4, 9, false), ok);
+    check("a full dash clears a two-cell gap", jump(idx("2-1"), 9, true), ok);
+    check("but not a three-cell one", !jump(idx("2-4"), 12, true), ok);
+    check("and rolling at top speed doesn't clear the two", !jump(idx("2-1"), 9, false), ok);
     // But it doesn't fling the ball on: on open floor (1-2's long row 18,
     // east from its west end) a full dash from a standstill is over within
     // about three and a half cells, braked back to a steady roll.
-    g.loadCourse(1);
+    g.loadCourse(idx("1-2"));
     at(g, 1, 18);
     const float dashX0 = g._bx;
     g.startDash(1, 0, DASH_SPEED_MAX);
@@ -201,7 +208,7 @@ static bool scenarioPhysics() {
     // A colour gate (3-1 row 9, magenta) turns a cyan ball back; magenta
     // passes.
     auto throughGate = [&](int polarity) {
-        g.loadCourse(8);
+        g.loadCourse(idx("3-1"));
         at(g, 5.5f, 10.4f);
         g._polarity = polarity;
         g._vz = 500;
@@ -215,7 +222,7 @@ static bool scenarioPhysics() {
     // A phase bridge (3-2 row 10, magenta) holds a magenta ball and drops a
     // cyan one; swapped to magenta in the air over it, it lands on it.
     auto onBridge = [&](int polarity, float drop) {
-        g.loadCourse(9);
+        g.loadCourse(idx("3-2"));
         g._polarity = 1;                       // on it to start with, at its height
         at(g, 5, 10.5f);
         g._polarity = polarity;
@@ -229,7 +236,7 @@ static bool scenarioPhysics() {
     check("and drops a cyan one", !onBridge(0, 0), ok);
     check("swapped to magenta in the air over it, the ball lands on it", onBridge(1, 30.0f), ok);
     // A crystal wall (3-1 row 13) is a wall to a roll, smashed by a dash.
-    g.loadCourse(8);
+    g.loadCourse(idx("3-1"));
     at(g, 5, 14);
     g._vz = 600;
     for (int f = 0; f < 20; ++f) run(g, -1.0f, 0, 1);
@@ -248,7 +255,7 @@ static bool scenarioPhysics() {
     snprintf(line, sizeof(line), "a bumper kicks the ball off it (600 in, %.0f back)", kick);
     check(line, kick > BUMPER_KICK * 0.8f, ok);
     // A conveyor (3-3 row 10, east) carries a ball at rest along.
-    g.loadCourse(10);
+    g.loadCourse(idx("3-3"));
     at(g, 3, 10);
     for (int f = 0; f < 20; ++f) run(g, 0, 0, 1);
     snprintf(line, sizeof(line), "a conveyor carries a ball at rest along (%.0f east)", g._vx);
@@ -448,7 +455,7 @@ static bool scenarioRules() {
     // The Flux Core's moving parts (4-1 to 4-3), through the whole game
     // loop. A slider carries a ball sitting on it to its far end.
     auto onCourse = [&](int k) { g._course = k; g.startCourse(audio); g._holdUntil = 0; };
-    onCourse(12);
+    onCourse(idx("4-1"));
     at(g, 9, 12);
     frame(g, audio, canvas);
     const bool rode = g._onMover == 0;
@@ -458,13 +465,13 @@ static bool scenarioRules() {
     check(line, rode && g._onMover == 0 && !g._falling && fabsf(g._bz - g._movers[0].z) < 20.0f &&
           g.rowAt(g._bz) == 10, ok);
     // A lift raises it two steps.
-    onCourse(13);
+    onCourse(idx("4-2"));
     at(g, 2, 9);
     for (int f = 0; f < 110; ++f) frame(g, audio, canvas);
     snprintf(line, sizeof(line), "a lift raises a ball on it (to %.0f)", g._by);
     check(line, !g._falling && g._by > 2 * HEIGHT_STEP - 2, ok);
     // A turning bridge turns a ball near one end round with it.
-    onCourse(14);
+    onCourse(idx("4-3"));
     at(g, 6, 11.3f);
     const float pivotX = g._movers[0].x;
     for (int f = 0; f < 150; ++f) frame(g, audio, canvas);
@@ -472,7 +479,7 @@ static bool scenarioRules() {
              g._bx - pivotX, g._onMover == 0);
     check(line, fabsf(g._bx - pivotX) > 100.0f && g._onMover == 0 && !g._falling, ok);
     // A sweeper's arm coming round knocks a ball in its way.
-    onCourse(14);
+    onCourse(idx("4-3"));
     at(g, 7, 8);
     float knocked = 0;
     for (int f = 0; f < 90; ++f) { frame(g, audio, canvas); knocked = fmaxf(knocked, sqrtf(g._vx * g._vx + g._vz * g._vz)); }
@@ -543,6 +550,115 @@ static bool scenarioRules() {
     return ok;
 }
 
+// The guardians' rules, one at a time on their own courses: a weak point
+// hit only by a dash while it's lit; the Piston's slam throws a ball up and
+// its core drops, lit; the Prism's core hit through a panel of the ball's
+// colour and not through the other; the Gyre's ring opens under a ball and
+// its tilt pushes one; three hits beat one (the course clear, the bonus
+// in); its gems grow back.
+static bool scenarioGuardians() {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    fresh(g, audio, canvas);
+    bool ok = true;
+    char line[112];
+    printf("guardians:\n");
+    auto onCourse = [&](const char* code) { g._course = idx(code); g.startCourse(audio); g._holdUntil = 0; };
+    auto wait = [&](unsigned long ms) { for (unsigned long t = 0; t < ms; t += STEP_MS) frame(g, audio, canvas); };
+
+    // The Sweeper: its lit point, touched without a dash, then with one.
+    onCourse("1-5");
+    wait(GUARDIAN_GRACE_MS + 200);
+    check("the Sweeper: one weak point lit after its start", g._gLit >= 0 && g._gHp == GUARDIAN_HP, ok);
+    const int lit = g._gLit;
+    g._bx = g._gNodeX[lit]; g._bz = g._gNodeZ[lit]; g._by = g._gNodeY[lit] - BALL_RADIUS;
+    g._dashUntil = 0;
+    g.guardianHits();
+    check("a plain bump on it does nothing", g._gHp == GUARDIAN_HP, ok);
+    g._dashUntil = g_fakeMillis + 100;
+    g.guardianHits();
+    check("a dash into it is a hit, and it shuts a moment", g._gHp == GUARDIAN_HP - 1 && g._gLit < 0, ok);
+    g.guardianHits();
+    check("not hit again while it's shut", g._gHp == GUARDIAN_HP - 1, ok);
+    // Three hits: beaten, the course clear, its bonus in the tally.
+    for (int i = 0; i < 2; ++i) {
+        g._gHitUntil = 0;
+        g.updateGuardian();
+        g._gLit = 0;
+        g._bx = g._gNodeX[0]; g._bz = g._gNodeZ[0]; g._by = g._gNodeY[0] - BALL_RADIUS;
+        g._dashUntil = g_fakeMillis + 100;
+        g.guardianHits();
+    }
+    check("three hits beat it: the course clear, the guardian's bonus in the tally",
+          g._gHp == 0 && g._phase == RollFluxGame::PHASE_CLEAR && g._clearGuardian == GUARDIAN_POINTS, ok);
+
+    // The Piston: a slamming piston throws a ball on it up; the core's a
+    // wall when up, then down at the floor and lit.
+    onCourse("2-5");
+    check("the Piston: its core starts up, a wall", g.extraLift(g._gCentreC, g._gCentreR) >= CORE_RISE - 1, ok);
+    wait(GUARDIAN_GRACE_MS + PISTON_WARN_MS - 300);
+    at(g, 3, 1);                                     // a piston in the north half, slamming first
+    bool thrown = false;
+    for (int f = 0; f < 20 && !thrown; ++f) { frame(g, audio, canvas); thrown = g._falling && g._vy > 0; }
+    check("a slamming piston throws a ball on it up", thrown, ok);
+    wait(PISTON_FALL_MS - PISTON_WARN_MS + 300);
+    snprintf(line, sizeof(line), "after the slam its core is down at the floor (%.0f up) and lit",
+             g.extraLift(g._gCentreC, g._gCentreR));
+    check(line, g.extraLift(g._gCentreC, g._gCentreR) < 1.0f && g._gLit == 0, ok);
+
+    // The Prism: from two cells south of its core, a dash north through
+    // the south panel: a hit in the panel's colour, a bounce in the other.
+    auto prismDash = [&](bool match) {
+        onCourse("3-5");
+        wait(GUARDIAN_GRACE_MS + 100);
+        const int pc = g._gCentreC, pr = g._gCentreR + 1;
+        const int panel = g.needsColour(pc, pr);
+        at(g, pc, g._gCentreR + 2);
+        g._polarity = match ? panel : 1 - panel;
+        g.startDash(0, 1, DASH_SPEED_MAX);
+        for (int f = 0; f < 10; ++f) run(g, 0, 0, 1);
+        return g._gHp;
+    };
+    check("the Prism: a dash through a panel of the ball's colour hits its core", prismDash(true) == GUARDIAN_HP - 1, ok);
+    check("through the other colour, it's turned back, no hit", prismDash(false) == GUARDIAN_HP, ok);
+
+    // The Gyre: its ring opens under a ball on it; its tilt pushes one at rest.
+    onCourse("4-5");
+    wait(GUARDIAN_GRACE_MS + RING_OPEN_MS + 100);
+    int oc = -1, orr = -1;
+    for (int r = 0; r < g._h && oc < 0; ++r)
+        for (int c = 0; c < g._w; ++c)
+            if (g.solid(c, r) && g._cells[r][c].kind == RollFluxGame::K_RING && g.ringOpen(c, r)) { oc = c; orr = r; break; }
+    bool fell = false;
+    if (oc >= 0) {
+        g._bx = (oc + 0.5f) * CELL; g._bz = (g._h - 1 - orr + 0.5f) * CELL; g._by = HEIGHT_STEP;
+        g._vx = g._vz = 0; g._falling = false;
+        frame(g, audio, canvas);
+        fell = g._falling;
+    }
+    check("the Gyre: a quarter of its ring open, a ball on it falls", oc >= 0 && fell, ok);
+    at(g, (float)g._gCentreC, (float)g._gCentreR);
+    for (int f = 0; f < 30; ++f) frame(g, audio, canvas);
+    snprintf(line, sizeof(line), "its tilt pushes a ball at rest (to %.0f)", sqrtf(g._vx * g._vx + g._vz * g._vz));
+    check(line, sqrtf(g._vx * g._vx + g._vz * g._vz) > 100.0f, ok);
+
+    // Its gems grow back.
+    onCourse("1-5");
+    int gc = -1, gr = -1;
+    for (int r = 0; r < g._h && gc < 0; ++r)
+        for (int c = 0; c < g._w; ++c)
+            if (g._cells[r][c].flags & RollFluxGame::F_GEM) { gc = c; gr = r; break; }
+    at(g, (float)gc, (float)gr);
+    frame(g, audio, canvas);
+    const bool taken = g._cells[gr][gc].flags & RollFluxGame::F_TAKEN;
+    g.respawn();                                     // out of the arena, out of the arms' way
+    wait(GEM_REGROW_MS + 200);
+    check("a guardian's arena grows its gems back", taken && !(g._cells[gr][gc].flags & RollFluxGame::F_TAKEN), ok);
+    printf("guardians -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 // Every course: well formed (one start, a goal), and the autopilot's
 // planner finds a way from the start to the goal and to every gem, and on
 // from each gem to the goal.
@@ -586,7 +702,9 @@ static bool scenarioCourses() {
         char line[96];
         snprintf(line, sizeof(line), "%s %-12s %2dx%-2d %3ds: one start, a goal, a way through, %d/%d/%d gems",
                  def.code, def.name, def.w, def.h, def.seconds, gemsReached, gemsOut, gems);
-        check(line, badRows == 0 && starts == 1 && goals >= 1 && toGoal && gemsReached == gems && gemsOut == gems, ok);
+        // (A guardian's arena has no goal: beating it clears the course.)
+        check(line, badRows == 0 && starts == 1 && gemsReached == gems &&
+              (def.guardian ? goals == 0 : goals >= 1 && toGoal && gemsOut == gems), ok);
     }
     printf("courses -> %s\n", ok ? "PASS" : "FAIL");
     return ok;
@@ -702,7 +820,8 @@ static bool scenarioIdle() {
           seen[0] > 0 && seen[1] > 0 && seen[2] > 0 && seen[3] > 0 && seen[4] > 0, ok);
     char line[96];
     snprintf(line, sizeof(line), "then the demo, rolling (%ld of %ld frames moving)", demoMoved, demoFrames);
-    check(line, demoFrames > 300 && demoMoved > demoFrames / 2, ok);
+    // (A third: at a guardian it waits for a weak point to open.)
+    check(line, demoFrames > 300 && demoMoved > demoFrames / 3, ok);
     snprintf(line, sizeof(line), "the demo makes no sound (%d heard, %d dropped)", audibleInDemo, audio.silencedCalls);
     check(line, audibleInDemo == 0, ok);
     check("and back to the title, the high scores untouched", !g._demo && g._slide == RollFluxGame::SLIDE_TITLE &&
@@ -798,31 +917,37 @@ static void scenarioPose() {
         { "behind",   0, 5.5f, 20.7f, 0,   60,  0, 0, false },
         // Other courses: the climb's levels, and the Ice Relay's palette with
         // the dash gap ahead and the ball glowing in a dash.
-        { "climb",    3, 5.5f, 24.5f, 0,    0,  0, 0, false },
-        { "icerelay", 4, 5.5f, 10.5f, 0,    0,  0, 0, true },
-        { "frost",    7, 5.5f, 21.5f, 0,    0,  0, 0, false },
+        { "climb",    idx("1-4"), 5.5f, 24.5f, 0,    0,  0, 0, false },
+        { "icerelay", idx("2-1"), 5.5f, 10.5f, 0,    0,  0, 0, true },
+        { "frost",    idx("2-4"), 5.5f, 21.5f, 0,    0,  0, 0, false },
         // Charging a dash: the aim line ahead, a little to the right.
         { "aim",      0, 5.5f, 23.5f, 0,    0,  0, 0, false },
         // The Prism Works: a magenta gate ahead of a cyan ball, the crystal
         // wall, the bumpers' plaza, phase bridges, the conveyors.
-        { "gate",     8, 5.5f, 11.5f, 0,    0,  0, 0, false },
-        { "crystal",  8, 5.5f, 16.5f, 0,    0,  0, 0, false },
-        { "bumpers",  8, 5.5f, 7.5f,  0,    0,  0, 0, false },
-        { "bridges",  9, 5.5f, 12.5f, 0,    0,  0, 0, false },
-        { "bridges2", 9, 5.5f, 6.0f,  0,    0,  0, 0, false },
-        { "conveyor", 10, 5.5f, 13.5f, 0,   0,  0, 0, false },
+        { "gate",     idx("3-1"), 5.5f, 11.5f, 0,    0,  0, 0, false },
+        { "crystal",  idx("3-1"), 5.5f, 16.5f, 0,    0,  0, 0, false },
+        { "bumpers",  idx("3-1"), 5.5f, 7.5f,  0,    0,  0, 0, false },
+        { "bridges",  idx("3-2"), 5.5f, 12.5f, 0,    0,  0, 0, false },
+        { "bridges2", idx("3-2"), 5.5f, 6.0f,  0,    0,  0, 0, false },
+        { "conveyor", idx("3-3"), 5.5f, 13.5f, 0,   0,  0, 0, false },
         // The Flux Core: a shuttle waiting, a lift, the sweeper's plaza
         // with a turning bridge beyond, a ball riding a bridge.
-        { "shuttle",  12, 9.0f, 14.5f, 0,   0,  0, 0, false },
-        { "lift",     13, 3.5f, 11.0f, -30, 0,  0, 0, false },
-        { "sweeper",  14, 6.0f, 9.5f,  0,   0,  0, 0, false },
-        { "ridebridge", 14, 6.0f, 11.5f, 0, 0,  0, 0, false },
+        { "shuttle",  idx("4-1"), 9.0f, 14.5f, 0,   0,  0, 0, false },
+        { "lift",     idx("4-2"), 3.5f, 11.0f, -30, 0,  0, 0, false },
+        { "sweeper",  idx("4-3"), 6.0f, 9.5f,  0,   0,  0, 0, false },
+        { "ridebridge", idx("4-3"), 6.0f, 11.5f, 0, 0,  0, 0, false },
+        // The guardians' arenas, from their entrances.
+        { "g_sweeper", idx("1-5"), 5.0f, 8.5f, 0,  0,  0, 0, false },
+        { "g_piston",  idx("2-5"), 5.0f, 8.5f, 0,  0,  0, 0, false },
+        { "g_prism",   idx("3-5"), 5.0f, 8.5f, 0,  0,  0, 0, false },
+        { "g_gyre",    idx("4-5"), 5.0f, 8.5f, 0,  0,  0, 0, false },
     };
     for (const Spot &s : spots) {
         g.loadCourse(s.course);
         g._course = s.course;
         at(g, s.c, s.r);
         g._dashUntil = s.glow ? g_fakeMillis + 1000 : 0;
+        g.updateGuardian();
         g._charging = !strcmp(s.name, "aim");
         g._aimX = 0.38f; g._aimZ = 0.92f;
         g._yaw = s.yawDeg * (float)PI / 180.0f;
@@ -865,6 +990,7 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "physics")) ok &= scenarioPhysics();
     if (all || !strcmp(which, "rules")) ok &= scenarioRules();
     if (all || !strcmp(which, "courses")) ok &= scenarioCourses();
+    if (all || !strcmp(which, "guardians")) ok &= scenarioGuardians();
     if (all || !strcmp(which, "god")) ok &= scenarioGod(frames ? frames : 4000);
     if (all || !strcmp(which, "play")) ok &= scenarioPlay(frames ? frames : 20000);
     if (all || !strcmp(which, "idle")) ok &= scenarioIdle();

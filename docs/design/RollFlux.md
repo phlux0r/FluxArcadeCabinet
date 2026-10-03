@@ -183,6 +183,28 @@ lined up with time to cross), boards it, keeps still on it till it waits
 at the far end, and gets off. `god` clears all sixteen courses. The
 title now runs along the top, the course behind it uncovered.
 
+### Stage 2, part 3: the guardians, built
+
+Each world's fifth course (1-5, 2-5, 3-5, 4-5) is a guardian in a railed
+arena, as section 9, beaten by GUARDIAN_HP hits with a dash on a lit
+weak point (shut and flashing for GUARDIAN_SHUT_MS after each). Its gems
+grow back after GEM_REGROW_MS so the dash meter can refill. The Sweeper
+is two sweeper arms on one pivot, its weak points their ends and the
+pivot, lit in turn. The Piston's pistons (P cells) slam up under half the
+arena at a time after a warning, throwing a ball on one up (mostly back
+inside the rails); its core (K) is a wall but for a few seconds after
+each slam, when it's down and lit. The Prism's core is a wall ringed by
+four gate cells whose colours swap (faster as it's hit), hit by a dash
+met in the wall test through a panel of the ball's colour. The Gyre tilts
+its arena (an acceleration turning round), opens its ring (O cells) a
+quarter at a time after a warning, and has three weak points riding
+round. All run on the clock from the course's start. The autopilot fills
+its meter from the arena's gems, comes into the arena by its plan, and
+lines up on the lit weak point from about a cell and a half (leading a
+moving one), charges, and dashes; at the Piston it waits off the pistons
+for the core to drop, at the Prism it swaps to a panel's colour first,
+on the Gyre it keeps off ring that's about to open. `god` beats all four.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

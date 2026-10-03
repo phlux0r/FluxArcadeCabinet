@@ -47,13 +47,16 @@ private:
                           // Stage 2 (the Prism Works): colour gates and phase bridges, cyan
                           // then magenta; crystal walls; bumpers; conveyors.
                           K_GATE_C, K_GATE_M, K_BRIDGE_C, K_BRIDGE_M, K_CRYSTAL, K_BUMPER,
-                          K_CONV_N, K_CONV_S, K_CONV_E, K_CONV_W };
+                          K_CONV_N, K_CONV_S, K_CONV_E, K_CONV_W,
+                          // The guardians' arenas: pistons, a core, a ring that opens.
+                          K_PISTON, K_CORE, K_RING };
     enum CellFlag : uint8_t { F_RAIL = 1, F_GEM = 2, F_TAKEN = 4 };
     enum Dir : uint8_t { D_N, D_S, D_E, D_W };
     struct Cell { uint8_t kind = K_VOID, h = 0, flags = 0; };
     // Optional sounds on the card, each with a fallback (RollFluxGame.cpp).
     enum Sfx : uint8_t { SFX_BUMP, SFX_GEM, SFX_BOOST, SFX_CHARGE, SFX_DASH, SFX_CHECK, SFX_FALL,
-                         SFX_GOAL, SFX_SWAP, SFX_GATE, SFX_CRYSTAL, SFX_BUMPER, SFX_COUNT };
+                         SFX_GOAL, SFX_SWAP, SFX_GATE, SFX_CRYSTAL, SFX_BUMPER,
+                         SFX_GUARD_WARN, SFX_GUARD_HIT, SFX_GUARD_DOWN, SFX_SLAM, SFX_COUNT };
 
     static bool isRamp(uint8_t k)  { return k >= K_RAMP_N && k <= K_RAMP_W; }
     static bool isBoost(uint8_t k) { return k >= K_BOOST_N && k <= K_BOOST_W; }
@@ -69,7 +72,8 @@ private:
     }
     // There and solid to this ball: a phase bridge only in its own colour.
     bool standable(int c, int r) const {
-        return solid(c, r) && !(isBridge(_cells[r][c].kind) && needsColour(c, r) != _polarity);
+        return solid(c, r) && !(isBridge(_cells[r][c].kind) && needsColour(c, r) != _polarity)
+            && !(_cells[r][c].kind == K_RING && ringOpen(c, r));
     }
 
     // --- RollFluxGame.cpp ---
@@ -111,6 +115,20 @@ private:
     void carryBall();
     void findOnMover();
     void sweepers();
+    // The guardians (RollFluxGuardians.cpp).
+    void guardianSetup();
+    void updateGuardian();
+    void guardianHits();
+    void hitGuardian();
+    float extraLift(int c, int r) const;          // a piston's or core's rise now
+    bool ringOpen(int c, int r) const;             // the Gyre's ring, open there now
+    bool ringWarning(int c, int r) const;          // about to open
+    bool pistonWarning(int c, int r) const;        // about to slam
+    bool present(int c, int r) const { return solid(c, r) && !(_cells[r][c].kind == K_RING && ringOpen(c, r)); }
+    bool guardianCourse() const { return courseDef().guardian != 0; }
+    InputState guardianPilot();
+    void drawNode(uint16_t* buf, int w, int h, int n);
+    void drawGuardianBar(GFXcanvas16 &canvas);
     bool moverFloor(float x, float z, float &y, int* which = nullptr) const;
     bool moverReady(int k, bool atB, unsigned long needMs) const;
     void moverAt(const MoverDef &m, unsigned long t, float &x, float &z, float &y, float &ang) const;
@@ -264,7 +282,24 @@ private:
     int   _lives = START_LIVES;
     long  _gemsTotal = 0;             // every gem this game, for extra lives
     long  _goals = 0, _falls = 0;
-    long  _clearTime = 0, _clearNoFall = 0, _clearAllGems = 0;   // the tally
+    long  _clearTime = 0, _clearNoFall = 0, _clearAllGems = 0, _clearGuardian = 0;   // the tally
+
+    // --- The guardian, on a world's fifth course: its weak points (lit one
+    // to hit with a dash), what's left of it, and its rhythm.
+    int   _gHp = 0;
+    int   _gCentreC = 0, _gCentreR = 0;   // its core, pivot or the ring's middle
+    float _gNodeVX[3] = {}, _gNodeVZ[3] = {};
+    bool  _gSlammed = false;          // this cycle's slam heard
+    int   _gLit = -1;                 // the weak point open to a dash, -1 none
+    int   _gNodes = 0;
+    float _gNodeX[3] = {}, _gNodeY[3] = {}, _gNodeZ[3] = {};
+    unsigned long _gHitUntil = 0;     // flashing (and shut) after a hit
+    int   _gCycle = -1;               // the Piston's slam, counted
+    float _gyreTiltX = 0, _gyreTiltZ = 0;
+    struct Regrow { int8_t c, r; unsigned long at; };
+    Regrow _regrow[12];               // its arena's gems, growing back
+    int   _regrowCount = 0;
+    long  _guardianHits = 0;
 
     unsigned long _bannerUntil = 0;
     const char*   _banner = "";
@@ -303,6 +338,7 @@ private:
     int   _pilotLink = -1, _pilotLinkFrom = -1, _pilotLinkTo = -1, _pilotLinkPhase = 0;
     bool  _pilotLinkFromA = true;
     InputState linkPilot();
+    unsigned long _pilotGuardNext = 0;     // its next dash at a guardian, not before
     InputState stickFor(float wantVx, float wantVz) const;
 
     // --- Drawing ---
@@ -315,7 +351,7 @@ private:
     enum Piece : uint8_t { P_CELL, P_RAIL, P_GATE, P_MOVER };
     struct DrawEntry { int16_t z; uint8_t type, c, r, dir, slot; };
     DrawEntry _draw[MAX_DRAW], _drawSorted[MAX_DRAW];
-    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM, I_BUMPER, I_SWEEPER };
+    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM, I_BUMPER, I_SWEEPER, I_NODE };
     struct Item { float depth, bottom, x, z; uint8_t type, c, r; };
     Item _items[MAX_ITEMS];
     unsigned long _renderUs = 0;

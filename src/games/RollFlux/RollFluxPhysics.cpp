@@ -23,6 +23,7 @@ bool RollFluxGame::floorAt(float x, float z, float &y) const {
         case K_RAMP_E: base += HEIGHT_STEP * fx; break;
         case K_RAMP_W: base += HEIGHT_STEP * (1.0f - fx); break;
         case K_CRYSTAL: base += CRYSTAL_HEIGHT; break;
+        case K_PISTON: case K_CORE: base += extraLift(c, r); break;
         default: break;
     }
     y = mover && my > base ? my : base;
@@ -39,6 +40,12 @@ int RollFluxGame::blockedAt(float px, float pz, int ownC, int ownR, float base, 
         return 2;
     float fy;
     if (!floorAt(px, pz, fy) || fy <= base + rise) return 0;
+    // The Prism's core, met in a dash: a hit (and still a wall).
+    if (_cells[r][c].kind == K_CORE && courseDef().guardian == 3 && (long)(millis() - _dashUntil) < 0) {
+        _gLit = 0;
+        hitGuardian();
+        return 1;
+    }
     if (_cells[r][c].kind == K_CRYSTAL && (long)(millis() - _dashUntil) < 0) {
         smashCrystal(c, r);
         return 0;
@@ -141,6 +148,9 @@ void RollFluxGame::stepBall(const InputState &in) {
             case K_ICE: ax *= ICE_GRIP; az *= ICE_GRIP; friction *= ICE_FRICTION; break;
             default: break;
         }
+        // The Gyre's arena tilts itself.
+        ax += _gyreTiltX;
+        az += _gyreTiltZ;
         if (isConveyor(kind)) {
             static const float CX[4] = { 0, 0, 1, -1 }, CZ[4] = { 1, -1, 0, 0 };
             const int d = kind - K_CONV_N;
