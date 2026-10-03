@@ -44,6 +44,7 @@ bool RollFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, A
         _slide = (AttractSlide)(_slide + 1);
     }
     orbitCamera();
+    updateMovers();
     renderFrame(canvas, false);
     switch (_slide) {
         case SLIDE_TITLE:  renderTitle(canvas); break;
@@ -168,6 +169,23 @@ void RollFluxGame::planDistances(int c0, int r0) {
                 _from[j] = (int16_t)best;
             }
         }
+        // A moving part links its two landings (both ways): the wait and the
+        // ride cost more than the cells between.
+        const CourseDef &def = courseDef();
+        for (int k = 0; k < _moverCount; ++k) {
+            const MoverDef &m = def.movers[k];
+            if (m.lac < 0) continue;
+            int j = -1;
+            if (c == m.lac && r == m.lar) j = m.lbr * MAX_COURSE_W + m.lbc;
+            else if (c == m.lbc && r == m.lbr) j = m.lar * MAX_COURSE_W + m.lac;
+            if (j < 0 || done[j]) continue;
+            const int cost = 12 + 4 * (abs(m.lac - m.lbc) + abs(m.lar - m.lbr));
+            if (_dist[best] + cost < _dist[j]) {
+                if (_dist[j] == FAR && count < n) open[count++] = (uint16_t)j;
+                _dist[j] = (int16_t)(_dist[best] + cost);
+                _from[j] = (int16_t)best;
+            }
+        }
     }
 }
 
@@ -212,8 +230,9 @@ void RollFluxGame::pickTarget() {
 // straight when it has a step, now and then.
 InputState RollFluxGame::pilot(bool useDash) {
     InputState in{};
-    if ((long)(millis() - _holdUntil) < 0 || _phase != PHASE_PLAYING) { _pathLen = 0; return in; }
+    if ((long)(millis() - _holdUntil) < 0 || _phase != PHASE_PLAYING) { _pathLen = 0; _pilotLink = -1; return in; }
     if (_falling) return in;
+    if (_pilotLink >= 0) return linkPilot();
     const int bc = colAt(_bx), br = rowAt(_bz);
     const bool targetGone = _targetC >= 0 && (_cells[_targetR][_targetC].flags & F_TAKEN);
     const bool forGoal = _targetC >= 0 && _cells[_targetR][_targetC].kind == K_GOAL;
@@ -234,6 +253,26 @@ InputState RollFluxGame::pilot(bool useDash) {
     _pathPos = pos;
     if (pos >= _pathLen - 1 && _targetC >= 0 && _cells[_targetR][_targetC].kind != K_GOAL) pickTarget();
     if (_pathLen == 0) return in;
+    // The next step a moving part's ride (its landings aren't neighbours)?
+    if (_pathPos + 1 < _pathLen) {
+        const int a = _path[_pathPos], b = _path[_pathPos + 1];
+        const int ac = a % MAX_COURSE_W, ar = a / MAX_COURSE_W, bcc = b % MAX_COURSE_W, brr = b / MAX_COURSE_W;
+        if (abs(ac - bcc) + abs(ar - brr) != 1) {
+            const CourseDef &def = courseDef();
+            for (int k = 0; k < _moverCount; ++k) {
+                const MoverDef &m = def.movers[k];
+                const bool fromA = m.lac == ac && m.lar == ar && m.lbc == bcc && m.lbr == brr;
+                const bool fromB = m.lbc == ac && m.lbr == ar && m.lac == bcc && m.lar == brr;
+                if (!fromA && !fromB) continue;
+                _pilotLink = k;
+                _pilotLinkFrom = a;
+                _pilotLinkTo = b;
+                _pilotLinkFromA = fromA;
+                _pilotLinkPhase = 0;
+                return linkPilot();
+            }
+        }
+    }
 
     // Aim as far along the way (up to three cells) as a straight line from
     // the ball stays on cells of the way, crossing only edges it can roll
@@ -366,6 +405,64 @@ InputState RollFluxGame::pilot(bool useDash) {
     }
     in.btnAPressed = in.btnA && !_prevA;
     return in;
+}
+
+// The stick that closes the gap to the velocity wanted (with friction's
+// drag allowed for), camera-relative.
+InputState RollFluxGame::stickFor(float wantVx, float wantVz) const {
+    InputState in{};
+    float ax = (wantVx - _vx) * 5.0f + BALL_FRICTION * _vx;
+    float az = (wantVz - _vz) * 5.0f + BALL_FRICTION * _vz;
+    ax /= BALL_ACCEL;
+    az /= BALL_ACCEL;
+    const float m = sqrtf(ax * ax + az * az);
+    if (m > 1.0f) { ax /= m; az /= m; }
+    const float fx = sinf(_yaw), fz = cosf(_yaw), rx = cosf(_yaw), rz = -sinf(_yaw);
+    in.joyX = -(ax * fx + az * fz);
+    in.joyY = ax * rx + az * rz;
+    return in;
+}
+
+// Crossing by a moving part, from one landing to the other. Wait on the
+// landing, at its edge, till the part's there and staying (a bridge lined
+// up with time to cross it); a bridge, roll straight over; a slider or
+// lift, roll on to its middle, keep still on it till it waits at the far
+// end, and roll off. Back to the plan on the far landing.
+InputState RollFluxGame::linkPilot() {
+    const MoverDef &m = courseDef().movers[_pilotLink];
+    const Mover &mv = _movers[_pilotLink];
+    const int fc = _pilotLinkFrom % MAX_COURSE_W, fr = _pilotLinkFrom / MAX_COURSE_W;
+    const int tc = _pilotLinkTo % MAX_COURSE_W, tr = _pilotLinkTo / MAX_COURSE_W;
+    const float fx = cellX0(fc) + CELL * 0.5f, fz = cellZ0(fr) + CELL * 0.5f;
+    const float tx = cellX0(tc) + CELL * 0.5f, tz = cellZ0(tr) + CELL * 0.5f;
+    const bool bridge = m.type == M_BRIDGE;
+    const bool onFrom = colAt(_bx) == fc && rowAt(_bz) == fr;
+    const bool onTo = colAt(_bx) == tc && rowAt(_bz) == tr && _onMover < 0;
+    auto toward = [&](float x, float z, float speed) {
+        const float dx = x - _bx, dz = z - _bz, d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+        const float v = fminf(speed, d * 3.0f);
+        return stickFor(dx / d * v, dz / d * v);
+    };
+    if (onTo && _pilotLinkPhase > 0) { _pilotLink = -1; _pathLen = 0; return InputState{}; }
+    const bool startB = !_pilotLinkFromA;      // the end the part must be at to board
+    switch (_pilotLinkPhase) {
+        case 0: {   // wait at the landing's edge
+            const float dx = tx - fx, dz = tz - fz, d = sqrtf(dx * dx + dz * dz) + 1e-3f;
+            const unsigned long need = bridge ? (unsigned long)(m.len * CELL / 380.0f * 1000.0f) + 900 : 900;
+            if (moverReady(_pilotLink, startB, need)) _pilotLinkPhase = 1;
+            return toward(fx + dx / d * CELL * 0.22f, fz + dz / d * CELL * 0.22f, 150.0f);
+        }
+        case 1:     // on to it
+            if (bridge) return toward(tx, tz, 380.0f);
+            if (onFrom && !moverReady(_pilotLink, startB, 300)) { _pilotLinkPhase = 0; return InputState{}; }
+            if (_onMover == _pilotLink && fabsf(_bx - mv.x) < 45.0f && fabsf(_bz - mv.z) < 45.0f) _pilotLinkPhase = 2;
+            return toward(mv.x, mv.z, 260.0f);
+        case 2:     // ride it, still on it, till it waits at the far end
+            if (moverReady(_pilotLink, !startB, 500)) _pilotLinkPhase = 3;
+            return toward(mv.x, mv.z, 120.0f);
+        default:    // off on to the far landing
+            return toward(tx, tz, 260.0f);
+    }
 }
 
 }  // namespace rollflux

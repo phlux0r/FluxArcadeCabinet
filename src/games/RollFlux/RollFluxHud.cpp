@@ -97,17 +97,33 @@ void RollFluxGame::renderClear(GFXcanvas16 &canvas) {
     drawCentred(canvas, buf, 82, ArcadeConfig::COLOR_YELLOW);
 }
 
-// The title over the orbiting course: the name big, the start prompt and
-// the best score.
+// Text with a black shadow a pixel down and right, to read over the course.
+void RollFluxGame::drawShadowed(GFXcanvas16 &canvas, const char* text, int x, int y, uint16_t colour, uint8_t size) {
+    canvas.setTextSize(size);
+    canvas.setTextColor(ArcadeConfig::COLOR_BLACK);
+    canvas.setCursor(x + 1, y + 1);
+    canvas.print(text);
+    canvas.setTextColor(colour);
+    canvas.setCursor(x, y);
+    canvas.print(text);
+    canvas.setTextSize(1);
+}
+
+// The title over the orbiting course, nothing in the way of it: the name
+// along the top, the start prompt and best score along the bottom, all
+// shadowed.
 void RollFluxGame::renderTitle(GFXcanvas16 &canvas) {
     canvas.setFont();
-    canvas.fillRect(0, 18, W, 40, PANEL);
-    drawCentred(canvas, "ROLL", 21, ArcadeConfig::COLOR_CYAN, 2);
-    drawCentred(canvas, "FLUX", 38, ArcadeConfig::COLOR_YELLOW, 2);
-    canvas.fillRect(0, 100, W, 28, ArcadeConfig::COLOR_BLACK);
-    if (millis() % 1000 < 600) drawCentred(canvas, "[BTN A] TO PLAY", 105, ArcadeConfig::COLOR_WHITE);
+    // ROLL in cyan and FLUX in magenta, one line, size 2 (12 pixels a letter).
+    const int x = (W - 9 * 12) / 2;
+    drawShadowed(canvas, "ROLL", x, 3, ArcadeConfig::COLOR_CYAN, 2);
+    drawShadowed(canvas, "FLUX", x + 5 * 12, 3, ArcadeConfig::COLOR_MAGENTA, 2);
     char buf[24];
-    drawCentred(canvas, _scores.bestLine(buf, sizeof(buf), "HI: "), 116, ArcadeConfig::COLOR_YELLOW);
+    auto centred = [&](const char* t, int y, uint16_t col) {
+        drawShadowed(canvas, t, (W - (int)strlen(t) * 6) / 2, y, col, 1);
+    };
+    if (millis() % 1000 < 600) centred("[BTN A] TO PLAY", 106, ArcadeConfig::COLOR_WHITE);
+    centred(_scores.bestLine(buf, sizeof(buf), "HI: "), 117, ArcadeConfig::COLOR_YELLOW);
 }
 
 // How to play: rolling and the course first, then the dash and the pads,

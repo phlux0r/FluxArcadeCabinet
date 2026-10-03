@@ -430,6 +430,42 @@ static bool scenarioRules() {
     for (int f = 0; f < 60 && g._courseGemsTaken == taken; ++f) frame(g, audio, canvas, InputState{ -1.0f, 0 });
     check("a gem goes on the dash meter", g._dashGems == meter + 1, ok);
 
+    // The Flux Core's moving parts (4-1 to 4-3), through the whole game
+    // loop. A slider carries a ball sitting on it to its far end.
+    auto onCourse = [&](int k) { g._course = k; g.startCourse(audio); g._holdUntil = 0; };
+    onCourse(12);
+    at(g, 9, 12);
+    frame(g, audio, canvas);
+    const bool rode = g._onMover == 0;
+    for (int f = 0; f < 110; ++f) frame(g, audio, canvas);    // its wait, the trip, part of the far wait
+    snprintf(line, sizeof(line), "a slider carries a ball on it across (to row %.2f, on it: %d)",
+             g._h - 1 - g._bz / CELL + 0.5f, g._onMover == 0);
+    check(line, rode && g._onMover == 0 && !g._falling && fabsf(g._bz - g._movers[0].z) < 20.0f &&
+          g.rowAt(g._bz) == 10, ok);
+    // A lift raises it two steps.
+    onCourse(13);
+    at(g, 2, 9);
+    for (int f = 0; f < 110; ++f) frame(g, audio, canvas);
+    snprintf(line, sizeof(line), "a lift raises a ball on it (to %.0f)", g._by);
+    check(line, !g._falling && g._by > 2 * HEIGHT_STEP - 2, ok);
+    // A turning bridge turns a ball near one end round with it.
+    onCourse(14);
+    at(g, 6, 11.3f);
+    const float pivotX = g._movers[0].x;
+    for (int f = 0; f < 150; ++f) frame(g, audio, canvas);
+    snprintf(line, sizeof(line), "a turning bridge turns a ball on it round (%.0f across, on it: %d)",
+             g._bx - pivotX, g._onMover == 0);
+    check(line, fabsf(g._bx - pivotX) > 100.0f && g._onMover == 0 && !g._falling, ok);
+    // A sweeper's arm coming round knocks a ball in its way.
+    onCourse(14);
+    at(g, 7, 8);
+    float knocked = 0;
+    for (int f = 0; f < 90; ++f) { frame(g, audio, canvas); knocked = fmaxf(knocked, sqrtf(g._vx * g._vx + g._vz * g._vz)); }
+    snprintf(line, sizeof(line), "a sweeper knocks a ball in its way (to %.0f)", knocked);
+    check(line, knocked > SWEEPER_KICK, ok);
+    g._course = 0;
+    g.startCourse(audio);
+
     // B tapped (the stick left alone) swaps the ball's colour, on the
     // release; held with the stick, it doesn't; nor again inside the
     // cooldown.
@@ -760,6 +796,12 @@ static void scenarioPose() {
         { "bridges",  9, 5.5f, 12.5f, 0,    0,  0, 0, false },
         { "bridges2", 9, 5.5f, 6.0f,  0,    0,  0, 0, false },
         { "conveyor", 10, 5.5f, 13.5f, 0,   0,  0, 0, false },
+        // The Flux Core: a shuttle waiting, a lift, the sweeper's plaza
+        // with a turning bridge beyond, a ball riding a bridge.
+        { "shuttle",  12, 9.0f, 14.5f, 0,   0,  0, 0, false },
+        { "lift",     13, 3.5f, 11.0f, -30, 0,  0, 0, false },
+        { "sweeper",  14, 6.0f, 9.5f,  0,   0,  0, 0, false },
+        { "ridebridge", 14, 6.0f, 11.5f, 0, 0,  0, 0, false },
     };
     for (const Spot &s : spots) {
         g.loadCourse(s.course);

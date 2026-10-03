@@ -99,13 +99,21 @@ private:
         if (!_silent && _audio) _audio->playMelody(n, d, len);
     }
     void sfxTone(int hz, int ms) { if (!_silent && _audio) _audio->playTone(hz, ms); }
-    const CourseDef &courseDef() const { return COURSES[_course % COURSE_COUNT]; }
+    const CourseDef &courseDef() const { return *_def; }   // the course loaded
 
     // --- RollFluxPhysics.cpp ---
     void stepBall(const InputState &in);
     void rollBall(float dx, float dz);
     void startDash(float dx, float dz, float strength);
     int  blockedAt(float px, float pz, int ownC, int ownR, float rise);
+    // Moving parts (RollFluxMovers.cpp).
+    void updateMovers();
+    void carryBall();
+    void findOnMover();
+    void sweepers();
+    bool moverFloor(float x, float z, float &y, int* which = nullptr) const;
+    bool moverReady(int k, bool atB, unsigned long needMs) const;
+    void moverAt(const MoverDef &m, unsigned long t, float &x, float &z, float &y, float &ang) const;
     void smashCrystal(int c, int r);
     void bumpers();
     void swapColour();
@@ -154,6 +162,9 @@ private:
     void drawGateBars(uint16_t* buf, int w, int h, int c, int r, int dir, float depth);
     void drawBumper(uint16_t* buf, int w, int h, int c, int r);
     void drawShards(uint16_t* buf, int w, int h);
+    void drawMover(uint16_t* buf, int w, int h, int k, float depth);
+    void drawBox(uint16_t* buf, int w, int h, float cx, float cz, float ang, float halfLen, float halfWid,
+                 float y0, float y1, uint16_t top, uint16_t side, float depth);
     void renderFrame(GFXcanvas16 &canvas, bool withBall = true);
     uint16_t fog(uint16_t col, float depth) const;
     float gemY(int c, int r) const;
@@ -161,6 +172,7 @@ private:
     // --- RollFluxHud.cpp ---
     void drawHUD(GFXcanvas16 &canvas);
     void drawCentred(GFXcanvas16 &canvas, const char* text, int y, uint16_t colour, uint8_t size = 1);
+    void drawShadowed(GFXcanvas16 &canvas, const char* text, int x, int y, uint16_t colour, uint8_t size);
     void renderClear(GFXcanvas16 &canvas);
     void renderGameOver(GFXcanvas16 &canvas);
     void renderTitle(GFXcanvas16 &canvas);
@@ -190,6 +202,7 @@ private:
     Cell _cells[MAX_COURSE_H][MAX_COURSE_W];
     int  _w = 0, _h = 0;
     int  _course = 0, _loop = 0;
+    const CourseDef* _def = &COURSES[0];
     float _startX = 0, _startZ = 0;
     long  _timeMs = 0;                // left on the clock
     long  _courseMs = 0;              // this course's limit
@@ -215,6 +228,12 @@ private:
     unsigned long _swapReadyAt = 0;
     bool  _bDown = false, _bStick = false;
     unsigned long _bDownAt = 0;
+    // The course's moving parts, where they are now and were last frame.
+    struct Mover { float x, z, y, ang, px, pz, py, pang, vx, vz; };
+    Mover _movers[MAX_MOVERS];
+    int   _moverCount = 0;
+    int   _onMover = -1;              // the one the ball's riding, if any
+    unsigned long _courseAt = 0;      // movers run from the course's start
     // A bumper lit by a knock, and shards of smashed crystal.
     int   _bumpC = -1, _bumpR = -1;
     unsigned long _bumpUntil = 0;
@@ -279,6 +298,12 @@ private:
     unsigned long _pilotNextDash = 0;
     unsigned long _pilotRepickAt = 0;      // heading for the goal, it looks for gems again then
     bool  _pilotB = false;                 // tapping B for a colour swap
+    // Crossing by a moving part: which, between which landing cells, and
+    // how far through (wait, board, ride, get off).
+    int   _pilotLink = -1, _pilotLinkFrom = -1, _pilotLinkTo = -1, _pilotLinkPhase = 0;
+    bool  _pilotLinkFromA = true;
+    InputState linkPilot();
+    InputState stickFor(float wantVx, float wantVz) const;
 
     // --- Drawing ---
     int      _skyWorld = -1;
@@ -287,10 +312,10 @@ private:
     uint16_t _starCol[STAR_COUNT];
     // Floor pieces in view, far to near; slot says which item each must
     // follow (RollFluxScene.cpp's drawWorld).
-    enum Piece : uint8_t { P_CELL, P_RAIL, P_GATE };
+    enum Piece : uint8_t { P_CELL, P_RAIL, P_GATE, P_MOVER };
     struct DrawEntry { int16_t z; uint8_t type, c, r, dir, slot; };
     DrawEntry _draw[MAX_DRAW], _drawSorted[MAX_DRAW];
-    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM, I_BUMPER };
+    enum ItemType : uint8_t { I_BALL, I_SHADOW, I_GEM, I_BUMPER, I_SWEEPER };
     struct Item { float depth, bottom, x, z; uint8_t type, c, r; };
     Item _items[MAX_ITEMS];
     unsigned long _renderUs = 0;

@@ -26,9 +26,32 @@
 
 namespace rollflux {
 
+// Moving parts (stage 2's Flux Core), listed beside a course's cells.
+// Positions are in cells (column, row; whole numbers are cell centres),
+// heights in HEIGHT_STEPs. A slider shuttles a one-cell platform between
+// a and b; a lift rises in place from height h to h2; a bridge (len cells
+// long, a cell wide) turns about a between ang0 and ang1 degrees (0 lies
+// north-south); each waits pauseMs at either end and takes moveMs between.
+// A sweeper is an arm len cells long turning about a at ang0 degrees a
+// second. The landings are the cells either end that it links (for the
+// autopilot), -1 for none.
+enum MoverType : uint8_t { M_SLIDER, M_LIFT, M_BRIDGE, M_SWEEPER };
+struct MoverDef {
+    MoverType type;
+    float ac, ar, bc, br;
+    uint8_t h, h2;
+    float len;
+    int16_t ang0, ang1;
+    uint16_t moveMs, pauseMs;
+    int8_t lac, lar, lbc, lbr;
+};
+
 // code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice
-// Relay, 2 Prism Works).
-struct CourseDef { const char* code; const char* name; int world, w, h, seconds; const char* const* rows; };
+// Relay, 2 Prism Works, 3 Flux Core); movers, its moving parts if any.
+struct CourseDef {
+    const char* code; const char* name; int world, w, h, seconds; const char* const* rows;
+    const MoverDef* movers; int moverCount;
+};
 
 // 1-1: a tour of the basics: a railed run-up over a boost pad and up a ramp, a
 // gap with a narrow way round each side (the left one bare, with a gem on
@@ -380,6 +403,118 @@ static const char* const COURSE_3_4_ROWS[] PROGMEM = {
     "........0#0#0#0#........",
 };
 
+// 4-1: Two shuttles: platforms across gaps, waiting at each end; a checkpoint between.
+static const char* const COURSE_4_1_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "..........1#............",
+    "........................",
+    "........................",
+    "........................",
+    "........................",
+    "....1*1#1#1#1#1#1#1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..................1#....",
+    "........................",
+    "........................",
+    "........................",
+    "....1#1#1#1#1#1#1#1#....",
+    "....1*1#1#1#1#1#1#1#....",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_1_MOVERS[] = {
+    { M_SLIDER, 9.0f, 12.0f, 9.0f, 10.0f, 1, 1, 0.0f, 0, 0, 1800, 1500, 9, 13, 9, 9 },
+    { M_SLIDER, 5.0f, 6.0f, 5.0f, 3.0f, 1, 1, 0.0f, 0, 0, 2400, 1500, 5, 7, 5, 2 },
+};
+
+// 4-2: Two lifts up two levels, with bumpers on the middle floor.
+static const char* const COURSE_4_2_ROWS[] PROGMEM = {
+    "........3#3G3G3#........",
+    "........3#3#3#3#........",
+    "..........3#............",
+    "........................",
+    "....2#2#2#2#2#2#2#2*....",
+    "....2#2o2#2#2#2#2o2#....",
+    "....2#2#2C2C2C2C2#2#....",
+    "....2*2#2#2#2#2#2#2#....",
+    "....2#..................",
+    "........................",
+    "....0#0#0#0#0#0#0#0#....",
+    "....0#0#0#0#0#0#0#0*....",
+    "..........0#0#..........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_2_MOVERS[] = {
+    { M_LIFT, 2.0f, 9.0f, 2.0f, 9.0f, 0, 2, 0.0f, 0, 0, 2000, 1500, 2, 10, 2, 8 },
+    { M_LIFT, 5.0f, 3.0f, 5.0f, 3.0f, 2, 3, 0.0f, 0, 0, 1500, 1500, 5, 4, 5, 2 },
+};
+
+// 4-3: Turning bridges either side of a railed plaza with a sweeper going round it.
+static const char* const COURSE_4_3_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "..........1#............",
+    "........................",
+    "........................",
+    "........................",
+    "....1R1R1R1#1R1R1R1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1C1C1C1C1C1C1R....",
+    "....1R1R1R1R1#1R1R1*....",
+    "........................",
+    "........................",
+    "........................",
+    "............1#..........",
+    "............0n..........",
+    "........0#0#0#0#........",
+    "........0*0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_3_MOVERS[] = {
+    { M_BRIDGE, 6.0f, 12.0f, 6.0f, 12.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 6, 14, 6, 10 },
+    { M_SWEEPER, 5.5f, 8.0f, 5.5f, 8.0f, 1, 1, 2.2f, 50, 0, 0, 0, -1, -1, -1, -1 },
+    { M_BRIDGE, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 5, 6, 5, 2 },
+};
+
+// 4-4: Everything at once: a shuttle, a turning bridge, a sweeper's plaza, a lift and a cyan gate.
+static const char* const COURSE_4_4_ROWS[] PROGMEM = {
+    "........2#2G2G2#........",
+    "........2#2#2#2#........",
+    "........2c2c2c2c........",
+    "........2#2#2#2#........",
+    "..............2#........",
+    "........................",
+    "....1R1R1R1R1R1#1R1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1R1#1R1R1R1R1R....",
+    "........................",
+    "........................",
+    "........................",
+    "....1*1#1#1#1#1#1#1*....",
+    "....1#1#1C1C1C1C1#1#....",
+    "................1#......",
+    "........................",
+    "........................",
+    "........................",
+    "....1#1#1#1#1#1#1#1#....",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_4_MOVERS[] = {
+    { M_SLIDER, 8.0f, 18.0f, 8.0f, 16.0f, 1, 1, 0.0f, 0, 0, 2000, 1500, 8, 19, 8, 15 },
+    { M_BRIDGE, 4.0f, 11.0f, 4.0f, 11.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 4, 13, 4, 9 },
+    { M_SWEEPER, 5.5f, 7.5f, 5.5f, 7.5f, 1, 1, 2.0f, -45, 0, 0, 0, -1, -1, -1, -1 },
+    { M_LIFT, 7.0f, 5.0f, 7.0f, 5.0f, 1, 2, 0.0f, 0, 0, 1500, 1500, 7, 6, 7, 4 },
+};
+
 static const CourseDef COURSES[] = {
     { "1-1", "FIRST ROLL", 0, 12, 36, 60, COURSE_1_1_ROWS },
     { "1-2", "TERRACES", 0, 12, 25, 70, COURSE_1_2_ROWS },
@@ -393,6 +528,10 @@ static const CourseDef COURSES[] = {
     { "3-2", "PHASE BRIDGES", 2, 12, 22, 80, COURSE_3_2_ROWS },
     { "3-3", "CONVEYORS", 2, 12, 19, 80, COURSE_3_3_ROWS },
     { "3-4", "PRISM RUN", 2, 12, 23, 85, COURSE_3_4_ROWS },
+    { "4-1", "SHUTTLES", 3, 12, 19, 80, COURSE_4_1_ROWS, COURSE_4_1_MOVERS, 2 },
+    { "4-2", "LIFTS", 3, 12, 15, 80, COURSE_4_2_ROWS, COURSE_4_2_MOVERS, 2 },
+    { "4-3", "TURNSTILES", 3, 12, 19, 85, COURSE_4_3_ROWS, COURSE_4_3_MOVERS, 3 },
+    { "4-4", "FLUX CORE", 3, 12, 24, 95, COURSE_4_4_ROWS, COURSE_4_4_MOVERS, 4 },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
 

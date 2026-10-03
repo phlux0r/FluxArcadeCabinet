@@ -67,7 +67,7 @@ void fillConvex(uint16_t* buf, int w, int h, const float* xs, const float* ys, i
 // once reached); boost pads orange with a yellow arrow; the goal a
 // chequered flag; sides dark. The Prism Works is dusky violet, so cyan and
 // magenta stand out on it.
-const uint16_t FLOOR_COL[3][MAX_FLOOR_LEVEL + 1][2] = {
+const uint16_t FLOOR_COL[4][MAX_FLOOR_LEVEL + 1][2] = {
     {   // Orbit Garden: greens
         { rgb565( 5, 30,  9), rgb565( 4, 23,  7) },
         { rgb565( 9, 40, 13), rgb565( 7, 31, 10) },
@@ -89,29 +89,46 @@ const uint16_t FLOOR_COL[3][MAX_FLOOR_LEVEL + 1][2] = {
         { rgb565(18, 34, 23), rgb565(14, 27, 19) },
         { rgb565(21, 40, 26), rgb565(17, 32, 21) },
     },
+    {   // Flux Core: dark metal
+        { rgb565( 6, 13,  8), rgb565( 5, 10,  6) },
+        { rgb565( 8, 17, 10), rgb565( 6, 13,  8) },
+        { rgb565(10, 21, 12), rgb565( 8, 17, 10) },
+        { rgb565(12, 25, 14), rgb565(10, 20, 12) },
+        { rgb565(14, 29, 16), rgb565(11, 23, 13) },
+    },
 };
-const uint16_t ICE_COL[3][2] = {
+const uint16_t ICE_COL[4][2] = {
     { rgb565(21, 54, 30), rgb565(17, 46, 27) },
     { rgb565(27, 61, 31), rgb565(23, 55, 30) },
     { rgb565(24, 56, 31), rgb565(20, 48, 28) },
+    { rgb565(22, 52, 30), rgb565(18, 44, 26) },
 };
-// The sky, bottom and top: a dark blue, a deep violet night, a purple dusk.
-const uint16_t SKY_COL[3][2] = {
+// The sky, bottom and top: a dark blue, a deep violet night, a purple
+// dusk, and a core's dark with an ember glow low down.
+const uint16_t SKY_COL[4][2] = {
     { rgb565(8, 10, 18), rgb565(1, 2, 6) },
     { rgb565(10, 4, 16), rgb565(2, 0, 5) },
     { rgb565(16, 6, 14), rgb565(3, 0, 6) },
+    { rgb565(12, 8, 1), rgb565(0, 0, 2) },
 };
 const uint16_t RAMP_COL[2]  = { rgb565(26, 42, 6), rgb565(21, 33, 4) };
-const uint16_t CHECK_COL[3][2] = {
+const uint16_t CHECK_COL[4][2] = {
     { rgb565(4, 18, 24), rgb565(3, 13, 19) },     // blue on the greens
     { rgb565(12, 8, 22), rgb565(9, 6, 17) },      // violet on the slate
     { rgb565(3, 22, 8), rgb565(2, 17, 6) },       // green on the violet
+    { rgb565(2, 24, 18), rgb565(1, 19, 14) },     // teal on the metal
 };
-const uint16_t CHECK_LIT[3][2] = {
+const uint16_t CHECK_LIT[4][2] = {
     { rgb565(6, 44, 31), rgb565(4, 36, 26) },
     { rgb565(24, 30, 31), rgb565(20, 24, 27) },
     { rgb565(8, 56, 14), rgb565(6, 46, 11) },
+    { rgb565(6, 48, 30), rgb565(4, 40, 25) },
 };
+// Moving parts: platforms and lifts hazard orange, bridges pale steel,
+// sweepers' arms glowing red; tops then sides.
+const uint16_t PLATFORM_COL[2] = { rgb565(29, 34, 2), rgb565(16, 16, 1) };
+const uint16_t BRIDGE_COL[2]   = { rgb565(20, 44, 26), rgb565(10, 22, 14) };
+const uint16_t SWEEPER_COL[2]  = { rgb565(31, 22, 2), rgb565(22, 6, 2) };
 // The two colours, cyan and magenta: bright (gates' bars, bridges, the
 // ball), and dark (what the ball's own colour lets through looks like).
 const uint16_t POLE_COL[2][2] = {
@@ -456,6 +473,59 @@ void RollFluxGame::drawBumper(uint16_t* buf, int w, int h, int c, int r) {
     drawPoly(buf, w, h, hi, 8, fog(lit ? BUMPER_COL[2] : BUMPER_COL[1], centre[2]));
 }
 
+// A box turned `ang` about the vertical (0 lies along z), halfLen along
+// it, halfWid across, from y0 to y1: the faces turned to the camera, top
+// last.
+void RollFluxGame::drawBox(uint16_t* buf, int w, int h, float cx, float cz, float ang, float halfLen, float halfWid,
+                           float y0, float y1, uint16_t top, uint16_t side, float depth) {
+    const float ax = sinf(ang), az = cosf(ang), bx = az, bz = -ax;   // along, across
+    const float sx[4] = { -1, 1, 1, -1 }, sz[4] = { -1, -1, 1, 1 };
+    float lo[4][3], hi[4][3];
+    for (int i = 0; i < 4; ++i) {
+        const float x = cx + ax * halfLen * sz[i] + bx * halfWid * sx[i];
+        const float z = cz + az * halfLen * sz[i] + bz * halfWid * sx[i];
+        toCam(x, y0, z, lo[i]);
+        toCam(x, y1, z, hi[i]);
+    }
+    float centre[3];
+    toCam(cx, (y0 + y1) * 0.5f, cz, centre);
+    for (int i = 0; i < 4; ++i) {
+        const int j = (i + 1) & 3;
+        float fc[3];
+        for (int e = 0; e < 3; ++e) fc[e] = (lo[i][e] + lo[j][e] + hi[i][e] + hi[j][e]) * 0.25f;
+        if ((fc[0] - centre[0]) * fc[0] + (fc[1] - centre[1]) * fc[1] + (fc[2] - centre[2]) * fc[2] >= 0) continue;
+        float q[4][3];
+        for (int e = 0; e < 3; ++e) { q[0][e] = lo[i][e]; q[1][e] = lo[j][e]; q[2][e] = hi[j][e]; q[3][e] = hi[i][e]; }
+        drawPoly(buf, w, h, q, 4, fog(shade565(side, (i & 1) ? 1.0f : 0.8f), depth));
+    }
+    if (_camera.position.y > y1) drawPoly(buf, w, h, hi, 4, fog(top, depth));
+}
+
+// A moving part: a platform or lift (orange, a cell square), a bridge
+// (steel, a cell wide), a sweeper's arm (glowing red) with its pivot post.
+void RollFluxGame::drawMover(uint16_t* buf, int w, int h, int k, float depth) {
+    const MoverDef &m = courseDef().movers[k];
+    const Mover &mv = _movers[k];
+    switch (m.type) {
+        case M_BRIDGE:
+            drawBox(buf, w, h, mv.x, mv.z, mv.ang, m.len * CELL * 0.5f, BRIDGE_HALF_WIDTH,
+                    mv.y - MOVER_THICK, mv.y, BRIDGE_COL[0], BRIDGE_COL[1], depth);
+            break;
+        case M_SWEEPER: {
+            const float half = m.len * CELL * 0.5f;
+            drawBox(buf, w, h, mv.x, mv.z, 0, 24.0f, 24.0f, mv.y, mv.y + SWEEPER_HIGH + 12.0f,
+                    SWEEPER_COL[1], SWEEPER_COL[1], depth);
+            drawBox(buf, w, h, mv.x + sinf(mv.ang) * half, mv.z + cosf(mv.ang) * half, mv.ang, half, SWEEPER_HALF_WIDTH,
+                    mv.y + SWEEPER_LOW, mv.y + SWEEPER_HIGH, SWEEPER_COL[0], SWEEPER_COL[1], depth);
+            break;
+        }
+        default:
+            drawBox(buf, w, h, mv.x, mv.z, 0, PLATFORM_HALF, PLATFORM_HALF, mv.y - MOVER_THICK, mv.y,
+                    PLATFORM_COL[0], PLATFORM_COL[1], depth);
+            break;
+    }
+}
+
 // A smashed crystal's shards: specks flying and falling.
 void RollFluxGame::drawShards(uint16_t* buf, int w, int h) {
     if ((long)(millis() - _shardsUntil) >= 0) return;
@@ -632,6 +702,16 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
                 _draw[count++] = DrawEntry{ (int16_t)q[2], P_RAIL, (uint8_t)c, (uint8_t)r, (uint8_t)d, 0 };
             }
         }
+    // The floor-like moving parts (sliders, lifts, bridges) are floor pieces
+    // too, at their middles.
+    const CourseDef &def = courseDef();
+    for (int k = 0; k < _moverCount && count < MAX_DRAW; ++k) {
+        if (def.movers[k].type == M_SWEEPER) continue;
+        float p[3];
+        toCam(_movers[k].x, _movers[k].y, _movers[k].z, p);
+        if (p[2] < -CELL * 2 || p[2] > VIEW_DIST) continue;
+        _draw[count++] = DrawEntry{ (int16_t)p[2], P_MOVER, (uint8_t)k, 0, 0, 0 };
+    }
     std::sort(_draw, _draw + count, [](const DrawEntry &a, const DrawEntry &b) { return a.z > b.z; });
 
     // Items in view. The ball blinks while it waits after a fall.
@@ -648,6 +728,18 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             _items[items++] = Item{ fmaxf(sc[2], bc[2] + 1.0f), fy, _bx, _bz, I_SHADOW, 0, 0 };
         }
         _items[items++] = Item{ bc[2], _by, _bx, _bz, I_BALL, 0, 0 };
+    }
+    // Sweepers' arms, as items: at their middles, standing on their floor.
+    for (int k = 0; k < _moverCount && items < MAX_ITEMS; ++k) {
+        const MoverDef &m = def.movers[k];
+        if (m.type != M_SWEEPER) continue;
+        const Mover &mv = _movers[k];
+        const float half = m.len * CELL * 0.5f;
+        const float mx = mv.x + sinf(mv.ang) * half, mz = mv.z + cosf(mv.ang) * half;
+        float p[3];
+        toCam(mx, mv.y + SWEEPER_HIGH * 0.5f, mz, p);
+        if (p[2] < -CELL * 2 || p[2] > VIEW_DIST) continue;
+        _items[items++] = Item{ p[2], mv.y + SWEEPER_LOW, mx, mz, I_SWEEPER, (uint8_t)k, 0 };
     }
     for (int i = 0; i < count && items < MAX_ITEMS; ++i) {
         const DrawEntry &e = _draw[i];
@@ -680,6 +772,8 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
                 ? it.bottom < _cells[e.r][e.c].h * HEIGHT_STEP + RAIL_HEIGHT - 2.0f
                 : e.type == P_GATE
                 ? it.bottom < _cells[e.r][e.c].h * HEIGHT_STEP + GATE_HEIGHT - 2.0f
+                : e.type == P_MOVER
+                ? it.bottom < _movers[e.c].y - 20.0f
                 : it.bottom < planeAt(e.c, e.r, it.x, it.z) - 20.0f;
             if (hides) slot = j + 1;
         }
@@ -698,6 +792,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
             const DrawEntry &e = _drawSorted[i];
             if (e.type == P_CELL) drawCell(buf, w, h, e.c, e.r, (float)e.z);
             else if (e.type == P_GATE) drawGateBars(buf, w, h, e.c, e.r, e.dir, (float)e.z);
+            else if (e.type == P_MOVER) drawMover(buf, w, h, e.c, (float)e.z);
             else drawRail(buf, w, h, e.c, e.r, e.dir, (float)e.z);
         }
         if (s == items) break;
@@ -708,6 +803,7 @@ void RollFluxGame::drawWorld(GFXcanvas16 &canvas, bool withBall) {
                            break;
             case I_SHADOW: drawShadow(buf, w, h, it.bottom); break;
             case I_BUMPER: drawBumper(buf, w, h, it.c, it.r); break;
+            case I_SWEEPER: drawMover(buf, w, h, it.c, it.depth); break;
             default:       drawGem(buf, w, h, it.c, it.r); break;
         }
     }

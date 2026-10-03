@@ -113,6 +113,7 @@ void RollFluxGame::startNewGame(AudioEngine &audio) {
 // limit shortens by 15% a loop round the courses, to 60% at most.
 void RollFluxGame::loadCourse(int index) {
     const CourseDef &def = COURSES[index % COURSE_COUNT];
+    _def = &def;
     _w = def.w;
     _h = def.h;
     _courseGems = 0;
@@ -173,6 +174,17 @@ void RollFluxGame::loadCourse(int index) {
     _targetC = _targetR = -1;
     _polarity = 0;                    // every course starts cyan
     _bumpUntil = _shardsUntil = 0;
+    // Its moving parts, from their starting places.
+    _moverCount = def.moverCount < MAX_MOVERS ? def.moverCount : MAX_MOVERS;
+    _courseAt = millis();
+    _onMover = -1;
+    _pilotLink = -1;
+    for (int k = 0; k < _moverCount; ++k) {
+        Mover &mv = _movers[k];
+        moverAt(def.movers[k], 0, mv.x, mv.z, mv.y, mv.ang);
+        mv.px = mv.x; mv.pz = mv.z; mv.py = mv.y; mv.pang = mv.ang;
+        mv.vx = mv.vz = 0;
+    }
     respawn();
 }
 
@@ -206,6 +218,8 @@ void RollFluxGame::respawn() {
     _camHold = false;
     _yaw = _respawnYaw;
     _leanRoll = _leanPitch = 0;
+    _onMover = -1;
+    _pilotLink = -1;
     _holdUntil = millis() + RESPAWN_HOLD_MS;
     updateCamera(true);
 }
@@ -491,7 +505,10 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
         _camHoldMoving = false;
     }
     updateDash(in);
+    updateMovers();
+    carryBall();
     stepBall(in);
+    findOnMover();
     updateLean(in);
     updateCamera(false);
     stepRules(audio);
@@ -512,7 +529,10 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 // course (A skips the wait).
 bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     _prevA = input.btnA;
+    updateMovers();
+    carryBall();
     stepBall(InputState{});
+    findOnMover();
     _leanRoll *= 0.9f;
     _leanPitch *= 0.9f;
     updateCamera(false);
@@ -532,7 +552,8 @@ bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, Aud
 // The course goes on behind the name entry; when it's done (or timed
 // out), the game-over screen.
 bool RollFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (!_fellOut) stepBall(InputState{});
+    updateMovers();
+    if (!_fellOut) { carryBall(); stepBall(InputState{}); findOnMover(); }
     renderFrame(canvas);
     _scores.draw(canvas);
     if (_scores.update(input, getRotation())) {
@@ -544,7 +565,8 @@ bool RollFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, Audi
 }
 
 bool RollFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (!_fellOut) stepBall(InputState{});
+    updateMovers();
+    if (!_fellOut) { carryBall(); stepBall(InputState{}); findOnMover(); }
     renderFrame(canvas);
     renderGameOver(canvas);
     const unsigned long t = millis() - _phaseAt;

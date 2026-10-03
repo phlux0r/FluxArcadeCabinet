@@ -4,10 +4,16 @@ namespace rollflux {
 
 // The floor's height under (x, z), or false over the void (or a phase
 // bridge of the other colour). Ramps rise across their cell from their low
-// edge; a crystal wall's top is CRYSTAL_HEIGHT up.
+// edge; a crystal wall's top is CRYSTAL_HEIGHT up. A moving part there
+// (higher than the cell, if both) counts as floor too.
 bool RollFluxGame::floorAt(float x, float z, float &y) const {
     const int c = colAt(x), r = rowAt(z);
-    if (!standable(c, r)) return false;
+    float my;
+    const bool mover = _moverCount > 0 && moverFloor(x, z, my);
+    if (!standable(c, r)) {
+        if (mover) y = my;
+        return mover;
+    }
     const Cell &cell = _cells[r][c];
     const float fx = (x - cellX0(c)) / CELL, fz = (z - cellZ0(r)) / CELL;
     float base = (float)(cell.h * HEIGHT_STEP);
@@ -19,7 +25,7 @@ bool RollFluxGame::floorAt(float x, float z, float &y) const {
         case K_CRYSTAL: base += CRYSTAL_HEIGHT; break;
         default: break;
     }
-    y = base;
+    y = mover && my > base ? my : base;
     return true;
 }
 
@@ -213,6 +219,7 @@ void RollFluxGame::stepBall(const InputState &in) {
             } else _bz = nz;
         }
         bumpers();
+        if (_moverCount) sweepers();
         // Down: on the floor it follows it; off it (or over a drop), it falls.
         float gy;
         const bool ground = floorAt(_bx, _bz, gy);

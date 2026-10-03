@@ -98,6 +98,19 @@ inline constexpr long  BUMPER_POINTS = 10;
 inline constexpr float CONVEYOR_SPEED = 350.0f;
 inline constexpr float CONVEYOR_ACCEL = 800.0f;
 
+// --- Moving parts (the Flux Core) ------------------------------------------------
+// Sliders and lifts are one-cell platforms MOVER_THICK deep; bridges a cell
+// wide; sweepers an arm SWEEPER_HALF_WIDTH*2 thick, from SWEEPER_LOW to
+// SWEEPER_HIGH over its floor, knocking the ball off at its own speed plus
+// SWEEPER_KICK.
+inline constexpr int   MAX_MOVERS = 6;
+inline constexpr float PLATFORM_HALF = CELL * 0.48f;
+inline constexpr float MOVER_THICK = 40.0f;
+inline constexpr float BRIDGE_HALF_WIDTH = CELL * 0.45f;
+inline constexpr float SWEEPER_HALF_WIDTH = 14.0f;
+inline constexpr float SWEEPER_LOW = 10.0f, SWEEPER_HIGH = 70.0f;
+inline constexpr float SWEEPER_KICK = 300.0f;
+
 // --- Rules -------------------------------------------------------------------
 inline constexpr int   START_LIVES    = 4;
 inline constexpr int   MAX_LIVES      = 9;

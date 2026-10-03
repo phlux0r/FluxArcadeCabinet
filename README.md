@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 12 courses in 3 worlds |
+| Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 16 courses in 4 worlds |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
@@ -176,11 +176,11 @@ three); then it brakes back to the speed it had, so a dash on open floor
 is over within about three cells. A checkpoint row (dark, lit once reached) is where a
 fall puts you back, with the time you had there; out of time, it's a ball
 gone and the course from the top. At the goal: 100 a second left, 2,000
-for no falls, 5,000 for every gem. Twelve courses in three worlds: the
+for no falls, 5,000 for every gem. Sixteen courses in four worlds: the
 Orbit Garden (1-1 to 1-4: ramps, gaps, bridges, terraces, a climb), the
-Ice Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash) and the
-Prism Works (3-1 to 3-4); after 3-4 it goes round again with 15% less
-time, to 60%. In the Prism Works the ball's colour matters: tap B to swap
+Ice Relay (2-1 to 2-4: ice, railed ice, boost pads, gaps to dash), the
+Prism Works (3-1 to 3-4) and the Flux Core (4-1 to 4-4); after 4-4 it
+goes round again with 15% less time, to 60%. In the Prism Works the ball's colour matters: tap B to swap
 it between cyan and magenta (on the release, the stick left alone, at
 most every 0.25s; it shows on the ball, the spare balls and the dash
 meter). Colour gates (bright bars round a cell) let only their colour
@@ -190,7 +190,12 @@ one drops you through, and swapping in the air over one lands you on it.
 Crystal walls (pale blocks) stop a rolling ball but a dash smashes them
 (50 points); bumpers (red posts) kick the ball away hard (10 points);
 conveyors (moving yellow stripes) carry it along. Every course starts
-cyan. The camera follows
+cyan. The Flux Core's parts move: orange platforms shuttle across gaps
+and lifts rise between levels, each waiting a moment at either end;
+steel bridges turn about their middles, lined up with the way across for
+a few seconds at a time; all of them carry a ball riding them. Sweepers
+(glowing red arms) turn about a post and knock the ball away; their
+plazas are railed. The camera follows
 behind, turning slowly to the way you roll (but not round to face you
 when you roll back), and the course leans with the stick. Hold B and the
 stick turns the camera instead (the ball rolls on by itself); let go and
@@ -198,8 +203,8 @@ it stays turned until you set off a new way. Everything is
 drawn straight into the canvas with Jet's camera maths (not its Scene):
 stage 0 measured that at ~55fps on the board against ~25 through Jet. The
 attract cycle orbits course 1 under the title (drawn live, not an image),
-three how-to-play slides and the scores. Still to come (the rest of stage
-2): moving parts, world 4 and the guardians.
+three how-to-play slides and the scores; the title runs along the top,
+over the course. Still to come (the rest of stage 2): the guardians.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -216,7 +221,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
-| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), and dashes on long safe straights |
+| Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights |
 
 ## Build
 

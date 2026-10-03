@@ -162,6 +162,27 @@ a bridge of its own colour. `god` clears all twelve courses, no falls.
 Points: 50 a crystal, 10 a bumper's kick (design section 7 had crystals
 only). The how-to-play gains a third slide, on the colours.
 
+### Stage 2, part 2: the Flux Core, built
+
+World 4's moving parts and four courses (4-1 to 4-4). A course lists its
+parts beside its cells (`MoverDef`): sliders (a one-cell platform
+shuttling between two points), lifts (rising in place between two
+heights), turning bridges (a cell wide, turning about their middles
+between two angles) and sweepers (an arm turning about a post). All run
+on the clock from the course's start, waiting `pauseMs` at each end and
+taking `moveMs` between, so where one is depends on time alone. Sliders,
+lifts and bridges are floor wherever they are (`floorAt` takes the
+higher of a cell and a part); a ball on one is carried by its movement,
+turned with a bridge's turn. They're drawn as floor pieces in the
+far-to-near pass (so a ball riding one is drawn over it); sweepers' arms
+as items. A sweeper's arm puts the ball back out and sends it off at the
+arm's speed there plus SWEEPER_KICK. For the autopilot each part links
+two landing cells: the planner crosses the link at a cost, and the
+pilot waits at the landing's edge for the part to be there (a bridge
+lined up with time to cross), boards it, keeps still on it till it waits
+at the far end, and gets off. `god` clears all sixteen courses. The
+title now runs along the top, the course behind it uncovered.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35
