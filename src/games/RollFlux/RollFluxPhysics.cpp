@@ -310,4 +310,24 @@ void RollFluxGame::rollBall(float dx, float dz) {
     for (int i = 0; i < 9; ++i) _rot[i] = out[i];
 }
 
+// The rolling sound: a low tick each time the ball crosses a tile edge on
+// the floor, higher the faster it goes, so a fast roll rattles over the
+// tiles. Nothing in the air, and never over another synth sound (a tick
+// would cut it short): the ticks are the first thing to give way.
+void RollFluxGame::rollTicks() {
+    const int c = colAt(_bx), r = rowAt(_bz);
+    const bool crossed = c != _seamC || r != _seamR;
+    _seamC = c;
+    _seamR = r;
+    if (!crossed || _falling || _silent || !_audio) return;
+    float fy;
+    if (!floorAt(_bx, _bz, fy) || _by > fy + TICK_AIR) return;
+    const float speed = sqrtf(_vx * _vx + _vz * _vz);
+    if (speed < TICK_MIN_SPEED) return;
+    if ((long)(millis() - _synthUntil) < 0 || _audio->isTonePlaying() || _audio->isMelodyPlaying()) return;
+    const float t = fminf(1.0f, speed / BALL_MAX_SPEED);
+    _audio->playTone(TICK_HZ_SLOW + (int)(t * (TICK_HZ_FAST - TICK_HZ_SLOW)), TICK_MS);
+    ++_ticks;
+}
+
 }  // namespace rollflux

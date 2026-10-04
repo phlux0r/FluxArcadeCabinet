@@ -25,6 +25,8 @@ struct AudioEngine {
     bool isSamplePlaying() const { return false; }
     bool isWAVPlaying() const { return false; }
     bool isMelodyPlaying() const { return false; }
+    bool tonePlaying = false;   // a harness sets it: the synth busy with another sound
+    bool isTonePlaying() const { return tonePlaying; }
     // The real wrappers go through playWAV()/playMelody(), so they're
     // silenced the same way.
     void playExplosionSound(const uint8_t*, size_t) { playWAV("/audio/explosion.wav"); }

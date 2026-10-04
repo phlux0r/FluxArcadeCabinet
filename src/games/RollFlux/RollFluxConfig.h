@@ -176,6 +176,12 @@ inline constexpr unsigned long PICK_TIMEOUT_MS = 20000;
 inline constexpr unsigned long PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
 
 // --- Sound -------------------------------------------------------------------
+// Rolling: a short low tick on the synth at each tile edge the ball rolls
+// over (on the floor, faster than a crawl), pitched up with speed.
+inline constexpr int   TICK_MS = 12;
+inline constexpr int   TICK_HZ_SLOW = 70, TICK_HZ_FAST = 160;
+inline constexpr float TICK_MIN_SPEED = 120.0f;
+inline constexpr float TICK_AIR = 8.0f;           // further above the floor than this is in the air
 inline constexpr const char* MUSIC = "/audio/flux-roll.wav";
 
 // --- Camera -------------------------------------------------------------------

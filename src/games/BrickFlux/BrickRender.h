@@ -362,18 +362,18 @@ inline void BrickFluxGame::renderGameOver(GFXcanvas16 &cv) {
         hiscore::printCentred(cv, "A: PLAY AGAIN", 104, ArcadeConfig::COLOR_CYAN);
 }
 
-// The stage select, over the level it would start on: its number big
-// (a boss's name under it), how to step and start.
+// The stage select, under the level it would start on (the bricks, at most
+// twelve rows, end above it): its number big, a boss's name under it, how
+// to step and start.
 inline void BrickFluxGame::renderPicker(GFXcanvas16 &cv) {
-    panel(cv, 8, 40, W - 16, 48);
-    hiscore::printCentred(cv, "START AT", 44, ArcadeConfig::COLOR_ORANGE);
+    panel(cv, 2, 92, W - 4, 66);
+    hiscore::printCentred(cv, "START AT", 95, ArcadeConfig::COLOR_ORANGE);
     char buf[16];
     snprintf(buf, sizeof(buf), "LEVEL %d", _pick);
-    hiscore::printCentred(cv, buf, 56, _boss ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2);
-    if (_boss) hiscore::printCentred(cv, bossName(), 75, ArcadeConfig::COLOR_WHITE);
-    panel(cv, 2, 128, W - 4, 30);
-    hiscore::printCentred(cv, "<> LEVEL  ^v BY 5", 132, ArcadeConfig::COLOR_WHITE);
-    hiscore::printCentred(cv, "A: TEST  B: BACK", 145, ArcadeConfig::COLOR_YELLOW);
+    hiscore::printCentred(cv, buf, 105, _boss ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2);
+    if (_boss) hiscore::printCentred(cv, bossName(), 122, ArcadeConfig::COLOR_WHITE);
+    hiscore::printCentred(cv, "<> LEVEL  ^v BY 5", 135, ArcadeConfig::COLOR_WHITE);
+    hiscore::printCentred(cv, "A: TEST  B: BACK", 146, ArcadeConfig::COLOR_YELLOW);
 }
 
 inline void BrickFluxGame::drawDemoOverlay(GFXcanvas16 &cv) {

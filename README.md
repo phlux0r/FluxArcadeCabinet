@@ -661,6 +661,10 @@ Roll Flux's optional sounds, the same again (none on the card yet):
 | `roll_boss_down.wav` | a guardian beaten | ~2.5s | `star_boss_die.wav` |
 | `roll_slam.wav` | the Piston's pistons slam | ~0.2s | a tone |
 
+As it rolls, the ball ticks over each tile edge: a short low tone on the
+synth, higher the faster it goes, none in the air. The ticks give way to
+any other synth sound rather than cut it short.
+
 Each game also has a music track, named after its launcher entry:
 `flux-asteroids.wav`, `flux-brick.wav`, `flux-lander.wav`, `flux-maze.wav`, `flux-roll.wav`, `flux-runner.wav`,
 `flux-star.wav`, `flux-tank.wav`, `flux-tube.wav`. It loops during a game only (not on the
