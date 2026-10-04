@@ -17,12 +17,47 @@
 //   *   floor with a gem over it
 //   C   a checkpoint (floor)
 //   ^ v > <  a boost pad pushing north, south, east or west
+//   c m  a colour gate, cyan or magenta: only a ball of its colour passes
+//   ( )  a phase bridge, cyan or magenta: solid only to a ball of its colour
+//   X    a crystal wall (CRYSTAL_HEIGHT high): a dash smashes it
+//   o    a bumper (on floor)
+//   8 2 6 4  a conveyor carrying north, south, east or west (as a keypad)
+//   P    a piston (the Piston's arena): floor that slams up, throwing the ball
+//   K    a guardian's core: a block, its weak point (the Piston's drops to the floor)
+//   O    the Gyre's ring: floor that opens a quarter at a time
 // =============================================================================
 
 namespace rollflux {
 
-// code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice Relay).
-struct CourseDef { const char* code; const char* name; int world, w, h, seconds; const char* const* rows; };
+// Moving parts (stage 2's Flux Core), listed beside a course's cells.
+// Positions are in cells (column, row; whole numbers are cell centres),
+// heights in HEIGHT_STEPs. A slider shuttles a one-cell platform between
+// a and b; a lift rises in place from height h to h2; a bridge (len cells
+// long, a cell wide) turns about a between ang0 and ang1 degrees (0 lies
+// north-south); each waits pauseMs at either end and takes moveMs between.
+// A sweeper is an arm len cells long turning about a at ang0 degrees a
+// second, starting at ang1 degrees. The landings are the cells either end that it links (for the
+// autopilot), -1 for none.
+enum MoverType : uint8_t { M_SLIDER, M_LIFT, M_BRIDGE, M_SWEEPER };
+struct MoverDef {
+    MoverType type;
+    float ac, ar, bc, br;
+    uint8_t h, h2;
+    float len;
+    int16_t ang0, ang1;
+    uint16_t moveMs, pauseMs;
+    int8_t lac, lar, lbc, lbr;
+};
+
+// code: "world-course"; world picks the palette (0 Orbit Garden, 1 Ice
+// Relay, 2 Prism Works, 3 Flux Core); movers, its moving parts if any.
+// guardian: a world's fifth course has one (1 the Sweeper, 2 the Piston,
+// 3 the Prism, 4 the Gyre; 0 none): beaten, the course is clear.
+struct CourseDef {
+    const char* code; const char* name; int world, w, h, seconds; const char* const* rows;
+    const MoverDef* movers; int moverCount;
+    int guardian;
+};
 
 // 1-1: a tour of the basics: a railed run-up over a boost pad and up a ramp, a
 // gap with a narrow way round each side (the left one bare, with a gem on
@@ -273,17 +308,319 @@ static const char* const COURSE_2_4_ROWS[] PROGMEM = {
     "........0#0#0#0#........",
 };
 
+// 3-1: A cyan gate to start, a crystal wall a dash can smash for the gems behind it, a magenta gate, bumpers on the plaza, and cyan again to the goal.
+static const char* const COURSE_3_1_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "........1c1c1c1c........",
+    "........1#1#1#1#........",
+    "....1*1#1#1o1#1#1#1*....",
+    "....1#1#1#1#1#1o1#1#....",
+    "....1#1o1#1#1#1#1#1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..........1#1#..........",
+    "..........1m1m..........",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "..0#0#0#0#0#0#0#0#0#0#..",
+    "..0#......0X0X......0#..",
+    "..0#......0*0*......0#..",
+    "..0#......0#0#......0#..",
+    "..0#0#0#0#0#0#0#0#0#0#..",
+    "..........0c0c..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-2: Phase bridges over the void: cyan, magenta with a floor cell to swap on, then cyan, magenta and cyan straight after each other.
+static const char* const COURSE_3_2_ROWS[] PROGMEM = {
+    "......2#2#2G2G2#2#......",
+    "......2#2#2#2#2#2#......",
+    "..........2(2(..........",
+    "..........2)2)..........",
+    "..........2(2(..........",
+    "......2#2#2#2#2#2#......",
+    "......2*2#2C2C2#2*......",
+    "......2#2#2#2#2#2#......",
+    "..........1n1n..........",
+    "..........1#1#..........",
+    "..........1)1)..........",
+    "..........1)1)..........",
+    "..........1#1#..........",
+    "..........1(1(..........",
+    "..........1(1(..........",
+    "..1*1#1#1#1#1#1#1#1#1*..",
+    "..........0n0n..........",
+    "..........0#0#..........",
+    "..........0(0(..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-3: Three conveyor rows carrying you east, west and east across the way, a magenta gate the width of the course, bumpers, and a conveyor up to the goal.
+static const char* const COURSE_3_3_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "........18181818........",
+    "........18181818........",
+    "........1#1#1#1#........",
+    "....1*1m1m1m1m1m1m1*....",
+    "....1#1#1#1#1#1#1#1#....",
+    "....1#1o1#1#1#1#1o1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..........1#1#..........",
+    "..16161616161616161616..",
+    "..14141414141414141414..",
+    "..16161616161616161616..",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0*0#0#0*........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 3-4: Ice, a magenta gate in the middle (or round it), a narrow cyan bridge, crystals in the plaza, a magenta bridge, a conveyor and a cyan gate.
+static const char* const COURSE_3_4_ROWS[] PROGMEM = {
+    "....2#2G2G2#............",
+    "....2#2#2#2#............",
+    "....2c2c2c2c............",
+    "....2#2#2#2#............",
+    "....1n1n................",
+    "....1#1#1#1#1#1#1#1*....",
+    "....1#1414141414141#....",
+    "..................1)....",
+    "..................1)....",
+    "..................1#....",
+    "..1*1#1#1#1o1#1#1#1#....",
+    "..1#1C1C1C1C1C1C1#1#....",
+    "..1#1#1#1X1X1#1#1#1#....",
+    "............1(..........",
+    "............1(..........",
+    "..........1#1#..........",
+    "..........0n0n..........",
+    "....0#0#0#0#0#0#0#0#....",
+    "....0i0i0i0i0i0i0i0i....",
+    "....0*0#0#0m0m0#0#0*....",
+    "....0#0#0#0#0#0#0#0#....",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+
+// 4-1: Two shuttles: platforms across gaps, waiting at each end; a checkpoint between.
+static const char* const COURSE_4_1_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "..........1#............",
+    "........................",
+    "........................",
+    "........................",
+    "........................",
+    "....1*1#1#1#1#1#1#1#....",
+    "....1#1#1C1C1C1C1#1#....",
+    "..................1#....",
+    "........................",
+    "........................",
+    "........................",
+    "....1#1#1#1#1#1#1#1#....",
+    "....1*1#1#1#1#1#1#1#....",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_1_MOVERS[] = {
+    { M_SLIDER, 9.0f, 12.0f, 9.0f, 10.0f, 1, 1, 0.0f, 0, 0, 1800, 1500, 9, 13, 9, 9 },
+    { M_SLIDER, 5.0f, 6.0f, 5.0f, 3.0f, 1, 1, 0.0f, 0, 0, 2400, 1500, 5, 7, 5, 2 },
+};
+
+// 4-2: Two lifts up two levels, with bumpers on the middle floor.
+static const char* const COURSE_4_2_ROWS[] PROGMEM = {
+    "........3#3G3G3#........",
+    "........3#3#3#3#........",
+    "..........3#............",
+    "........................",
+    "....2#2#2#2#2#2#2#2*....",
+    "....2#2o2#2#2#2#2o2#....",
+    "....2#2#2C2C2C2C2#2#....",
+    "....2*2#2#2#2#2#2#2#....",
+    "....2#..................",
+    "........................",
+    "....0#0#0#0#0#0#0#0#....",
+    "....0#0#0#0#0#0#0#0*....",
+    "..........0#0#..........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_2_MOVERS[] = {
+    { M_LIFT, 2.0f, 9.0f, 2.0f, 9.0f, 0, 2, 0.0f, 0, 0, 2000, 1500, 2, 10, 2, 8 },
+    { M_LIFT, 5.0f, 3.0f, 5.0f, 3.0f, 2, 3, 0.0f, 0, 0, 1500, 1500, 5, 4, 5, 2 },
+};
+
+// 4-3: Turning bridges either side of a railed plaza with a sweeper going round it.
+static const char* const COURSE_4_3_ROWS[] PROGMEM = {
+    "........1#1G1G1#........",
+    "........1#1#1#1#........",
+    "..........1#............",
+    "........................",
+    "........................",
+    "........................",
+    "....1R1R1R1#1R1R1R1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1C1C1C1C1C1C1R....",
+    "....1R1R1R1R1#1R1R1*....",
+    "........................",
+    "........................",
+    "........................",
+    "............1#..........",
+    "............0n..........",
+    "........0#0#0#0#........",
+    "........0*0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_3_MOVERS[] = {
+    { M_BRIDGE, 6.0f, 12.0f, 6.0f, 12.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 6, 14, 6, 10 },
+    { M_SWEEPER, 5.5f, 8.0f, 5.5f, 8.0f, 1, 1, 2.2f, 50, 0, 0, 0, -1, -1, -1, -1 },
+    { M_BRIDGE, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 5, 6, 5, 2 },
+};
+
+// 4-4: Everything at once: a shuttle, a turning bridge, a sweeper's plaza, a lift and a cyan gate.
+static const char* const COURSE_4_4_ROWS[] PROGMEM = {
+    "........2#2G2G2#........",
+    "........2#2#2#2#........",
+    "........2c2c2c2c........",
+    "........2#2#2#2#........",
+    "..............2#........",
+    "........................",
+    "....1R1R1R1R1R1#1R1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1#1#1#1#1#1#1R....",
+    "....1R1R1#1R1R1R1R1R....",
+    "........................",
+    "........................",
+    "........................",
+    "....1*1#1#1#1#1#1#1*....",
+    "....1#1#1C1C1C1C1#1#....",
+    "................1#......",
+    "........................",
+    "........................",
+    "........................",
+    "....1#1#1#1#1#1#1#1#....",
+    "..........0n0n..........",
+    "........0#0#0#0#........",
+    "........0#0S0#0#........",
+    "........0#0#0#0#........",
+};
+static const MoverDef COURSE_4_4_MOVERS[] = {
+    { M_SLIDER, 8.0f, 18.0f, 8.0f, 16.0f, 1, 1, 0.0f, 0, 0, 2000, 1500, 8, 19, 8, 15 },
+    { M_BRIDGE, 4.0f, 11.0f, 4.0f, 11.0f, 1, 1, 3.0f, 0, 90, 1200, 3500, 4, 13, 4, 9 },
+    { M_SWEEPER, 5.5f, 7.5f, 5.5f, 7.5f, 1, 1, 2.0f, -45, 0, 0, 0, -1, -1, -1, -1 },
+    { M_LIFT, 7.0f, 5.0f, 7.0f, 5.0f, 1, 2, 0.0f, 0, 0, 1500, 1500, 7, 6, 7, 4 },
+};
+
+// 1-5: the Sweeper: a two-armed bar spinning over a railed arena; its weak points (the bar's ends and middle) light in turn.
+static const char* const COURSE_1_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1#1#1#1#1#1#1#1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+static const MoverDef COURSE_1_5_MOVERS[] = {
+    { M_SWEEPER, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.2f, 40, 0, 0, 0, -1, -1, -1, -1 },
+    { M_SWEEPER, 5.0f, 4.0f, 5.0f, 4.0f, 1, 1, 3.2f, 40, 180, 0, 0, -1, -1, -1, -1 },
+};
+
+// 2-5: the Piston: pistons slam up under half the arena at a time; after each slam the core drops to the floor, glowing.
+static const char* const COURSE_2_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1P1#1P1#1P1*1R....",
+    "..1R1P1#1P1#1P1#1P1R....",
+    "..1R1#1P1#1#1#1P1#1R....",
+    "..1R1P1#1#1K1#1#1P1R....",
+    "..1R1#1P1#1#1#1P1#1R....",
+    "..1R1P1#1P1#1P1#1P1R....",
+    "..1R1*1P1#1P1#1P1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
+// 3-5: the Prism: a core shielded by cyan and magenta panels that swap colours; through one of yours and dash into it.
+static const char* const COURSE_3_5_ROWS[] PROGMEM = {
+    "..1R1R1R1R1R1R1R1R1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1#1o1#1#1#1o1#1R....",
+    "..1R1#1#1#1c1#1#1#1R....",
+    "..1R1#1#1m1K1m1#1#1R....",
+    "..1R1#1#1#1c1#1#1#1R....",
+    "..1R1#1o1#1#1#1o1#1R....",
+    "..1R1*1#1#1#1#1#1*1R....",
+    "..1R1R1R1R1#1R1R1R1R....",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
+// 4-5: the Gyre: the arena tilts itself against the stick, a ring of floor opens a quarter at a time, weak points ride round the rim.
+static const char* const COURSE_4_5_ROWS[] PROGMEM = {
+    "......1R1R1R1R1R........",
+    "....1R1#1#1#1#1#1R......",
+    "..1R1#1O1O1O1O1O1#1R....",
+    "..1R1#1O1*1#1*1O1#1R....",
+    "..1R1#1O1#1#1#1O1#1R....",
+    "..1R1#1O1*1#1*1O1#1R....",
+    "..1R1#1O1O1O1O1O1#1R....",
+    "....1R1#1#1#1#1#1R......",
+    "......1R1R1#1R1R........",
+    "..........1#............",
+    "..........0n............",
+    "........0*0#0*..........",
+    "........0#0S0#..........",
+    "........0#0#0#..........",
+};
+
 static const CourseDef COURSES[] = {
     { "1-1", "FIRST ROLL", 0, 12, 36, 60, COURSE_1_1_ROWS },
     { "1-2", "TERRACES", 0, 12, 25, 70, COURSE_1_2_ROWS },
     { "1-3", "ISLANDS", 0, 12, 26, 70, COURSE_1_3_ROWS },
     { "1-4", "THE CLIMB", 0, 12, 30, 80, COURSE_1_4_ROWS },
+    { "1-5", "THE SWEEPER", 0, 12, 14, 90, COURSE_1_5_ROWS, COURSE_1_5_MOVERS, 2, 1 },
     { "2-1", "COLD START", 1, 12, 25, 70, COURSE_2_1_ROWS },
     { "2-2", "SLIPWAY", 1, 12, 25, 75, COURSE_2_2_ROWS },
     { "2-3", "RELAY", 1, 12, 23, 75, COURSE_2_3_ROWS },
     { "2-4", "FROST LINE", 1, 12, 24, 80, COURSE_2_4_ROWS },
+    { "2-5", "THE PISTON", 1, 12, 14, 90, COURSE_2_5_ROWS, nullptr, 0, 2 },
+    { "3-1", "PRISM GATES", 2, 12, 21, 75, COURSE_3_1_ROWS },
+    { "3-2", "PHASE BRIDGES", 2, 12, 22, 80, COURSE_3_2_ROWS },
+    { "3-3", "CONVEYORS", 2, 12, 19, 80, COURSE_3_3_ROWS },
+    { "3-4", "PRISM RUN", 2, 12, 23, 85, COURSE_3_4_ROWS },
+    { "3-5", "THE PRISM", 2, 12, 14, 90, COURSE_3_5_ROWS, nullptr, 0, 3 },
+    { "4-1", "SHUTTLES", 3, 12, 19, 80, COURSE_4_1_ROWS, COURSE_4_1_MOVERS, 2 },
+    { "4-2", "LIFTS", 3, 12, 15, 80, COURSE_4_2_ROWS, COURSE_4_2_MOVERS, 2 },
+    { "4-3", "TURNSTILES", 3, 12, 19, 85, COURSE_4_3_ROWS, COURSE_4_3_MOVERS, 3 },
+    { "4-4", "FLUX CORE", 3, 12, 24, 95, COURSE_4_4_ROWS, COURSE_4_4_MOVERS, 4 },
+    { "4-5", "THE GYRE", 3, 12, 14, 95, COURSE_4_5_ROWS, nullptr, 0, 4 },
 };
 inline constexpr int COURSE_COUNT = sizeof(COURSES) / sizeof(COURSES[0]);
+inline constexpr int COURSES_PER_WORLD = 5;
 
 }  // namespace rollflux
 

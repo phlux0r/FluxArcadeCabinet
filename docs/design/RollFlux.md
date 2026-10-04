@@ -143,6 +143,68 @@ made the dash hard to aim, so B held turns the camera with the stick (the
 ball isn't pushed meanwhile), and it holds that heading until the ball
 sets off a new way. A quick tap of B stays free for stage 2's colour swap.
 
+### Stage 2, part 1: the Prism Works, built
+
+World 3's pieces and four courses (3-1 to 3-4; its guardian course comes
+with the guardians). Polarity as section 6, a swap on B's release when
+the stick wasn't used (B held with the stick turns the camera). Colour
+gates are cells with bars round them (on edges not shared with a gate of
+their colour), bouncing the other colour at GATE_BOUNCE; phase bridges
+are thin slabs (BRIDGE_DEPTH) that `floorAt` treats as void to the other
+colour, drawn to it as a dim ghost tile. Crystal walls are cells
+CRYSTAL_HEIGHT up, so the ordinary wall test stops a roll; met in a dash
+they're smashed (floor from then on, shards flying). Bumpers are posts
+(BUMPER_RADIUS) kicking the ball off at BUMPER_KICK; conveyors push along
+their run up to CONVEYOR_SPEED. The autopilot pays to cross bumpers and
+to go against a conveyor, compensates for a conveyor's push, and swaps
+colour for the first cell ahead that needs one, at the edge when it's on
+a bridge of its own colour. `god` clears all twelve courses, no falls.
+Points: 50 a crystal, 10 a bumper's kick (design section 7 had crystals
+only). The how-to-play gains a third slide, on the colours.
+
+### Stage 2, part 2: the Flux Core, built
+
+World 4's moving parts and four courses (4-1 to 4-4). A course lists its
+parts beside its cells (`MoverDef`): sliders (a one-cell platform
+shuttling between two points), lifts (rising in place between two
+heights), turning bridges (a cell wide, turning about their middles
+between two angles) and sweepers (an arm turning about a post). All run
+on the clock from the course's start, waiting `pauseMs` at each end and
+taking `moveMs` between, so where one is depends on time alone. Sliders,
+lifts and bridges are floor wherever they are (`floorAt` takes the
+higher of a cell and a part); a ball on one is carried by its movement,
+turned with a bridge's turn. They're drawn as floor pieces in the
+far-to-near pass (so a ball riding one is drawn over it); sweepers' arms
+as items. A sweeper's arm puts the ball back out and sends it off at the
+arm's speed there plus SWEEPER_KICK. For the autopilot each part links
+two landing cells: the planner crosses the link at a cost, and the
+pilot waits at the landing's edge for the part to be there (a bridge
+lined up with time to cross), boards it, keeps still on it till it waits
+at the far end, and gets off. `god` clears all sixteen courses. The
+title now runs along the top, the course behind it uncovered.
+
+### Stage 2, part 3: the guardians, built
+
+Each world's fifth course (1-5, 2-5, 3-5, 4-5) is a guardian in a railed
+arena, as section 9, beaten by GUARDIAN_HP hits with a dash on a lit
+weak point (shut and flashing for GUARDIAN_SHUT_MS after each). Its gems
+grow back after GEM_REGROW_MS so the dash meter can refill. The Sweeper
+is two sweeper arms on one pivot, its weak points their ends and the
+pivot, lit in turn. The Piston's pistons (P cells) slam up under half the
+arena at a time after a warning, throwing a ball on one up (mostly back
+inside the rails); its core (K) is a wall but for a few seconds after
+each slam, when it's down and lit. The Prism's core is a wall ringed by
+four gate cells whose colours swap (faster as it's hit), hit by a dash
+met in the wall test through a panel of the ball's colour. The Gyre tilts
+its arena (an acceleration turning round), opens its ring (O cells) a
+quarter at a time after a warning, and has three weak points riding
+round. All run on the clock from the course's start. The autopilot fills
+its meter from the arena's gems, comes into the arena by its plan, and
+lines up on the lit weak point from about a cell and a half (leading a
+moving one), charges, and dashes; at the Piston it waits off the pistons
+for the core to drop, at the Prism it swaps to a panel's colour first,
+on the Gyre it keeps off ring that's about to open. `god` beats all four.
+
 ## 1. Screen and camera
 
 - A chase camera behind and above the ball, looking down at about 35

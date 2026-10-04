@@ -117,12 +117,12 @@ else
   ./cabinet_sim
   echo "=== games2d (Runner, Asteroid, Lander attract demos)"
   ./games2d_harness all 30000
-  for s in physics rules courses god "play 20000" idle demoexit menus; do
+  for s in physics rules courses guardians god "play 20000" idle demoexit menus pick; do
     echo "=== roll $s"
     # shellcheck disable=SC2086
     ./rollflux_harness $s | tail -24
   done
-  for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit; do
+  for s in "play 40000" wall smash tunnel polarity living levels boss "idle 6000" demoexit pick; do
     echo "=== brick $s"
     # shellcheck disable=SC2086
     ./brickflux_harness $s | tail -9

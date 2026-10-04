@@ -73,6 +73,82 @@ inline constexpr unsigned long DASH_BRAKE_MS = 150;
 inline constexpr float DASH_GRAVITY    = 0.5f;
 inline constexpr float DASH_RETURN_MIN = 400.0f;
 
+// --- Stage 2's pieces (the Prism Works) -----------------------------------------
+// Polarity: B tapped (released within SWAP_TAP_MS, the stick untouched)
+// swaps the ball between cyan and magenta, at most every SWAP_COOLDOWN_MS.
+inline constexpr unsigned long SWAP_TAP_MS      = 400;
+inline constexpr unsigned long SWAP_COOLDOWN_MS = 250;
+// Colour gates: bars round a cell, passable only in their colour.
+inline constexpr float GATE_HEIGHT = 60.0f;
+inline constexpr float GATE_BOUNCE = 0.5f;
+// Phase bridges: thin slabs, solid only in their colour.
+inline constexpr float BRIDGE_DEPTH = 30.0f;
+// Crystal walls: blocks this high on their cell; a dash smashes them.
+inline constexpr float CRYSTAL_HEIGHT = 160.0f;
+inline constexpr long  CRYSTAL_POINTS = 50;
+inline constexpr int   SHARD_COUNT = 12;
+inline constexpr unsigned long SHARD_MS = 600;
+// Bumpers: a post in the middle of a cell that kicks the ball off at
+// BUMPER_KICK at least.
+inline constexpr float BUMPER_RADIUS = 40.0f;
+inline constexpr float BUMPER_HEIGHT = 90.0f;
+inline constexpr float BUMPER_KICK   = 900.0f;
+inline constexpr long  BUMPER_POINTS = 10;
+// Conveyors: carry the ball along at up to CONVEYOR_SPEED.
+inline constexpr float CONVEYOR_SPEED = 350.0f;
+inline constexpr float CONVEYOR_ACCEL = 800.0f;
+
+// --- Moving parts (the Flux Core) ------------------------------------------------
+// Sliders and lifts are one-cell platforms MOVER_THICK deep; bridges a cell
+// wide; sweepers an arm SWEEPER_HALF_WIDTH*2 thick, from SWEEPER_LOW to
+// SWEEPER_HIGH over its floor, knocking the ball off at its own speed plus
+// SWEEPER_KICK.
+inline constexpr int   MAX_MOVERS = 6;
+inline constexpr float PLATFORM_HALF = CELL * 0.48f;
+inline constexpr float MOVER_THICK = 40.0f;
+inline constexpr float BRIDGE_HALF_WIDTH = CELL * 0.45f;
+inline constexpr float SWEEPER_HALF_WIDTH = 14.0f;
+inline constexpr float SWEEPER_LOW = 10.0f, SWEEPER_HIGH = 70.0f;
+inline constexpr float SWEEPER_KICK = 300.0f;
+
+// --- The guardians (a world's fifth course) --------------------------------------
+// Each takes GUARDIAN_HP hits with a dash on a lit weak point (a node, or
+// the Prism's core); plain bumps do nothing. After a hit it flashes, shut,
+// for GUARDIAN_SHUT_MS. Its arena's gems grow back after GEM_REGROW_MS, so
+// the dash meter can be filled again.
+inline constexpr int   GUARDIAN_HP = 3;
+inline constexpr float NODE_RADIUS = 55.0f;
+inline constexpr long  GUARDIAN_HIT_POINTS = 500;
+inline constexpr long  GUARDIAN_POINTS = 5000;       // beaten, in the tally
+inline constexpr unsigned long GUARDIAN_SHUT_MS = 1500;
+inline constexpr unsigned long GUARDIAN_GRACE_MS = 2000;   // quiet at the start
+inline constexpr unsigned long GEM_REGROW_MS = 7000;
+// The Sweeper: its lit point moves on (end, end, middle) every so often.
+inline constexpr unsigned long SWEEPER_NODE_MS = 4000;
+// The Piston: a cycle of warning (its half of the pistons flashing), slam
+// (up PISTON_RISE steps, throwing a ball on one up at PISTON_LAUNCH), hold,
+// fall; then the core is down at the floor, lit, until the next cycle.
+inline constexpr unsigned long PISTON_CYCLE_MS = 6500;
+inline constexpr unsigned long PISTON_WARN_MS  = 1500;
+inline constexpr unsigned long PISTON_RISE_MS  = 150;
+inline constexpr unsigned long PISTON_HOLD_MS  = 2600;   // from the cycle's start
+inline constexpr unsigned long PISTON_FALL_MS  = 3100;
+inline constexpr float PISTON_RISE   = 2.0f * HEIGHT_STEP;
+inline constexpr float CORE_RISE     = 3.0f * HEIGHT_STEP;
+inline constexpr float PISTON_LAUNCH = 1100.0f;
+// The Prism: its panels swap colours every this many ms (faster as it's hit).
+inline constexpr unsigned long PRISM_SWAP_MS[GUARDIAN_HP] = { 3000, 2200, 1500 };
+inline constexpr float PRISM_CORE_RISE = 2.0f * HEIGHT_STEP;
+// The Gyre: the arena's own tilt (turning), its ring opening a quarter at a
+// time (after a warning), weak points riding round.
+inline constexpr float GYRE_TILT = 450.0f;
+inline constexpr float GYRE_TURN = 0.6f;                 // radians a second
+inline constexpr unsigned long RING_OPEN_MS = 3000;
+inline constexpr unsigned long RING_WARN_MS = 900;
+inline constexpr float GYRE_ORBIT = 2.9f * CELL;
+inline constexpr float GYRE_ORBIT_SPEED = 0.5f;          // radians a second
+inline constexpr unsigned long GYRE_NODE_MS = 5000;
+
 // --- Rules -------------------------------------------------------------------
 inline constexpr int   START_LIVES    = 4;
 inline constexpr int   MAX_LIVES      = 9;
@@ -94,6 +170,10 @@ inline constexpr unsigned long ATTRACT_SLIDE_MS = 6000;
 inline constexpr unsigned long DEMO_MS          = 35000;
 inline constexpr float ORBIT_RADIUS = 1500.0f, ORBIT_HEIGHT = 1300.0f;
 inline constexpr float ORBIT_SPEED  = 0.12f;      // radians a second
+// The stage-select cheat (B held with A on the attract screens): the stick
+// steps through the courses, repeating while held; left alone it goes back.
+inline constexpr unsigned long PICK_TIMEOUT_MS = 20000;
+inline constexpr unsigned long PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
 
 // --- Sound -------------------------------------------------------------------
 inline constexpr const char* MUSIC = "/audio/flux-roll.wav";

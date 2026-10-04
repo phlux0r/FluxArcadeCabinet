@@ -134,6 +134,10 @@ inline constexpr unsigned long ATTRACT_SLIDE_MS = 8000;
 inline constexpr unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
 inline constexpr int DEMO_MIN_LEVEL = 2, DEMO_MAX_LEVEL = 12;
 inline constexpr unsigned long GAMEOVER_TIMEOUT_MS = 30000;
+// The stage-select cheat (B held with A on the attract screens): the stick
+// steps through the levels, repeating while held; left alone it goes back.
+inline constexpr unsigned long PICK_TIMEOUT_MS = 20000;
+inline constexpr unsigned long PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
 inline constexpr unsigned long POPUP_MS = 700;
 inline constexpr unsigned long SHAKE_MS = 133;          // ~4 frames at 30fps
 

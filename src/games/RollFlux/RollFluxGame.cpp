@@ -4,20 +4,29 @@ namespace rollflux {
 
 namespace {
 
-// The optional sounds on the SD card: each falls back to a tone (or, for
-// the checkpoint, a fall and the goal, a short melody) without it.
-struct SfxDef { const char* path; int hz, ms; };
+// The optional sounds on the SD card: each falls back to another WAV, or
+// a tone (or, for the checkpoint, a fall and the goal, a short melody)
+// without it.
+struct SfxDef { const char* path; const char* fallback; int hz, ms; };
 const SfxDef ROLL_SFX[] = {
-    { "/audio/roll_bump.wav",   160,  30 },   // SFX_BUMP
-    { "/audio/pickup.wav",     1568,  50 },   // SFX_GEM (shared)
-    { "/audio/roll_boost.wav", 1300,  60 },   // SFX_BOOST
-    { "/audio/roll_charge.wav", 600,  90 },   // SFX_CHARGE
-    { "/audio/roll_dash.wav",  1200, 120 },   // SFX_DASH
-    { "/audio/roll_check.wav",    0,   0 },   // SFX_CHECK
-    { "/audio/roll_fall.wav",     0,   0 },   // SFX_FALL
-    { "/audio/roll_goal.wav",     0,   0 },   // SFX_GOAL
+    { "/audio/roll_bump.wav",    nullptr,  160,  30 },   // SFX_BUMP
+    { "/audio/pickup.wav",       nullptr, 1568,  50 },   // SFX_GEM (shared)
+    { "/audio/roll_boost.wav",   nullptr, 1300,  60 },   // SFX_BOOST
+    { "/audio/roll_charge.wav",  nullptr,  600,  90 },   // SFX_CHARGE
+    { "/audio/roll_dash.wav",    nullptr, 1200, 120 },   // SFX_DASH
+    { "/audio/roll_check.wav",   nullptr,    0,   0 },   // SFX_CHECK
+    { "/audio/roll_fall.wav",    nullptr,    0,   0 },   // SFX_FALL
+    { "/audio/roll_goal.wav",    nullptr,    0,   0 },   // SFX_GOAL
+    { "/audio/roll_swap.wav",    nullptr, 1400,  40 },   // SFX_SWAP (high cyan, low magenta)
+    { "/audio/roll_gate.wav",    nullptr,  220,  50 },   // SFX_GATE
+    { "/audio/roll_crystal.wav", "/audio/explosion.wav", 0, 0 },   // SFX_CRYSTAL
+    { "/audio/roll_bumper.wav",  nullptr,  990,  40 },   // SFX_BUMPER
+    { "/audio/roll_boss_warn.wav", nullptr, 0,   0 },   // SFX_GUARD_WARN
+    { "/audio/roll_boss_hit.wav", nullptr,  660,  90 },  // SFX_GUARD_HIT
+    { "/audio/roll_boss_down.wav", "/audio/star_boss_die.wav", 0, 0 },   // SFX_GUARD_DOWN
+    { "/audio/roll_slam.wav",    nullptr,  110,  80 },   // SFX_SLAM
 };
-static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 8, "one SfxDef per Sfx");
+static_assert(sizeof(ROLL_SFX) / sizeof(ROLL_SFX[0]) == 16, "one SfxDef per Sfx");
 
 // While the demo runs, new sounds are dropped (lifted again whichever way
 // update() returns).
@@ -47,6 +56,7 @@ void RollFluxGame::findSounds(AudioEngine &audio) {
     for (int i = 0; i < SFX_COUNT; ++i) {
         _sfxOnCard[i] = audio.exists(ROLL_SFX[i].path);
         if (_sfxOnCard[i]) audio.preload(ROLL_SFX[i].path);
+        else if (ROLL_SFX[i].fallback) audio.preload(ROLL_SFX[i].fallback);
     }
     _musicOnCard = audio.exists(MUSIC);
 }
@@ -54,7 +64,10 @@ void RollFluxGame::findSounds(AudioEngine &audio) {
 void RollFluxGame::sfx(Sfx s) {
     if (_silent || !_audio) return;
     if (_sfxOnCard[s]) { _audio->playWAV(ROLL_SFX[s].path); return; }
+    if (ROLL_SFX[s].fallback) { _audio->playWAV(ROLL_SFX[s].fallback); return; }
     switch (s) {
+        case SFX_SWAP: _audio->playTone(_polarity == 0 ? 1400 : 700, 40); break;
+        case SFX_GUARD_WARN: { static const int n[] = { 220, 0, 220, 0, 220 }, d[] = { 120, 60, 120, 60, 240 }; sfxMelody(n, d, 5); break; }
         case SFX_CHECK: { static const int n[] = { 880, 1175 }, d[] = { 60, 100 }; sfxMelody(n, d, 2); break; }
         case SFX_FALL:  { static const int n[] = { 700, 500, 330, 200 }, d[] = { 60, 60, 60, 120 }; sfxMelody(n, d, 4); break; }
         case SFX_GOAL:  { static const int n[] = { 523, 659, 784, 1047, 784, 1047 }, d[] = { 80, 80, 80, 120, 80, 240 };
@@ -68,7 +81,7 @@ void RollFluxGame::sfx(Sfx s) {
 // entered is kept. Nothing from the demo.
 void RollFluxGame::onQuit(AudioEngine &audio) {
     if (_phase == PHASE_NAME) _scores.finishNow();
-    else if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_CLEAR)) _scores.record(_score);
+    else if (!_demo && !_test && (_phase == PHASE_PLAYING || _phase == PHASE_CLEAR)) _scores.record(_score);
     audio.mute();
 }
 
@@ -84,15 +97,21 @@ void RollFluxGame::updateFrameScale() {
     _dt = dt / 1000.0f;
 }
 
-void RollFluxGame::startNewGame(AudioEngine &audio) {
+// `first`, if given, is the stage-select cheat's course: a test run that
+// starts there and puts nothing on the table.
+void RollFluxGame::startNewGame(AudioEngine &audio, int first) {
     _demo = false;
+    _test = first >= 0;
+    _testFrom = _test ? first : 0;
     _silent = false;
     _scores.forget();
     _score = 0;
     _lives = START_LIVES;
     _gemsTotal = _goals = _falls = _dashes = 0;
+    _crystals = _bumps = _swaps = 0;
     _dashGems = 0;
-    _course = _loop = 0;
+    _course = _testFrom;
+    _loop = 0;
     _prevA = true;                    // the A that started it isn't a dash
     startCourse(audio);
     // Music plays during a game only: not on the attract screens or in the
@@ -104,6 +123,7 @@ void RollFluxGame::startNewGame(AudioEngine &audio) {
 // limit shortens by 15% a loop round the courses, to 60% at most.
 void RollFluxGame::loadCourse(int index) {
     const CourseDef &def = COURSES[index % COURSE_COUNT];
+    _def = &def;
     _w = def.w;
     _h = def.h;
     _courseGems = 0;
@@ -134,6 +154,19 @@ void RollFluxGame::loadCourse(int index) {
                 case 'v': cell.kind = K_BOOST_S; break;
                 case '>': cell.kind = K_BOOST_E; break;
                 case '<': cell.kind = K_BOOST_W; break;
+                case 'c': cell.kind = K_GATE_C; break;
+                case 'm': cell.kind = K_GATE_M; break;
+                case '(': cell.kind = K_BRIDGE_C; break;
+                case ')': cell.kind = K_BRIDGE_M; break;
+                case 'X': cell.kind = K_CRYSTAL; break;
+                case 'o': cell.kind = K_BUMPER; break;
+                case '8': cell.kind = K_CONV_N; break;
+                case '2': cell.kind = K_CONV_S; break;
+                case '6': cell.kind = K_CONV_E; break;
+                case '4': cell.kind = K_CONV_W; break;
+                case 'P': cell.kind = K_PISTON; break;
+                case 'K': cell.kind = K_CORE; break;
+                case 'O': cell.kind = K_RING; break;
                 default:  cell.kind = K_VOID; break;
             }
         }
@@ -152,6 +185,21 @@ void RollFluxGame::loadCourse(int index) {
     _rot[1] = _rot[2] = _rot[3] = _rot[5] = _rot[6] = _rot[7] = 0;
     _pathLen = 0;
     _targetC = _targetR = -1;
+    _polarity = 0;                    // every course starts cyan
+    _bumpUntil = _shardsUntil = 0;
+    // Its moving parts, from their starting places.
+    _moverCount = def.moverCount < MAX_MOVERS ? def.moverCount : MAX_MOVERS;
+    _courseAt = millis();
+    _onMover = -1;
+    _pilotLink = -1;
+    for (int k = 0; k < _moverCount; ++k) {
+        Mover &mv = _movers[k];
+        moverAt(def.movers[k], 0, mv.x, mv.z, mv.y, mv.ang);
+        mv.px = mv.x; mv.pz = mv.z; mv.py = mv.y; mv.pang = mv.ang;
+        mv.vx = mv.vz = 0;
+    }
+    _clearGuardian = 0;
+    guardianSetup();
     respawn();
 }
 
@@ -163,8 +211,9 @@ void RollFluxGame::startCourse(AudioEngine &audio) {
     _phase = PHASE_PLAYING;
     _phaseAt = millis();
     snprintf(_bannerBuf, sizeof(_bannerBuf), "%s %s", courseDef().code, courseDef().name);
-    banner(_bannerBuf, ArcadeConfig::COLOR_CYAN, 2000);
-    sfxTone(900, 80);
+    banner(_bannerBuf, guardianCourse() ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_CYAN, 2000);
+    if (guardianCourse()) sfx(SFX_GUARD_WARN);
+    else sfxTone(900, 80);
 }
 
 // Back at the start or the last checkpoint, still, facing the way it was.
@@ -185,6 +234,8 @@ void RollFluxGame::respawn() {
     _camHold = false;
     _yaw = _respawnYaw;
     _leanRoll = _leanPitch = 0;
+    _onMover = -1;
+    _pilotLink = -1;
     _holdUntil = millis() + RESPAWN_HOLD_MS;
     updateCamera(true);
 }
@@ -210,9 +261,10 @@ void RollFluxGame::loseLife(AudioEngine &audio, const char* why) {
     banner(_checkC >= 0 ? "BACK TO CHECKPOINT" : "TRY AGAIN", ArcadeConfig::COLOR_ORANGE);
 }
 
-// The last ball's gone: a name for the table first, if the score made it.
+// The last ball's gone: a name for the table first, if the score made it
+// (never for a test run).
 void RollFluxGame::enterGameOver(AudioEngine &audio) {
-    _phase = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+    _phase = !_test && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseAt = millis();
     _charging = false;
     audio.stopLoop();
@@ -256,6 +308,26 @@ void RollFluxGame::updateDash(const InputState &in) {
     _dashGems -= DASH_GEMS_PER_STEP;
     ++_dashes;
     sfx(SFX_DASH);
+}
+
+// B tapped, the stick left alone, swaps the ball's colour (on the
+// release, so a B held for the camera doesn't); not again within the
+// cooldown.
+void RollFluxGame::updateSwap(const InputState &in) {
+    const unsigned long now = millis();
+    if (in.btnB && !_bDown) { _bDown = true; _bDownAt = now; _bStick = false; }
+    if (in.btnB && (fabsf(in.joyX) > 0.3f || fabsf(in.joyY) > 0.3f)) _bStick = true;
+    if (!in.btnB && _bDown) {
+        _bDown = false;
+        if (!_bStick && now - _bDownAt < SWAP_TAP_MS && (long)(now - _swapReadyAt) >= 0) swapColour();
+    }
+}
+
+void RollFluxGame::swapColour() {
+    _polarity ^= 1;
+    _swapReadyAt = millis() + SWAP_COOLDOWN_MS;
+    ++_swaps;
+    sfx(SFX_SWAP);
 }
 
 // The way a dash goes: the stick's, or the ball's own with the stick
@@ -333,6 +405,9 @@ void RollFluxGame::collectGems(AudioEngine &audio) {
             cell.flags |= F_TAKEN;
             ++_courseGemsTaken;
             ++_gemsTotal;
+            // A guardian's arena grows its gems back.
+            if (guardianCourse() && _regrowCount < 12)
+                _regrow[_regrowCount++] = Regrow{ (int8_t)c, (int8_t)r, millis() + GEM_REGROW_MS };
             _score += GEM_POINTS;
             _timeMs += GEM_TIME_MS;
             const int before = dashSteps();
@@ -348,14 +423,14 @@ void RollFluxGame::collectGems(AudioEngine &audio) {
 }
 
 // The tally: a hundred a second left, a bonus for no falls and another for
-// every gem; then the next course.
+// every gem (and one for a guardian beaten); then the next course.
 void RollFluxGame::reachGoal(AudioEngine &audio) {
     (void)audio;
     ++_goals;
     _clearTime = (_timeMs / 1000) * TIME_POINTS;
     _clearNoFall = _courseFalls == 0 ? NO_FALL_BONUS : 0;
     _clearAllGems = _courseGems > 0 && _courseGemsTaken == _courseGems ? ALL_GEMS_BONUS : 0;
-    _score += _clearTime + _clearNoFall + _clearAllGems;
+    _score += _clearTime + _clearNoFall + _clearAllGems + _clearGuardian;
     _phase = PHASE_CLEAR;
     _phaseAt = millis();
     _charging = false;
@@ -430,6 +505,7 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
     }
     switch (_phase) {
         case PHASE_ATTRACT:  return updateAttract(canvas, input, audio);
+        case PHASE_PICK:     return updatePicker(canvas, input, audio);
         case PHASE_CLEAR:    return updateClear(canvas, input, audio);
         case PHASE_NAME:     return updateName(canvas, input, audio);
         case PHASE_GAMEOVER: return updateGameOver(canvas, input, audio);
@@ -438,6 +514,7 @@ bool RollFluxGame::update(GFXcanvas16 &canvas, const InputState &input, AudioEng
 }
 
 bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    updateSwap(input);
     // B held: the stick turns the camera instead of the course.
     InputState in = input;
     if (input.btnB) {
@@ -449,7 +526,12 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
         _camHoldMoving = false;
     }
     updateDash(in);
+    updateMovers();
+    updateGuardian();
+    carryBall();
     stepBall(in);
+    findOnMover();
+    guardianHits();
     updateLean(in);
     updateCamera(false);
     stepRules(audio);
@@ -470,7 +552,10 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
 // course (A skips the wait).
 bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
     _prevA = input.btnA;
+    updateMovers();
+    carryBall();
     stepBall(InputState{});
+    findOnMover();
     _leanRoll *= 0.9f;
     _leanPitch *= 0.9f;
     updateCamera(false);
@@ -490,7 +575,8 @@ bool RollFluxGame::updateClear(GFXcanvas16 &canvas, const InputState &input, Aud
 // The course goes on behind the name entry; when it's done (or timed
 // out), the game-over screen.
 bool RollFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (!_fellOut) stepBall(InputState{});
+    updateMovers();
+    if (!_fellOut) { carryBall(); stepBall(InputState{}); findOnMover(); }
     renderFrame(canvas);
     _scores.draw(canvas);
     if (_scores.update(input, getRotation())) {
@@ -502,11 +588,13 @@ bool RollFluxGame::updateName(GFXcanvas16 &canvas, const InputState &input, Audi
 }
 
 bool RollFluxGame::updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
-    if (!_fellOut) stepBall(InputState{});
+    updateMovers();
+    if (!_fellOut) { carryBall(); stepBall(InputState{}); findOnMover(); }
     renderFrame(canvas);
     renderGameOver(canvas);
     const unsigned long t = millis() - _phaseAt;
-    if (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) startNewGame(audio);
+    // A plays again (a test run from the course it started on).
+    if (t > ArcadeConfig::GAMEOVER_INPUT_DELAY_MS && input.btnAPressed) startNewGame(audio, _test ? _testFrom : -1);
     else if (t > GAMEOVER_TIMEOUT_MS) enterAttract();
     return true;
 }
