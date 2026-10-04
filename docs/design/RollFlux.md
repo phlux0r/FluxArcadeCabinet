@@ -369,7 +369,7 @@ Sweeper). The autopilot:
 | Sound | File | Fallback |
 |---|---|---|
 | Music | `flux-roll.wav` | none |
-| Rolling | (a low tone that follows speed, from the synth) | |
+| Rolling | (a low tick from the synth at each tile edge crossed on the floor, pitched up with speed; it gives way to any other synth sound) | |
 | Bump / rail | `roll_bump.wav` | tone |
 | Gem | `pickup.wav` (shared) | tone |
 | Dash charge / release | `roll_charge.wav`, `roll_dash.wav` | tones |

@@ -100,10 +100,21 @@ private:
     bool updateName(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     bool updateGameOver(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void banner(const char* text, uint16_t colour, unsigned long ms = 1500);
+    // The synth's sounds note when they'll be over, so the rolling ticks
+    // (which share it, and would cut a sound short) wait for them.
     void sfxMelody(const int* n, const int* d, int len) {
-        if (!_silent && _audio) _audio->playMelody(n, d, len);
+        if (_silent || !_audio) return;
+        _audio->playMelody(n, d, len);
+        unsigned long ms = 0;
+        for (int i = 0; i < len; ++i) ms += d[i];
+        _synthUntil = millis() + ms;
     }
-    void sfxTone(int hz, int ms) { if (!_silent && _audio) _audio->playTone(hz, ms); }
+    void sfxTone(int hz, int ms) {
+        if (_silent || !_audio) return;
+        _audio->playTone(hz, ms);
+        _synthUntil = millis() + ms;
+    }
+    void rollTicks();
     const CourseDef &courseDef() const { return *_def; }   // the course loaded
 
     // --- RollFluxPhysics.cpp ---
@@ -364,6 +375,9 @@ private:
     struct Item { float depth, bottom, x, z; uint8_t type, c, r; };
     Item _items[MAX_ITEMS];
     unsigned long _renderUs = 0;
+    long  _ticks = 0;                 // rolling ticks played (the harness counts them)
+    int   _seamC = -1, _seamR = -1;   // the cell the ball was in, for the ticks
+    unsigned long _synthUntil = 0;    // a synth sound of ours is playing until then
 };
 
 }  // namespace rollflux

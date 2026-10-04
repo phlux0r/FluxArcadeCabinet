@@ -17,6 +17,8 @@
 //                (roll_<spot>.ppm), to look at by eye: the ball on the
 //                floor, its stripes and shadow, rails, gems, a ball fallen
 //                behind an edge hidden by it
+//   ticks        the rolling sound: a tick per tile edge on the floor, none
+//                at rest, in the air, or over another synth sound
 //   pick         the stage-select cheat: opening, stepping, a test run
 //                that saves nothing, and back
 //   all          everything but pose (the default)
@@ -980,6 +982,65 @@ static bool scenarioPick() {
     return ok;
 }
 
+// Rolling: a low tick each time the ball crosses a tile edge on the floor,
+// none at rest or in the air, and none while the synth is playing another
+// sound (or one was asked for this frame).
+static bool scenarioTicks() {
+    static RollFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(160, 128);
+    bool ok = true;
+    printf("ticks:\n");
+    fresh(g, audio, canvas);
+    at(g, 5, 33);
+    long t0 = g._ticks;
+    for (int f = 0; f < 30; ++f) frame(g, audio, canvas);
+    check("at rest: no ticks", g._ticks == t0, ok);
+    // Forward from the start, counting the tile edges crossed.
+    auto roll = [&](int frames) {
+        long seams = 0;
+        int pc = g.colAt(g._bx), pr = g.rowAt(g._bz);
+        for (int f = 0; f < frames; ++f) {
+            frame(g, audio, canvas, InputState{ -1.0f, 0 });
+            const int c = g.colAt(g._bx), r = g.rowAt(g._bz);
+            if (c != pc || r != pr) { ++seams; pc = c; pr = r; }
+        }
+        return seams;
+    };
+    at(g, 5, 33);
+    t0 = g._ticks;
+    const int tones0 = audio.tones;
+    long seams = roll(45);
+    printf("  %ld edges crossed, %ld ticks\n", seams, g._ticks - t0);
+    check("rolling: a tick per tile edge", seams >= 3 && g._ticks - t0 == seams && audio.tones - tones0 >= seams, ok);
+    // The synth busy with another sound: they hold back.
+    at(g, 5, 33);
+    audio.tonePlaying = true;
+    t0 = g._ticks;
+    seams = roll(45);
+    audio.tonePlaying = false;
+    check("another tone playing: no ticks", seams >= 3 && g._ticks == t0, ok);
+    // A tone of the game's own asked for just now (not started yet).
+    at(g, 5, 33);
+    g.sfxTone(300, 2000);
+    t0 = g._ticks;
+    seams = roll(45);
+    check("a sound of its own just asked for: no ticks", seams >= 3 && g._ticks == t0, ok);
+    g_fakeMillis += 2500;
+    g._lastFrameMs = g_fakeMillis;
+    // In the air, crossing an edge: no tick.
+    at(g, 5, 33);
+    g._bz = (g._h - 1 - 33) * CELL + CELL - 2.0f;
+    g._by += 150;
+    g._vz = 400;
+    t0 = g._ticks;
+    const int r0 = g.rowAt(g._bz);
+    frame(g, audio, canvas);
+    check("in the air over an edge: no tick", g.rowAt(g._bz) != r0 && g._ticks == t0, ok);
+    printf("ticks -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 static void scenarioPose() {
     static RollFluxGame g;
     AudioEngine audio;
@@ -1093,6 +1154,7 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
     if (all || !strcmp(which, "menus")) ok &= scenarioMenus();
     if (all || !strcmp(which, "pick")) ok &= scenarioPick();
+    if (all || !strcmp(which, "ticks")) ok &= scenarioTicks();
     if (!strcmp(which, "pose")) scenarioPose();
     return ok ? 0 : 1;
 }

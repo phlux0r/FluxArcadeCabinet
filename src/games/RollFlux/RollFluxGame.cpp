@@ -66,13 +66,13 @@ void RollFluxGame::sfx(Sfx s) {
     if (_sfxOnCard[s]) { _audio->playWAV(ROLL_SFX[s].path); return; }
     if (ROLL_SFX[s].fallback) { _audio->playWAV(ROLL_SFX[s].fallback); return; }
     switch (s) {
-        case SFX_SWAP: _audio->playTone(_polarity == 0 ? 1400 : 700, 40); break;
+        case SFX_SWAP: sfxTone(_polarity == 0 ? 1400 : 700, 40); break;
         case SFX_GUARD_WARN: { static const int n[] = { 220, 0, 220, 0, 220 }, d[] = { 120, 60, 120, 60, 240 }; sfxMelody(n, d, 5); break; }
         case SFX_CHECK: { static const int n[] = { 880, 1175 }, d[] = { 60, 100 }; sfxMelody(n, d, 2); break; }
         case SFX_FALL:  { static const int n[] = { 700, 500, 330, 200 }, d[] = { 60, 60, 60, 120 }; sfxMelody(n, d, 4); break; }
         case SFX_GOAL:  { static const int n[] = { 523, 659, 784, 1047, 784, 1047 }, d[] = { 80, 80, 80, 120, 80, 240 };
                           sfxMelody(n, d, 6); break; }
-        default: _audio->playTone(ROLL_SFX[s].hz, ROLL_SFX[s].ms); break;
+        default: sfxTone(ROLL_SFX[s].hz, ROLL_SFX[s].ms); break;
     }
 }
 
@@ -532,6 +532,7 @@ bool RollFluxGame::updatePlaying(GFXcanvas16 &canvas, const InputState &input, A
     stepBall(in);
     findOnMover();
     guardianHits();
+    rollTicks();
     updateLean(in);
     updateCamera(false);
     stepRules(audio);
