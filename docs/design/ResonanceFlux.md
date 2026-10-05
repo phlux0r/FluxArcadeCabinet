@@ -354,6 +354,31 @@ So:
 - **Your figure is smaller**: 18px across the radius, not 26, which also
   gives signals further to come.
 
+### After the second play
+
+Still hard, mostly from the time it took to get between stops, and
+signals from the top and bottom near the middle arrived very quickly.
+So:
+
+- **A stepped dial**: left/right steps one stop a push (held, it repeats
+  after 350ms, then every 180ms), round in a ring: right from the last
+  stop is the first. There's no in-between any more, so no snap, no
+  ratio tolerance and no rolling figure: you're on a signal's ratio or
+  you aren't, and only the phase is matched. Static now wanders only the
+  phase.
+- **The hum is a pitch match**: your stop's note, and the note of the
+  signal on your stop (the same: unison) or, if none, of the one nearest
+  the core (a different note: you're on the wrong ratio). The beat of the
+  first version went with the in-between.
+- **Spawns at the sides and corners**: the left and right edges, and the
+  top and bottom only within 22px of a corner; anywhere else on those is
+  under 40px from your figure (the top and bottom are only ~19px from its
+  ring at the middle).
+- The focus marks, when no signal shares your stop, go dim round the one
+  nearest the core: the one you're hearing.
+- Drifters (rolling signals matched by sitting between stops) were
+  offered and turned down: hard enough already.
+
 ## Needs the board
 
 Everything that makes or breaks it: whether the figures read clearly at
@@ -361,7 +386,7 @@ this size on the panel, whether the beating can be heard and is pleasant
 through the MAX98357A and speaker, how the rate-controlled tuning feels,
 the match tolerance, the afterglow pass's frame cost, and whether the game
 is fun once the novelty wears off. The prototype is for exactly this. The
-first things to try: the tolerances (`RATIO_TOL`, `PHASE_TOL`, `SNAP_ZONE`),
-the stick rates and curve, whether the beat helps, the hum and hiss
-levels, the drift speeds, and the frame rate (the afterglow pass touches
-~34k bytes a frame).
+first things to try: `PHASE_TOL`, the step repeat timing and phase
+speed, whether the notes help, the hum and hiss levels, the drift
+speeds, and the frame rate (the afterglow pass touches ~34k bytes a
+frame).

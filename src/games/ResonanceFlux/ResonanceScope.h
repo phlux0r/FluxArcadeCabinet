@@ -111,7 +111,7 @@ inline void ResonanceFluxGame::renderPlay(GFXcanvas16 &cv) {
         drawFigure(amber, i == _matched && playing ? green : nullptr, RATIOS[s.ratio], s.phase, s.x, s.y, SIG_R, false);
     }
     if (playing) {
-        drawFigure(green, _matched >= 0 ? amber : nullptr, ratioAt(dialEff()), phaseEff(),
+        drawFigure(green, _matched >= 0 ? amber : nullptr, yourRatio(), phaseEff(),
                    CORE_X, CORE_Y, CORE_R, true);
     }
     if (_now < _beamUntil) {
@@ -149,11 +149,15 @@ inline void ResonanceFluxGame::drawOverlays(GFXcanvas16 &cv) {
         const float a = TWO_PI_F * i / 64;
         dim(cx + (int)lrintf(cosf(a) * (CORE_R + SIG_R * 0.5f)), cy + (int)lrintf(sinf(a) * (CORE_R + SIG_R * 0.5f)), ringC);
     }
-    // The focus: corner marks round the signal you're tuned nearest.
-    if (_phaseState == PHASE_PLAYING && _focus >= 0) {
-        const Signal &s = _signals[_focus];
+    // Corner marks: grey round the signal on your stop nearest your phase
+    // (white in resonance); dim round the one nearest the core when none
+    // shares your stop (its tone is the one you hear).
+    const int mark = _focus >= 0 ? _focus : _threat;
+    if (_phaseState == PHASE_PLAYING && mark >= 0) {
+        const Signal &s = _signals[mark];
         const int x0 = (int)s.x - 11, y0 = (int)s.y - 11, x1 = (int)s.x + 11, y1 = (int)s.y + 11;
-        const uint16_t c = _matched >= 0 ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_GREY;
+        const uint16_t c = _matched >= 0 ? ArcadeConfig::COLOR_WHITE
+                         : _focus >= 0  ? ArcadeConfig::COLOR_GREY : 0x4208;   // dim: not on your stop
         for (int k = 0; k < 4; ++k) {
             dim(x0 + k, y0, c); dim(x0, y0 + k, c);
             dim(x1 - k, y0, c); dim(x1, y0 + k, c);
@@ -206,40 +210,35 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
     const int base = STRIP_Y + 7;
     cv.drawFastHLine(x0, base, x1 - x0 + 1, 0x2104);
     for (int i = 0; i < _stopCount; ++i) cv.drawFastVLine(dialX((float)i), base - 3, 3, ArcadeConfig::COLOR_GREEN);
-    const float d = dialEff();
-    cv.drawFastVLine(dialX(d), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
+    cv.drawFastVLine(dialX((float)_stop), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
 
-    const Ratio &r = ratioAt(d);
+    const Ratio &r = yourRatio();
     char buf[24];
-    const bool on = fabsf(d - stopAt(d)) < RATIO_TOL;
-    snprintf(buf, sizeof(buf), "%s%d:%d", on ? "" : "~", r.a, r.b);
+    snprintf(buf, sizeof(buf), "%d:%d", r.a, r.b);
     cv.setFont();
     cv.setTextSize(1);
-    cv.setTextColor(on ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_GREY);
+    cv.setTextColor(ArcadeConfig::COLOR_GREEN);
     cv.setCursor(1, STRIP_Y + 1);
     cv.print(buf);
 
-    // Tuning aid for the board, in the scope's bottom corner: the focus's
-    // dial and phase gaps, and the beat they make.
+    // Tuning aid for the board, in the scope's bottom corner: the phase gap
+    // to the signal on your stop.
     if (DEBUG_LINE && _focus >= 0 && _phaseState == PHASE_PLAYING) {
-        snprintf(buf, sizeof(buf), "%.2f %.2f %.0fHz", _focusRatioGap, _focusPhaseGap,
-                 fabsf(humAt(d) - pitchOf(_signals[_focus].ratio)));
+        snprintf(buf, sizeof(buf), "phase %.2f / %.2f", _focusPhaseGap, PHASE_TOL);
         cv.setTextColor(0x8410);
         cv.setCursor(1, SCOPE_Y + SCOPE_H - 8);
         cv.print(buf);
     }
 }
 
-// The title: a figure morphing slowly through the ratios behind the name.
+// The title: a figure turning, stepping through the ratios behind the name.
 inline void ResonanceFluxGame::renderTitle(GFXcanvas16 &cv) {
     uint8_t *green = _glow, *amber = _glow + PLANE;
     fadeGlow();
-    _titleDial += 0.15f * _dt;
-    if (_titleDial > RATIO_COUNT - 0.5f) _titleDial = -0.5f;
-    int k = (int)lrintf(_titleDial);
-    k = k < 0 ? 0 : k >= RATIO_COUNT ? RATIO_COUNT - 1 : k;
-    const Ratio &r = RATIOS[k];
-    _titlePhase += (0.6f + TWO_PI_F * (_titleDial - k) * ROLL_RATE) * _dt;
+    _titleAt += 0.25f * _dt;                 // a new ratio every 4s
+    if (_titleAt >= RATIO_COUNT) _titleAt = 0;
+    const Ratio &r = RATIOS[(int)_titleAt];
+    _titlePhase += 0.6f * _dt;
     drawFigure(green, nullptr, r, _titlePhase, CORE_X, CORE_Y + 4, 30, true);
     drawFigure(amber, nullptr, r, _titlePhase + 1.3f, CORE_X - 52, CORE_Y + 22, 9, false);
     drawFigure(amber, nullptr, r, -_titlePhase, CORE_X + 52, CORE_Y + 22, 9, false);

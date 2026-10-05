@@ -163,22 +163,21 @@ fifth. `docs/design/BrickFlux.md` is the full design.
 **Resonance Flux** is a prototype, for judging the idea on the board
 (`docs/design/ResonanceFlux.md` is the full design, of which it's a
 slice). The screen is a green phosphor oscilloscope. Your figure, in the
-middle, is a Lissajous curve: the stick tunes its frequency ratio
-(left/right, along the dial at the bottom) and its phase (up/down). The
-dial has a stop for each ratio the game has reached, evenly spaced: just
-1:2 and 1:1 on wave 1. Signals, amber figures of their own, weave in from
-the edges. Tune to a
-signal's exact shape and both glow white: A shatters it, worth more the
-further out it is. Off a clean ratio your figure rolls, and you hear your
-tone beat against the nearest signal's, slower the closer you get; let go
-near a clean ratio and the needle settles onto it. A signal that reaches
-you adds static (noise on the scope, hiss, and a wander in your figure);
-so does firing out of tune. At 100 static it's over. B dampens: everything
-slows for 4s, twice a wave. Waves bring more and faster signals and more
-ratios, each a new stop on the dial (1:2 and 1:1, then 1:3 and 2:3 on
-wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A line
-in the scope's bottom corner shows the dial gap, phase gap and beat, for
-tuning the tolerances (`DEBUG_LINE` in `ResonanceConfig.h`).
+middle, is a Lissajous curve: left/right steps its frequency ratio round
+the dial at the bottom, a stop at a time, and up/down turns its phase.
+The dial has a stop for each ratio the game has reached (just 1:2 and 1:1
+on wave 1) and goes round: right from the last stop is the first.
+Signals, amber figures of their own, weave in from the sides and corners.
+On a signal's ratio, turn to its exact shape and both glow white: A
+shatters it, worth more the further out it is. You hear your ratio's note
+and the nearest signal's: the same note when you're on its ratio. A
+signal that reaches you adds static (noise on the scope, hiss, and a
+wander in your phase); so does firing out of tune. At 100 static it's
+over. B dampens: everything slows for 4s, twice a wave. Waves bring more
+and faster signals and more ratios, each a new stop on the dial (1:2 and
+1:1, then 1:3 and 2:3 on wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A
+line in the scope's bottom corner shows the phase gap to the signal on
+your stop, for tuning the tolerance (`DEBUG_LINE` in `ResonanceConfig.h`).
 
 **Roll Flux** (`docs/design/RollFlux.md`): the stick tilts the course and
 the ball rolls that way (camera-relative: up rolls it away from you), to
@@ -379,9 +378,10 @@ how-to or scores screens, hold B and press A; the stick picks the level
 there (a T before the score; nothing goes on the high-score table), B goes
 back.
 
-Resonance Flux: left/right turns the dial (the frequency ratio), up/down
-the phase; both at a rate that follows how far you push, so letting go
-keeps the setting. A fires, B dampens.
+Resonance Flux: left/right steps the dial (the frequency ratio) a stop at
+a time, round from end to end; held, it repeats. Up/down turns the phase
+at a rate that follows how far you push, so letting go keeps it. A fires,
+B dampens.
 
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)

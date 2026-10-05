@@ -29,20 +29,14 @@ constexpr bool DEBUG_LINE = true;
 
 // ---- The dial ----
 // One stop per clean ratio the game has reached so far (1:2 and 1:1 on
-// wave 1), evenly spaced, in ratio order: the dial is measured in stops,
-// so every neighbour is the same push away however many there are.
-constexpr float DIAL_SPEED  = 2.5f;      // stops/s at full push
+// wave 1), in ratio order, round in a ring: right from the last is the
+// first. You're always on a stop.
+constexpr float STEP_PUSH = 0.5f;        // a push past this steps one stop
+constexpr unsigned long STEP_REPEAT_DELAY_MS = 350, STEP_REPEAT_MS = 180;   // held
 constexpr float PHASE_SPEED = 3.1416f;   // radians/s at full push: a full turn in 2s
 constexpr float STICK_CURVE = 2.0f;      // push^curve: small pushes creep
-constexpr float SNAP_ZONE   = 0.2f;      // within this of a stop, with the stick
-constexpr float SNAP_STICK  = 0.15f;     //   nearly still, the needle eases onto it
-constexpr float SNAP_RATE   = 8.0f;      //   (per second)
-// A figure off a stop rolls (its phase drifts) at 2*pi*error*ROLL_RATE
-// radians/s (error in stops): the visual twin of the beat.
-constexpr float ROLL_RATE   = 1.3f;
 
 // ---- Matching ----
-constexpr float RATIO_TOL   = 0.06f;     // dial gap for resonance, in stops
 constexpr float PHASE_TOL   = 0.12f;     // phase gap (radians) for resonance: also the
                                          // most the figures differ, unit size (ResonanceFigure.h),
                                          // so ~2px at the core
@@ -56,6 +50,9 @@ constexpr float DRIFT_START = 4.0f;      // px/s on wave 1
 constexpr float DRIFT_GROWTH = 1.05f;    // per wave
 constexpr float DRIFT_MAX   = 14.0f;
 constexpr unsigned long SPAWN_FIRST_MS = 4000, SPAWN_MIN_MS = 1500, SPAWN_STEP_MS = 150;
+// Signals start on the left and right edges, or the top and bottom within
+// this of a corner: anywhere else on those is under 40px from your figure.
+constexpr float SPAWN_CORNER = 22.0f;
 // Signals meander: each weaves either side of the way to the core, its
 // heading swaying by up to SWAY_MAX radians at its own rate.
 constexpr float SWAY_MIN = 0.6f, SWAY_MAX = 1.0f;
@@ -68,8 +65,7 @@ constexpr float STATIC_MISFIRE = 3.0f;
 constexpr float STATIC_SHATTER = -1.0f;
 constexpr float STATIC_CLEAR   = -25.0f; // a wave cleared
 constexpr float STATIC_DECAY   = 0.5f;   // per second
-constexpr float JITTER_DIAL    = 0.10f;  // your figure's wander at full static (stops)
-constexpr float JITTER_PHASE   = 0.35f;  //   (radians)
+constexpr float JITTER_PHASE   = 0.35f;  // your phase's wander at full static (radians)
 
 // ---- Dampen (B) ----
 constexpr int   DAMPEN_PER_WAVE = 2;
@@ -88,13 +84,11 @@ constexpr unsigned long SHARD_MS = 650;
 
 // ---- Hum (the two tones) ----
 // Each ratio has its own pitch, whatever stop it's on: HUM_F_LO for the
-// first in RATIOS, HUM_F_STEP higher for each after. Between stops your
-// tone slides from one to the next.
+// first in RATIOS, HUM_F_STEP higher for each after.
 constexpr float HUM_F_LO = 300.0f;
 constexpr float HUM_F_STEP = 40.0f;
 constexpr float HUM_YOU_LEVEL = 0.35f;
 constexpr float HUM_TARGET_LEVEL = 0.35f;
-constexpr float HUM_FADE_ZONE = 1.0f;    // the target tone fades in within a stop of it
 constexpr float HISS_LEVEL = 0.4f;       // at full static
 
 constexpr unsigned long GAMEOVER_MIN_MS = 1500, GAMEOVER_TIMEOUT_MS = 15000;
