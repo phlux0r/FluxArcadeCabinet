@@ -5,7 +5,8 @@
 // start on the attract demo's): it takes the signal nearest the core,
 // steps the dial to its ratio the shorter way round, then turns the
 // phase whichever way closes the gap, and fires in resonance. It dampens
-// when a signal is about to get through unmatched.
+// when a signal is about to get through unmatched. On a new target it
+// pauses a moment first, as a person would (the demo looks played).
 
 namespace resonance {
 
@@ -19,8 +20,13 @@ inline InputState ResonanceFluxGame::autopilot() {
         const float dx = s.x - CORE_X, dy = s.y - CORE_Y, d2 = dx * dx + dy * dy;
         if (d2 < best) { best = d2; target = i; }
     }
+    if (target != _apTarget) {
+        _apTarget = target;
+        _apReadyAt = _now + (unsigned long)random((long)AP_REACT_MIN_MS, (long)AP_REACT_MAX_MS + 1);
+    }
+    const bool ready = (long)(_now - _apReadyAt) >= 0;
     bool fire = false, damp = false;
-    if (target >= 0 && _round == ROUND_PLAY) {
+    if (target >= 0 && _round == ROUND_PLAY && ready) {
         const Signal &s = _signals[target];
         const Ratio &r = RATIOS[s.ratio];
         const int stop = _stopOf[s.ratio];
@@ -43,6 +49,8 @@ inline InputState ResonanceFluxGame::autopilot() {
                 in.joyX = up < down ? -push : push;     // screen up turns the phase forward
             }
         }
+    }
+    if (target >= 0 && _round == ROUND_PLAY) {
         const float reach = CORE_R + SIG_R * 0.5f + 12.0f;
         damp = best < reach * reach && _matched != target && _now >= _dampUntil;
     }

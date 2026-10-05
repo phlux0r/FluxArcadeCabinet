@@ -93,6 +93,14 @@ constexpr float HISS_LEVEL = 0.4f;       // at full static
 
 constexpr unsigned long GAMEOVER_MIN_MS = 1500, GAMEOVER_TIMEOUT_MS = 15000;
 
+// ---- Attract cycle, demo and the wave select ----
+constexpr unsigned long ATTRACT_SLIDE_MS = 6000;
+constexpr unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
+constexpr int   DEMO_MAX_WAVE = 8;       // the demo plays a random wave 1-8
+constexpr unsigned long AP_REACT_MIN_MS = 250, AP_REACT_MAX_MS = 600;   // the autopilot's pause on a new target
+constexpr int   PICK_MAX_WAVE = 20;
+constexpr unsigned long PICK_TIMEOUT_MS = 20000;
+
 }  // namespace resonance
 
 #endif  // RESONANCE_CONFIG_H

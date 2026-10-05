@@ -23,8 +23,11 @@
 // (the mixer's hum, audio/AudioMixer.h).
 //
 // The prototype is for judging the idea on the board: one kind of signal,
-// no cascades, chains or Chords, no attract demo. docs/design/
-// ResonanceFlux.md has the full design.
+// no cascades, chains or Chords. docs/design/ResonanceFlux.md has the
+// full design. Left alone, the title cycles through three how-to slides,
+// the high scores and a silent demo; B held with A on them opens the wave
+// select, for test runs that put nothing on the table. No music: the two
+// notes are the soundtrack, and music would hide them.
 //
 // Files: ResonanceFluxGame.h (phases and play), ResonanceScope.h (the
 // afterglow and drawing), ResonanceAutopilot.h (a player for the harness),
@@ -44,7 +47,9 @@ public:
     const char* getName() const override { return "Resonance Flux"; }
 
 private:
-    enum Phase : uint8_t { PHASE_TITLE, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    // PICK: the wave select, choosing a wave to start a test run on.
+    enum Phase : uint8_t { PHASE_ATTRACT, PHASE_PICK, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    enum Slide : uint8_t { SLIDE_TITLE, SLIDE_TUNE, SLIDE_MATCH, SLIDE_STATIC, SLIDE_SCORES, SLIDE_DEMO };
     // Within a game: the wave's number showing, play, and the wave's tally.
     enum Round : uint8_t { ROUND_INTRO, ROUND_PLAY, ROUND_CLEAR };
 
@@ -59,7 +64,14 @@ private:
     struct Shard { float x = 0, y = 0, vx = 0, vy = 0; unsigned long until = 0; bool white = false; };
 
     // ---- Phases and play (this file) ----
-    void startGame(AudioEngine &audio);
+    void enterAttract();
+    bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    void startDemo();
+    void endDemo();
+    void enterPicker();
+    bool updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    void resetRun(int wave);
+    void startGame(AudioEngine &audio, int first = -1);
     void startWave(int wave);
     void enterGameOver(AudioEngine &audio);
     void updateFrameTime();
@@ -79,6 +91,7 @@ private:
     const Ratio &yourRatio() const { return RATIOS[_stops[_stop]]; }
     static float pitchOf(int ratio) { return HUM_F_LO + HUM_F_STEP * ratio; }
     float phaseEff() const { return _phase + _jitP; }
+    bool inPlay() const { return _phaseState == PHASE_PLAYING || _demo; }   // a game or the demo
     int  aliveCount() const;
     int  maxOnScope() const;
     float driftSpeed() const;
@@ -97,6 +110,11 @@ private:
     void pushGlow(GFXcanvas16 &cv);
     void renderPlay(GFXcanvas16 &cv);
     void renderTitle(GFXcanvas16 &cv);
+    void renderInfo(GFXcanvas16 &cv, int page);
+    void renderScores(GFXcanvas16 &cv);
+    void renderPicker(GFXcanvas16 &cv);
+    void drawDemoOverlay(GFXcanvas16 &cv);
+    void figureFor(const Ratio &r, float phase, float cx, float cy, float rad, bool amber, bool white);
     void renderGameOver(GFXcanvas16 &cv);
     void drawHud(GFXcanvas16 &cv);
     void drawStrip(GFXcanvas16 &cv);
@@ -112,7 +130,9 @@ private:
     uint8_t *_glow = nullptr;            // two planes, green then amber, W x SCOPE_H each
     uint16_t _lut[32 * 32];              // (green, amber) -> colour
 
-    Phase _phaseState = PHASE_TITLE;
+    Phase _phaseState = PHASE_ATTRACT;
+    Slide _slide = SLIDE_TITLE;
+    unsigned long _slideAt = 0;
     Round _round = ROUND_INTRO;
     unsigned long _phaseAt = 0, _roundAt = 0;
     unsigned long _now = 0, _lastFrameMs = 0;
@@ -149,8 +169,21 @@ private:
     // Title: the figure it morphs through.
     float _titleAt = 0, _titlePhase = 0;    // the title's ratio (in RATIOS, as it climbs) and phase
 
-    // Autopilot: A, B and a dial step held last frame.
+    // The wave select: a test run puts nothing on the table.
+    bool _test = false;
+    int  _testFrom = 1;                  // its wave (A at its game over starts it again)
+    int  _pick = 1, _pickDir = 0;        // the picker's wave; the stick's last step
+    unsigned long _pickRepeatAt = 0, _pickAt = 0;
+
+    // The demo.
+    bool _demo = false;
+    unsigned long _demoUntil = 0;
+
+    // Autopilot: A, B and a dial step held last frame; the signal it's
+    // after, and when it reacts to a new one.
     bool _apPrevA = false, _apPrevB = false, _apPrevStep = false;
+    int  _apTarget = -1;
+    unsigned long _apReadyAt = 0;
 
     // Running totals, for the host harness (test/resonanceflux_harness.cpp).
     long _statShatters = 0, _statMisfires = 0, _statHits = 0, _statWaves = 0, _statDampens = 0;
@@ -177,10 +210,9 @@ inline void ResonanceFluxGame::init(AudioEngine &audio) {
     _bang = audio.exists("/audio/explosion.wav");
     if (_bang) audio.preload("/audio/explosion.wav");
     _lastFrameMs = millis();
-    _phaseState = PHASE_TITLE;
-    _phaseAt = millis();
-    for (auto &s : _signals) s.alive = false;
-    for (auto &s : _shards) s.until = 0;
+    _demo = _test = false;
+    resetRun(1);
+    enterAttract();
     static const int n[] = { 330, 495, 660, 990 };
     static const int d[] = {  90,  90,  90, 220 };
     audio.playMelody(n, d, 4);
@@ -205,11 +237,8 @@ inline bool ResonanceFluxGame::update(GFXcanvas16 &canvas, const InputState &inp
     }
 
     switch (_phaseState) {
-        case PHASE_TITLE:
-            audio.stopHum();
-            if (input.btnAPressed) { startGame(audio); renderPlay(canvas); return true; }
-            renderTitle(canvas);
-            return true;
+        case PHASE_ATTRACT: return updateAttract(canvas, input, audio);
+        case PHASE_PICK:    return updatePicker(canvas, input, audio);
         case PHASE_NAME:
             updateShards();
             renderPlay(canvas);
@@ -224,8 +253,8 @@ inline bool ResonanceFluxGame::update(GFXcanvas16 &canvas, const InputState &inp
             updateShards();
             renderGameOver(canvas);
             const unsigned long t = _now - _phaseAt;
-            if (t > GAMEOVER_MIN_MS && input.btnAPressed) startGame(audio);
-            else if (t > GAMEOVER_TIMEOUT_MS) { _phaseState = PHASE_TITLE; _phaseAt = _now; }
+            if (t > GAMEOVER_MIN_MS && input.btnAPressed) startGame(audio, _test ? _testFrom : -1);
+            else if (t > GAMEOVER_TIMEOUT_MS) { resetRun(1); enterAttract(); }
             return true;
         }
         default: break;
@@ -237,17 +266,132 @@ inline bool ResonanceFluxGame::update(GFXcanvas16 &canvas, const InputState &inp
     return true;
 }
 
-// Quitting (the Back button): a game in progress still goes on the table;
-// a name being entered is kept.
+// Quitting (the Back button): a game in progress still goes on the table
+// (not a test run's); a name being entered is kept.
 inline void ResonanceFluxGame::onQuit(AudioEngine &audio) {
     if (_phaseState == PHASE_NAME) _scores.finishNow();
-    else if (_phaseState == PHASE_PLAYING) _scores.record(_score);
+    else if (_phaseState == PHASE_PLAYING && !_test) _scores.record(_score);
     audio.mute();
 }
 
-inline void ResonanceFluxGame::startGame(AudioEngine &audio) {
-    _phaseState = PHASE_PLAYING;
-    _phaseAt = _now;
+inline void ResonanceFluxGame::enterAttract() {
+    _phaseState = PHASE_ATTRACT;
+    _test = false;
+    _slide = SLIDE_TITLE;
+    _phaseAt = _slideAt = _now = millis();
+}
+
+// Title, three how-to slides and the high scores (ATTRACT_SLIDE_MS each),
+// then the demo, round and round. A starts a game from any of them; B held
+// with A (not in the demo) opens the wave select.
+inline bool ResonanceFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (input.btnAPressed && input.btnB && _slide != SLIDE_DEMO) {
+        enterPicker();
+        renderPicker(canvas);
+        return true;
+    }
+    if (input.btnAPressed) {
+        if (_demo) endDemo();
+        startGame(audio);
+        renderPlay(canvas);
+        return true;
+    }
+    if (_slide == SLIDE_DEMO) {
+        if (_now >= _demoUntil || _static >= 100.0f) {
+            endDemo();
+            renderTitle(canvas);
+            return true;
+        }
+        // Silent: new sounds are dropped and the hum held at nothing,
+        // lifted again whichever way this returns.
+        struct Quiet { AudioEngine &a; Quiet(AudioEngine &a_) : a(a_) { a.setSilenced(true); }
+                       ~Quiet() { a.setSilenced(false); } } quiet(audio);
+        stepPlay(autopilot());
+        updateHum(audio);
+        renderPlay(canvas);
+        drawDemoOverlay(canvas);
+        return true;
+    }
+    audio.stopHum();
+    if (_now - _slideAt > ATTRACT_SLIDE_MS) {
+        _slideAt = _now;
+        if (_slide == SLIDE_SCORES) { startDemo(); renderPlay(canvas); return true; }
+        _slide = (Slide)(_slide + 1);
+    }
+    switch (_slide) {
+        case SLIDE_TITLE:  renderTitle(canvas); break;
+        case SLIDE_TUNE:   renderInfo(canvas, 0); break;
+        case SLIDE_MATCH:  renderInfo(canvas, 1); break;
+        case SLIDE_STATIC: renderInfo(canvas, 2); break;
+        default:           renderScores(canvas); break;
+    }
+    return true;
+}
+
+// The demo: a random early wave, the autopilot playing it silently.
+inline void ResonanceFluxGame::startDemo() {
+    _demo = true;
+    _slide = SLIDE_DEMO;
+    resetRun((int)random(1, DEMO_MAX_WAVE + 1));
+    _round = ROUND_PLAY;                     // straight into it, no banner
+    _spawnAt = _now;
+    _demoUntil = _now + (unsigned long)random((long)DEMO_MIN_MS, (long)DEMO_MAX_MS + 1);
+}
+
+// Back to the title, leaving nothing of the demo behind.
+inline void ResonanceFluxGame::endDemo() {
+    _demo = false;
+    resetRun(1);
+    enterAttract();
+}
+
+// The wave select, for trying any wave without playing up to it: left and
+// right step one wave, up and down five, each shown with its dial; A
+// starts a test run there, B goes back to the title, as does leaving it.
+inline void ResonanceFluxGame::enterPicker() {
+    _phaseState = PHASE_PICK;
+    if (_glow) memset(_glow, 0, 2 * W * SCOPE_H);   // no title left glowing behind it
+    _pick = 1;
+    _pickDir = 0;
+    _pickAt = _now;
+}
+
+inline bool ResonanceFluxGame::updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    audio.stopHum();
+    if (input.btnAPressed) {
+        startGame(audio, _pick);
+        renderPlay(canvas);
+        return true;
+    }
+    if (input.btnBPressed || _now - _pickAt > PICK_TIMEOUT_MS) {
+        enterAttract();
+        renderTitle(canvas);
+        return true;
+    }
+    bool up, down, left, right;
+    hiscore::screenDirs(input, getRotation(), up, down, left, right);
+    const int dir = right ? 1 : left ? -1 : up ? 5 : down ? -5 : 0;
+    bool stepNow = false;
+    if (dir != _pickDir) {
+        _pickDir = dir;
+        _pickRepeatAt = _now + STEP_REPEAT_DELAY_MS;
+        stepNow = dir != 0;
+    } else if (dir != 0 && (long)(_now - _pickRepeatAt) >= 0) {
+        _pickRepeatAt = _now + STEP_REPEAT_MS;
+        stepNow = true;
+    }
+    if (stepNow) {
+        _pick = (_pick - 1 + dir + PICK_MAX_WAVE) % PICK_MAX_WAVE + 1;
+        _pickAt = _now;
+        audio.playTone(1200, 15);
+    }
+    renderPicker(canvas);
+    return true;
+}
+
+// Everything a run starts from, shared by a real game, a test run and the
+// demo.
+inline void ResonanceFluxGame::resetRun(int wave) {
     _score = 0;
     _static = 0;
     _stopCount = 0;
@@ -255,9 +399,21 @@ inline void ResonanceFluxGame::startGame(AudioEngine &audio) {
     _phase = 0;
     _jitP = _jitTP = 0;
     _stepDir = 0;
+    _apTarget = -1;
+    _apPrevA = _apPrevB = _apPrevStep = false;
     _scores.forget();
     for (auto &s : _shards) s.until = 0;
-    startWave(1);
+    startWave(wave);
+}
+
+// `first`, if given, is the wave select's: a test run from there that puts
+// nothing on the table.
+inline void ResonanceFluxGame::startGame(AudioEngine &audio, int first) {
+    _test = first > 0;
+    _testFrom = _test ? first : 1;
+    resetRun(_testFrom);
+    _phaseState = PHASE_PLAYING;
+    _phaseAt = _now;
     audio.playTone(900, 80);
 }
 
@@ -294,8 +450,10 @@ inline void ResonanceFluxGame::startWave(int wave) {
     _roundAt = _now;
 }
 
+// Static's reached 100: a name for the table first, if the score made it
+// (never for a test run).
 inline void ResonanceFluxGame::enterGameOver(AudioEngine &audio) {
-    _phaseState = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+    _phaseState = !_test && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
     _phaseAt = _now;
     _static = 100;
     audio.stopHum();

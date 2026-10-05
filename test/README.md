@@ -112,10 +112,16 @@ cost runs at ~30fps on the board), not with a frame budget.
 | `figure` | The figure maths, against densely sampled curves: phases a multiple of 2π/b apart, and phases mirrored about π − aπ/b, draw the same figure; a phase gap bounds how far apart the figures are (so the phase tolerance is a bound in pixels); phases three tolerances apart look visibly different; the ratios are in dial order |
 | `match` | Wave 1's dial is two stops (1:2, 1:1) and wave 3's four; resonance needs your stop on the signal's ratio and the phase inside the tolerance, a third of a turn round counting for 2:3; on the next stop it's no match, and the signal is only marked as nearest the core; a small push doesn't step, a push steps one stop, right from the last goes to the first and left from the first to the last, and held it steps once then repeats; up turns the phase and it holds when let go; on a signal's stop you hear its note; a misfire costs static and holds the next shot back; a shot in resonance shatters and scores, and the focus moves off it; a signal at the core adds static; high static makes your phase wander, and it settles after; a swaying signal strays from the straight line in and arrives later; 400 spawns all start on the sides or near the corners, 40px or more out; a new wave's stops keep you on your ratio; static at 100 ends the game |
 | `play [N]` | The autopilot plays real games for N frames (default 20000), restarting through name entry and game over: static stays in 0-100, the score never drops within a game, at least three waves are cleared, and shatters outnumber signals let through three to one |
-| `quit` | The title waits for A; Back mid-game (`onQuit()`, `onExit()` freeing the scope's planes, `init()`) and a clean game after |
+| `quit` | The title waits for A; Back mid-game (`onQuit()`, `onExit()` freeing the scope's planes, `init()`) puts the score on the table, and a clean game after |
+| `idle [N]` | No input (default 3000 frames): title, the three how-to slides and the scores, then the demo (the autopilot shattering signals, making no sound) and back to the title, the high scores untouched |
+| `demoexit` | A mid-demo: a real game starts clean (wave 1's two stops, no score, no static, no signals, sound back on) |
+| `pick` | The wave select: B held with A on the title opens it (B still held doesn't close it); the stick steps the wave by one and by five, wrapping 1-20; B goes back; A starts a test run on the chosen wave (fresh, its stops), whose game over skips the name entry and whose quit saves nothing, and A at its game over starts the same wave again; plain A still starts wave 1; left alone the picker goes back to the title |
 
 `DUMP_AT=6000,6300 test/build.sh resonance play 6301` writes
-`resonance_006000.ppm` etc. The harness builds the game against the real
+`resonance_006000.ppm` etc.; with `idle`, `resonance_idle_<frame>.ppm`
+(each attract slide lasts ~182 frames: title from 0, the how-to slides
+from ~182, ~364 and ~546, scores ~728, then the demo), and with `pick`,
+`resonance_pick_<frame>.ppm`. The harness builds the game against the real
 (inert) audio engine, so it can't hear the hum; `audio_test` checks the
 mixer's side of it (pitch, glide, a 3Hz beat from 400 and 403Hz, mute).
 

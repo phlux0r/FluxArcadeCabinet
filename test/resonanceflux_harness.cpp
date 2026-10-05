@@ -13,11 +13,19 @@
 //               through the name entry and game over): static stays in
 //               0-100, the score never drops within a game, and it clears
 //               waves with shots, not by letting signals through
-//   quit        Back mid-game (onQuit, onExit, init, as main.cpp does) and
-//               a clean game after it
+//   quit        Back mid-game (onQuit, onExit, init, as main.cpp does): the
+//               score on the table, and a clean game after it
+//   idle [N]    no input: title, how-to slides, scores, then the demo:
+//               silent, the high score untouched, back to the title
+//   demoexit    A mid-demo starts a clean real game
+//   pick        the wave select: B held with A on the title opens it, the
+//               stick steps the wave, A starts a test run that puts nothing
+//               on the table; plain A still starts wave 1
 //   all         everything (the default)
 //
-// DUMP_AT=frame,frame writes those frames of `play` as resonance_<frame>.ppm.
+// DUMP_AT=frame,frame writes those frames of `play` as resonance_<frame>.ppm,
+// of `idle` as resonance_idle_<frame>.ppm and of `pick` as
+// resonance_pick_<frame>.ppm.
 // The game includes the real (inert) AudioEngine, so src/ comes ahead of
 // the stubs when building (see build.sh).
 
@@ -336,23 +344,164 @@ static bool scenarioQuit() {
     GFXcanvas16 canvas(W, H);
     bool ok = true;
     printf("quit:\n");
+    hiscore::Table empty;
+    hiscore::clear(empty);
+    hiscore::save("resonance", empty);
     g.init(audio);
     for (int i = 0; i < 20; ++i) step(g, audio, canvas);
-    check("the title waits for A", g._phaseState == ResonanceFluxGame::PHASE_TITLE, ok);
+    check("the title waits for A", g._phaseState == ResonanceFluxGame::PHASE_ATTRACT, ok);
     InputState a{}; a.btnA = a.btnAPressed = true;
     step(g, audio, canvas, a);
-    check("A starts a game", g._phaseState == ResonanceFluxGame::PHASE_PLAYING && g._wave == 1, ok);
+    check("A starts a game", g._phaseState == ResonanceFluxGame::PHASE_PLAYING && g._wave == 1 && !g._test, ok);
     for (int i = 0; i < 300; ++i) step(g, audio, canvas, g.autopilot());
+    g._score = 4321;
     g.onQuit(audio);
     g.onExit();
     check("onExit frees the scope", g._glow == nullptr, ok);
+    g._scores.begin("resonance");
+    check("Back mid-game: the score on the table", g._scores.best() == 4321, ok);
     g.init(audio);
     step(g, audio, canvas);
-    check("init again: the title, the scope back", g._phaseState == ResonanceFluxGame::PHASE_TITLE && g._glow, ok);
+    check("init again: the title, the scope back", g._phaseState == ResonanceFluxGame::PHASE_ATTRACT && g._glow, ok);
     step(g, audio, canvas, a);
     check("a clean game: wave 1, no score, no static, no signals",
           g._wave == 1 && g._score == 0 && g._static == 0 && g.aliveCount() == 0, ok);
     printf("quit -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// No input: title, the how-to slides and the scores, then the demo:
+// silent, the high score untouched, and back to the title.
+static bool scenarioIdle(long frames) {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    FrameDumper dump("resonance_idle");
+    g.init(audio);
+    const long hs0 = g._scores.best();
+    int demos = 0, ended = 0, slides = 0;
+    long demoFrames = 0, shattered0 = g._statShatters;
+    bool was = false, leftSilenced = false;
+    int lastSlide = -1;
+    for (long f = 0; f < frames; ++f) {
+        InputState none{};
+        g.update(canvas, none, audio);
+        dump.maybeDump(f, canvas);
+        leftSilenced |= audio._silenced;
+        if (g._slide != lastSlide) { ++slides; lastSlide = g._slide; }
+        const bool now = g._demo;
+        if (now) ++demoFrames;
+        if (!was && now) ++demos;
+        if (was && !now) ++ended;
+        was = now;
+        g_fakeMillis += STEP_MS;
+    }
+    const bool ok = !leftSilenced && g._scores.best() == hs0 && demos > 0 && ended > 0 &&
+                    slides >= 6 && g._phaseState == ResonanceFluxGame::PHASE_ATTRACT &&
+                    g._statShatters > shattered0;
+    printf("idle: %ld frames, slides seen %d, demos %d, ended %d, avg demo %.1fs, shattered in demos %ld, "
+           "left silenced %d, high score touched %d -> %s\n",
+           frames, slides, demos, ended, demos ? demoFrames * STEP_MS / 1000.0 / demos : 0.0,
+           g._statShatters - shattered0, (int)leftSilenced, (int)(g._scores.best() != hs0), ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// A mid-demo starts a clean real game.
+static bool scenarioDemoExit() {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    g.init(audio);
+    for (long f = 0; f < 100000 && !g._demo; ++f) step(g, audio, canvas);
+    for (int f = 0; f < 300; ++f) step(g, audio, canvas);
+    const bool demoGoing = g._demo;
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    step(g, audio, canvas, a);
+    const bool ok = demoGoing && !g._demo && g._phaseState == ResonanceFluxGame::PHASE_PLAYING && !g._test &&
+                    g._wave == 1 && g._score == 0 && g._static == 0 && g.aliveCount() == 0 &&
+                    g._round == ResonanceFluxGame::ROUND_INTRO && g._stopCount == 2 && !audio._silenced;
+    printf("demoexit: a demo under way %d; A: wave 1, no score, no static, no signals, sound back -> %s\n",
+           (int)demoGoing, ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// The wave select: B held with A on the title opens it; the stick steps
+// the wave; A starts a test run there that puts nothing on the table.
+static bool scenarioPick() {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    bool ok = true;
+    printf("pick:\n");
+    FrameDumper dump("resonance_pick");
+    long n = 0;
+    auto frame = [&](InputState in = InputState{}) { step(g, audio, canvas, in); dump.maybeDump(n++, canvas); };
+    // Landscape (rotation 1): screen right is joyDown, left joyUp, up joyLeft, down joyRight.
+    auto push = [&](bool right, bool left, bool up, bool down) {
+        InputState in{};
+        in.joyDown = right; in.joyUp = left; in.joyLeft = up; in.joyRight = down;
+        frame(in);
+        frame();
+    };
+    hiscore::Table empty;
+    hiscore::clear(empty);
+    hiscore::save("resonance", empty);
+    InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    InputState b{}; b.btnB = b.btnBPressed = true;
+    InputState stillB{}; stillB.btnB = true;
+    g.init(audio);
+    for (int f = 0; f < 10; ++f) frame();
+    frame(ba);
+    check("B+A on the title: the wave select, wave 1", g._phaseState == ResonanceFluxGame::PHASE_PICK && g._pick == 1, ok);
+    frame(stillB);
+    check("B still held from opening it doesn't close it", g._phaseState == ResonanceFluxGame::PHASE_PICK, ok);
+    push(true, false, false, false);
+    push(true, false, false, false);
+    check("right twice: wave 3", g._pick == 3, ok);
+    push(false, false, true, false);
+    check("up: five on, wave 8", g._pick == 8, ok);
+    push(false, false, false, true);
+    push(false, false, false, true);
+    check("down twice: round to wave 18", g._pick == 18, ok);
+    push(false, true, false, false);
+    check("left: wave 17", g._pick == 17, ok);
+    frame(b);
+    check("B: back to the title", g._phaseState == ResonanceFluxGame::PHASE_ATTRACT && !g._test, ok);
+    frame(ba);
+    frame();
+    push(true, false, false, false);
+    push(false, false, true, false);
+    check("right, up: wave 7", g._pick == 7, ok);
+    frame(a);
+    check("A: a test run on 7, fresh, its six stops",
+          g._phaseState == ResonanceFluxGame::PHASE_PLAYING && g._test && g._wave == 7 && g._score == 0 &&
+          g._static == 0 && g._stopCount == 6, ok);
+    g._score = 54320;
+    g._static = 101;                        // over the top: the frame's decay leaves it at 100
+    frame();
+    check("test game over: no name entry", g._phaseState == ResonanceFluxGame::PHASE_GAMEOVER, ok);
+    g._scores.begin("resonance");
+    check("  and nothing on the table", g._scores.best() == 0, ok);
+    for (unsigned long t = 0; t <= GAMEOVER_MIN_MS + STEP_MS; t += STEP_MS) frame();
+    frame(a);
+    check("A at its game over: wave 7 again, still a test",
+          g._phaseState == ResonanceFluxGame::PHASE_PLAYING && g._test && g._wave == 7, ok);
+    g._score = 43210;
+    g.onQuit(audio);
+    g._scores.begin("resonance");
+    check("Back mid test run: nothing on the table", g._scores.best() == 0, ok);
+    g.init(audio);
+    frame();
+    frame(a);
+    check("plain A: a real game from wave 1", g._phaseState == ResonanceFluxGame::PHASE_PLAYING && !g._test &&
+          g._wave == 1, ok);
+    g.init(audio);
+    frame();
+    frame(ba);
+    for (unsigned long t = 0; t <= PICK_TIMEOUT_MS + STEP_MS; t += STEP_MS) frame();
+    check("left alone, the wave select goes back to the title", g._phaseState == ResonanceFluxGame::PHASE_ATTRACT, ok);
+    printf("pick -> %s\n", ok ? "PASS" : "FAIL");
     return ok;
 }
 
@@ -365,5 +514,8 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "match"))  ok &= scenarioMatch();
     if (all || !strcmp(which, "play"))   ok &= scenarioPlay(frames ? frames : 20000);
     if (all || !strcmp(which, "quit"))   ok &= scenarioQuit();
+    if (all || !strcmp(which, "idle"))     ok &= scenarioIdle(frames ? frames : 3000);
+    if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
+    if (all || !strcmp(which, "pick"))     ok &= scenarioPick();
     return ok ? 0 : 1;
 }

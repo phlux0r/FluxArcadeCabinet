@@ -243,8 +243,7 @@ attract cycle orbits course 1 under the title (drawn live, not an image),
 three how-to-play slides and the scores; the title runs along the top,
 over the course.
 
-**Attract demos.** Left alone, every game except Maze (and the Resonance
-prototype, just a title so far) does the same: title,
+**Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
 an autopilot, and back to the title (Maze cycles title, how-to-play and
 table). A starts a real game straight from a demo; nothing from a demo
@@ -259,6 +258,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
+| Resonance | a random wave 1-8; takes the signal nearest the core, pauses a moment as a person would, steps the dial the shorter way round to its ratio, turns the phase to match and fires; dampens when one's about to get through |
 | Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights; at a guardian, it fills its dash meter from the arena's gems, then lines up on the lit weak point (leading a moving one) and dashes into it |
 
 ## Build
@@ -381,7 +381,11 @@ back.
 Resonance Flux: left/right steps the dial (the frequency ratio) a stop at
 a time, round from end to end; held, it repeats. Up/down turns the phase
 at a rate that follows how far you push, so letting go keeps it. A fires,
-B dampens.
+B dampens. Wave select, for testing: on the title, how-to or scores
+screens, hold B and press A; the stick picks the wave (left/right by one,
+up/down by five, from 1 to 20, each shown with its ratios, how many
+signals and how fast), A starts a test run there (a T before the score;
+nothing goes on the high-score table), B goes back.
 
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
@@ -742,7 +746,8 @@ timing, most of the older 2D games' play). Brick Flux has its own harness
 (`test/brickflux_harness.cpp`): play, the wall, the smash timing, tunnelling,
 polarity, the living bricks, every level and boss, and its attract demo.
 So does the Resonance Flux prototype (`test/resonanceflux_harness.cpp`):
-the figure maths, matching, autopilot play and quitting.
+the figure maths, matching, autopilot play, quitting, its attract demo and
+the wave select.
 
 For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
 It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial

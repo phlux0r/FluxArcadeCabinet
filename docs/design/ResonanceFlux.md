@@ -314,10 +314,14 @@ scope, the tuning strip, the hum (your tone, the focus signal's fading in
 within one ratio-step, the hiss), and a title. High scores and name entry
 too, since the cabinet's tests expect every game to have a table.
 
-Left for later: cascades and chains, the other signals, Chords, the
-attract cycle's how-to and demo (the autopilot is there, for the harness),
-the WAV effects (tones, and `explosion.wav` when it's on the card), the
-palette shifts.
+Left for later: cascades and chains, the other signals, Chords, the WAV
+effects (tones, and `explosion.wav` when it's on the card), the palette
+shifts. Added since, while the owner plays: the attract cycle (title,
+three how-to slides, scores, the silent demo, the autopilot pausing a
+moment on each new target so it looks played) and a wave select for test
+runs (hold B and press A on the title, as Brick and Roll). No music, by
+the owner's choice: the two notes are the soundtrack, and music would
+hide them.
 
 Differences from the design above, found while building it:
 
