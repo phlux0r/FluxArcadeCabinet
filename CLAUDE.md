@@ -81,8 +81,10 @@ DUMP_AT=500,4000 test/build.sh tube play 5000   # frames as .ppm
 session): clone Jet and check out the commit pinned in platformio.ini.
 Harnesses use a fake clock and seeded RNG, so traces are repeatable; look
 at frames (pose modes, `DUMP_AT`, `RUNNER_DUMP`) for anything visual.
-When fixing a bug, write the check first and see it fail. Run the whole
-suite before every push.
+When fixing a bug, write the check first and see it fail. Before a push,
+run only the harnesses the change touches (the game's own; `audio` for
+the mixer; `cabinet` and `hiscore` for main.cpp, the launcher or the
+tables): the whole suite is slow and the owner prefers it that way.
 
 ## Conventions
 
