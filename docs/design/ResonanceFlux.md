@@ -67,7 +67,7 @@ by 2πa/b, which covers every multiple of 2π/b), or when they sum to
 compares phases with both taken out (`phaseGap()` in
 `ResonanceFigure.h`). And since a change of phase g moves no point of the
 figure more than g (unit size), the phase tolerance is also a bound on
-how different two matched figures look: 0.12 rad is ~3px at the core.
+how different two matched figures look: 0.12 rad is ~2px at the core.
 The harness checks all of this against densely sampled curves.
 
 ## 2. Screen and layout
@@ -331,6 +331,28 @@ Differences from the design above, found while building it:
   tolerance is a ~3Hz beat; the snap takes it to none.
 - `DEBUG_LINE` (on) prints the focus's dial gap, phase gap and beat in the
   scope's corner, for tuning on the board.
+
+### After the first play on the board
+
+The owner found it cool but too hard: 1:1 was too far along the dial
+from 1:2, the pair the first waves send, and signals arrived too fast.
+So:
+
+- **The dial is in stops**: one per ratio the game has reached, evenly
+  spaced, so wave 1's dial is just 1:2 and 1:1, one push apart. A wave
+  that brings new ratios adds their stops, and the needle stays on the
+  ratio it was on. The tolerance, snap and roll are in stops (0.06, 0.2,
+  1.3). Each ratio keeps its own pitch (300Hz up in 40Hz steps through
+  the list), and your tone slides between neighbouring stops' pitches,
+  so near a stop the beat still slows to nothing.
+- **Slower**: drift 4px/s on wave 1 (+5% a wave, up to 14), two on the
+  scope at first (one more every third wave), 4s between arrivals at
+  first.
+- **Signals meander**: each weaves either side of its way in, its heading
+  swinging by 0.6-1 radians at its own rate; that also slows its approach
+  by about a quarter.
+- **Your figure is smaller**: 18px across the radius, not 26, which also
+  gives signals further to come.
 
 ## Needs the board
 

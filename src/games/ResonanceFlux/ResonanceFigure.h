@@ -11,7 +11,8 @@
 //
 // A ratio a:b (a <= b, no common factor) with phase p draws
 //     x = sin(a*t + p),  y = sin(b*t),   t in [0, 2*pi)
-// and sits on the dial at d = a/b.
+// The dial has a stop for each ratio the game has reached, in the order
+// below (a/b rising).
 //
 // Two phases draw the same figure when (a) they differ by a multiple of
 // 2*pi/b (t shifted by 2*pi/b leaves y alone and turns x's phase by
@@ -27,28 +28,21 @@ namespace resonance {
 constexpr float TWO_PI_F = 6.2831853f;
 constexpr float PI_F = 3.1415927f;
 
-struct Ratio { uint8_t a, b; float d; uint8_t firstWave; };
+struct Ratio { uint8_t a, b; uint8_t firstWave; };
 
-// In dial order. firstWave: the wave a ratio starts turning up on.
+// In dial order. firstWave: the wave a ratio starts turning up on (and
+// gets its stop on the dial).
 constexpr Ratio RATIOS[] = {
-    { 1, 3, 1.0f / 3, 3 },
-    { 2, 5, 2.0f / 5, 5 },
-    { 1, 2, 1.0f / 2, 1 },
-    { 3, 5, 3.0f / 5, 8 },
-    { 2, 3, 2.0f / 3, 3 },
-    { 3, 4, 3.0f / 4, 5 },
-    { 4, 5, 4.0f / 5, 8 },
-    { 1, 1, 1.0f,     1 },
+    { 1, 3, 3 },
+    { 2, 5, 5 },
+    { 1, 2, 1 },
+    { 3, 5, 8 },
+    { 2, 3, 3 },
+    { 3, 4, 5 },
+    { 4, 5, 8 },
+    { 1, 1, 1 },
 };
 constexpr int RATIO_COUNT = sizeof(RATIOS) / sizeof(RATIOS[0]);
-
-// The clean ratio nearest a dial setting.
-inline int nearestRatio(float d) {
-    int best = 0;
-    for (int i = 1; i < RATIO_COUNT; ++i)
-        if (fabsf(RATIOS[i].d - d) < fabsf(RATIOS[best].d - d)) best = i;
-    return best;
-}
 
 // x wrapped into [-m/2, m/2).
 inline float wrapHalf(float x, float m) {

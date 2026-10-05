@@ -111,8 +111,7 @@ inline void ResonanceFluxGame::renderPlay(GFXcanvas16 &cv) {
         drawFigure(amber, i == _matched && playing ? green : nullptr, RATIOS[s.ratio], s.phase, s.x, s.y, SIG_R, false);
     }
     if (playing) {
-        const float d = dialEff();
-        drawFigure(green, _matched >= 0 ? amber : nullptr, RATIOS[nearestRatio(d)], phaseEff(),
+        drawFigure(green, _matched >= 0 ? amber : nullptr, ratioAt(dialEff()), phaseEff(),
                    CORE_X, CORE_Y, CORE_R, true);
     }
     if (_now < _beamUntil) {
@@ -197,23 +196,22 @@ inline void ResonanceFluxGame::drawHud(GFXcanvas16 &cv) {
     }
 }
 
-// The tuning strip: the dial with a tick at each clean ratio (bright once
-// this wave can send it), your needle, and the ratio you're on.
+// The tuning strip: the dial with a tick at each stop (the ratios this
+// game has reached, evenly spaced), your needle, and the ratio you're on.
 inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
     cv.fillRect(0, STRIP_Y, W, H - STRIP_Y, ArcadeConfig::COLOR_BLACK);
     const int x0 = 34, x1 = W - 4;
-    auto dialX = [&](float d) { return x0 + (int)lrintf((d - DIAL_MIN) / (DIAL_MAX - DIAL_MIN) * (x1 - x0)); };
+    const float span = _stopCount > 1 ? (float)(_stopCount - 1) : 1.0f;
+    auto dialX = [&](float u) { return x0 + (int)lrintf(u / span * (x1 - x0)); };
     const int base = STRIP_Y + 7;
     cv.drawFastHLine(x0, base, x1 - x0 + 1, 0x2104);
-    for (int i = 0; i < RATIO_COUNT; ++i)
-        cv.drawFastVLine(dialX(RATIOS[i].d), base - 3, 3, RATIOS[i].firstWave <= _wave ? ArcadeConfig::COLOR_GREEN : 0x2104);
+    for (int i = 0; i < _stopCount; ++i) cv.drawFastVLine(dialX((float)i), base - 3, 3, ArcadeConfig::COLOR_GREEN);
     const float d = dialEff();
-    const int nx = dialX(d);
-    cv.drawFastVLine(nx, STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
+    cv.drawFastVLine(dialX(d), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
 
-    const Ratio &r = RATIOS[nearestRatio(d)];
+    const Ratio &r = ratioAt(d);
     char buf[24];
-    const bool on = fabsf(d - r.d) < RATIO_TOL;
+    const bool on = fabsf(d - stopAt(d)) < RATIO_TOL;
     snprintf(buf, sizeof(buf), "%s%d:%d", on ? "" : "~", r.a, r.b);
     cv.setFont();
     cv.setTextSize(1);
@@ -224,7 +222,8 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
     // Tuning aid for the board, in the scope's bottom corner: the focus's
     // dial and phase gaps, and the beat they make.
     if (DEBUG_LINE && _focus >= 0 && _phaseState == PHASE_PLAYING) {
-        snprintf(buf, sizeof(buf), "%.3f %.2f %.0fHz", _focusRatioGap, _focusPhaseGap, _focusRatioGap * HUM_F_SPAN);
+        snprintf(buf, sizeof(buf), "%.2f %.2f %.0fHz", _focusRatioGap, _focusPhaseGap,
+                 fabsf(humAt(d) - pitchOf(_signals[_focus].ratio)));
         cv.setTextColor(0x8410);
         cv.setCursor(1, SCOPE_Y + SCOPE_H - 8);
         cv.print(buf);
@@ -235,10 +234,12 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
 inline void ResonanceFluxGame::renderTitle(GFXcanvas16 &cv) {
     uint8_t *green = _glow, *amber = _glow + PLANE;
     fadeGlow();
-    _titleDial += 0.03f * _dt;
-    if (_titleDial > DIAL_MAX) _titleDial = DIAL_MIN;
-    const Ratio &r = RATIOS[nearestRatio(_titleDial)];
-    _titlePhase += (0.6f + TWO_PI_F * (_titleDial - r.d) * ROLL_HZ) * _dt;
+    _titleDial += 0.15f * _dt;
+    if (_titleDial > RATIO_COUNT - 0.5f) _titleDial = -0.5f;
+    int k = (int)lrintf(_titleDial);
+    k = k < 0 ? 0 : k >= RATIO_COUNT ? RATIO_COUNT - 1 : k;
+    const Ratio &r = RATIOS[k];
+    _titlePhase += (0.6f + TWO_PI_F * (_titleDial - k) * ROLL_RATE) * _dt;
     drawFigure(green, nullptr, r, _titlePhase, CORE_X, CORE_Y + 4, 30, true);
     drawFigure(amber, nullptr, r, _titlePhase + 1.3f, CORE_X - 52, CORE_Y + 22, 9, false);
     drawFigure(amber, nullptr, r, -_titlePhase, CORE_X + 52, CORE_Y + 22, 9, false);

@@ -100,9 +100,11 @@ static bool scenarioFigure() {
     check(what, bound, ok);
     snprintf(what, sizeof(what), "phases 3x the tolerance apart look apart (least gap %.3f)", leastDiffer);
     check(what, differ, ok);
-    bool spaced = true;
-    for (int i = 1; i < RATIO_COUNT; ++i) spaced &= RATIOS[i].d - RATIOS[i - 1].d > 2 * (SNAP_ZONE + RATIO_TOL);
-    check("clean ratios are further apart than the snap and tolerance", spaced, ok);
+    bool ordered = true;
+    for (int i = 1; i < RATIO_COUNT; ++i)
+        ordered &= RATIOS[i].a * RATIOS[i - 1].b > RATIOS[i - 1].a * RATIOS[i].b;
+    check("the ratios are in dial order (a/b rising)", ordered, ok);
+    check("a stop's snap zone and tolerance stay clear of the next stop", SNAP_ZONE + RATIO_TOL < 0.5f, ok);
     printf("figure -> %s\n", ok ? "PASS" : "FAIL");
     return ok;
 }
@@ -127,7 +129,7 @@ static ResonanceFluxGame::Signal &place(ResonanceFluxGame &g, int ratio, float p
     for (auto &s : g._signals) s.alive = false;
     auto &s = g._signals[0];
     s.alive = true; s.ratio = (uint8_t)ratio; s.phase = phase;
-    s.x = x; s.y = y; s.vx = s.vy = 0;
+    s.x = x; s.y = y; s.speed = 0; s.sway = 0;
     return s;
 }
 
@@ -138,42 +140,49 @@ static bool scenarioMatch() {
     bool ok = true;
     printf("match:\n");
     startPlaying(g, audio, canvas);
+    check("wave 1's dial: 1:2 and 1:1, one stop apart",
+          g._stopCount == 2 && g._stops[0] == 2 && g._stops[1] == 7, ok);
+    g.startWave(3);                          // 1:3, 1:2, 2:3, 1:1
+    g._round = ResonanceFluxGame::ROUND_PLAY;
+    g._spawnAt = g_fakeMillis + 1000000;
     const int r23 = 4;                       // 2:3
+    const float on23 = g._stopOf[r23];
+    check("wave 3's dial: four stops, 2:3 the third", g._stopCount == 4 && on23 == 2, ok);
     place(g, r23, 1.0f, 20, 30);
 
-    g._dial = RATIOS[r23].d; g._phase = 1.0f;
+    g._dial = on23; g._phase = 1.0f;
     step(g, audio, canvas);
     check("dial and phase on it: in resonance", g._matched == 0, ok);
 
-    g._dial = RATIOS[r23].d; g._phase = 1.0f + 2 * PHASE_TOL;
+    g._dial = on23; g._phase = 1.0f + 2 * PHASE_TOL;
     step(g, audio, canvas);
     check("phase off by twice the tolerance: not", g._matched == -1 && g._focus == 0, ok);
 
-    g._dial = RATIOS[r23].d; g._phase = 1.0f + TWO_PI_F / 3;
+    g._dial = on23; g._phase = 1.0f + TWO_PI_F / 3;
     step(g, audio, canvas);
     check("phase a third of a turn on (2:3's symmetry): in resonance", g._matched == 0, ok);
 
     // The dial off by more than the tolerance, the stick pushing (no snap).
     InputState push{}; push.joyY = 0.2f;
-    g._dial = RATIOS[r23].d + 0.02f; g._phase = 1.0f;
+    g._dial = on23 + 2 * RATIO_TOL; g._phase = 1.0f;
     step(g, audio, canvas, push);
-    check("dial off by 0.02: not", g._matched == -1, ok);
+    check("dial off by twice the tolerance: not", g._matched == -1, ok);
 
     // Let go just off a clean ratio: the snap brings it home.
-    g._dial = RATIOS[r23].d + SNAP_ZONE * 0.8f;
+    g._dial = on23 + SNAP_ZONE * 0.8f;
     for (int i = 0; i < 30; ++i) step(g, audio, canvas);
-    check("let go inside the snap zone: the needle lands on 2:3", g._dial == RATIOS[r23].d, ok);
-    g._dial = RATIOS[r23].d + SNAP_ZONE * 1.5f;
+    check("let go inside the snap zone: the needle lands on 2:3", g._dial == on23, ok);
+    g._dial = on23 + SNAP_ZONE * 1.5f;
     const float before = g._dial;
     for (int i = 0; i < 30; ++i) step(g, audio, canvas);
     check("outside it: the needle stays put", g._dial == before, ok);
 
     // Off a clean ratio the figure rolls; on it, it holds still.
-    g._dial = RATIOS[r23].d + 0.03f;
+    g._dial = on23 + 0.3f;
     float p0 = g._phase;
     step(g, audio, canvas);
     check("off a clean ratio, the phase rolls", fabsf(g._phase - p0) > 0.05f, ok);
-    g._dial = RATIOS[r23].d;
+    g._dial = on23;
     p0 = g._phase;
     step(g, audio, canvas);
     check("on it, the phase holds", fabsf(g._phase - p0) < 1e-5f, ok);
@@ -198,14 +207,14 @@ static bool scenarioMatch() {
 
     // A signal reaching the core.
     auto &s = place(g, 2, 0.5f, CORE_X + CORE_R + SIG_R, CORE_Y);
-    s.vx = -20;
+    s.speed = 20;
     g._static = 0;
     for (int i = 0; i < 20 && g._signals[0].alive; ++i) step(g, audio, canvas);
     check("a signal reaching the core adds its static", !g._signals[0].alive && g._static > STATIC_HIT - 1, ok);
 
     // Static's wander on your figure.
     g._static = 90;
-    g._dial = 0.75f;
+    g._dial = 1;
     float most = 0;
     for (int i = 0; i < 60; ++i) { step(g, audio, canvas); most = fmaxf(most, fabsf(g._jitD)); }
     check("high static makes your figure wander", most > JITTER_DIAL * 0.3f, ok);
@@ -214,9 +223,37 @@ static bool scenarioMatch() {
     for (int i = 0; i < 60; ++i) step(g, audio, canvas);
     check("and settles once it's gone", fabsf(g._jitD) < 1e-3f, ok);
 
+    // Signals meander: one swaying hard wanders well off the straight line
+    // in, and takes longer to arrive than one coming straight.
+    auto timeIn = [&](float sway, float &widest) {
+        auto &m = place(g, 2, 0.5f, 10, CORE_Y);
+        m.speed = 10; m.sway = sway; m.swayRate = 1.0f; m.swayAt = 0;
+        widest = 0;
+        int f = 0;
+        for (; f < 2000 && g._signals[0].alive; ++f) {
+            widest = fmaxf(widest, fabsf(g._signals[0].y - CORE_Y));
+            g._static = 0;
+            step(g, audio, canvas);
+        }
+        return f;
+    };
+    float wide0, wide1;
+    const int straight = timeIn(0, wide0), weaving = timeIn(1.0f, wide1);
+    char what[96];
+    snprintf(what, sizeof(what), "a weaving signal strays %.0fpx and takes %d frames, not %d", wide1, weaving, straight);
+    check(what, wide0 < 0.5f && wide1 > 8 && weaving > straight * 1.15f, ok);
+
+    // A new wave's stops: the needle stays on its ratio, as far off it.
+    g._dial = g._stopOf[2] + 0.03f;          // just off 1:2
+    g.startWave(5);                          // 1:3, 2:5, 1:2, 2:3, 3:4, 1:1
+    check("new stops: the needle keeps its ratio (1:2, now the third)",
+          g._stopCount == 6 && fabsf(g._dial - (2 + 0.03f)) < 1e-4f, ok);
+    g._round = ResonanceFluxGame::ROUND_PLAY;
+    g._spawnAt = g_fakeMillis + 1000000;
+
     // Overload.
     s = place(g, 2, 0.5f, CORE_X + CORE_R + SIG_R, CORE_Y);
-    s.vx = -20;
+    s.speed = 20;
     g._static = 95;
     for (int i = 0; i < 20 && g._phaseState == ResonanceFluxGame::PHASE_PLAYING; ++i) step(g, audio, canvas);
     check("static at 100 ends the game", g._phaseState != ResonanceFluxGame::PHASE_PLAYING, ok);

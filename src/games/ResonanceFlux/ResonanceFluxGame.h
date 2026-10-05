@@ -14,7 +14,7 @@
 // =============================================================================
 // RESONANCE FLUX (prototype): a green phosphor oscilloscope, landscape.
 // The stick tunes your Lissajous figure (left/right the frequency ratio,
-// up/down the phase); signals drift in towards it, each a figure of its
+// up/down the phase); signals weave in towards it, each a figure of its
 // own. Match one exactly and both glow: A shatters it. Signals that reach
 // you add static (noise on the scope, hiss, a wander in your figure), and
 // at 100 static the game's over. B dampens: everything slows for a while.
@@ -51,7 +51,9 @@ private:
         bool alive = false;
         uint8_t ratio = 0;            // into RATIOS
         float phase = 0;
-        float x = 0, y = 0, vx = 0, vy = 0;
+        float x = 0, y = 0;
+        float speed = 0;              // px/s along its weaving course
+        float sway = 0, swayRate = 0, swayAt = 0;   // radians, radians/s, where in the sway
     };
     struct Shard { float x = 0, y = 0, vx = 0, vy = 0; unsigned long until = 0; bool white = false; };
 
@@ -71,6 +73,11 @@ private:
     void updateShards();
     void addStatic(float s);
     void updateHum(AudioEngine &audio);
+    void buildStops(int wave);
+    int  stopAt(float u) const;
+    const Ratio &ratioAt(float u) const { return RATIOS[_stops[stopAt(u)]]; }
+    float humAt(float u) const;
+    static float pitchOf(int ratio) { return HUM_F_LO + HUM_F_STEP * ratio; }
     float dialEff() const;
     float phaseEff() const { return _phase + _jitP; }
     int  aliveCount() const;
@@ -78,7 +85,6 @@ private:
     float driftSpeed() const;
     static float curve(float v);
     static float frand(float lo, float hi);
-    static float humHz(float d) { return HUM_F_LO + (d - DIAL_MIN) * HUM_F_SPAN; }
     void tone(int hz, int ms) { if (_audio) _audio->playTone(hz, ms); }
 
     // ---- The scope and drawing (ResonanceScope.h) ----
@@ -113,8 +119,14 @@ private:
     unsigned long _now = 0, _lastFrameMs = 0;
     float _dt = 1.0f / 30.0f;
 
-    // You: the dial and phase as tuned, and static's wander on top.
-    float _dial = 0.5f, _phase = 0;
+    // The dial's stops: ratios (into RATIOS) in order, and each ratio's
+    // stop (-1 if it hasn't got one yet).
+    uint8_t _stops[RATIO_COUNT] = {};
+    int8_t  _stopOf[RATIO_COUNT] = {};
+    int     _stopCount = 0;
+
+    // You: the dial (in stops) and phase as tuned, and static's wander on top.
+    float _dial = 0, _phase = 0;
     float _jitD = 0, _jitP = 0, _jitTD = 0, _jitTP = 0;
     unsigned long _jitAt = 0;
 
@@ -130,7 +142,7 @@ private:
     float _targetHz = 400;               // the focus signal's tone
 
     // Title: the figure it morphs through.
-    float _titleDial = 0.5f, _titlePhase = 0;
+    float _titleDial = 0, _titlePhase = 0;    // in stops of every ratio
 
     // Autopilot: A held last frame.
     bool _apPrevA = false, _apPrevB = false;
@@ -233,7 +245,8 @@ inline void ResonanceFluxGame::startGame(AudioEngine &audio) {
     _phaseAt = _now;
     _score = 0;
     _static = 0;
-    _dial = 0.5f;
+    _stopCount = 0;
+    _dial = 0;
     _phase = 0;
     _jitD = _jitP = _jitTD = _jitTP = 0;
     _scores.forget();
@@ -242,8 +255,45 @@ inline void ResonanceFluxGame::startGame(AudioEngine &audio) {
     audio.playTone(900, 80);
 }
 
+// The stops for the ratios a wave has reached. The needle stays on the
+// ratio it was on (and as far off it), wherever that stop now sits.
+inline void ResonanceFluxGame::buildStops(int wave) {
+    int keep = -1;
+    float off = 0;
+    if (_stopCount > 0) {
+        const int at = stopAt(_dial);
+        keep = _stops[at];
+        off = _dial - at;
+    }
+    _stopCount = 0;
+    for (int i = 0; i < RATIO_COUNT; ++i) {
+        _stopOf[i] = -1;
+        if (RATIOS[i].firstWave <= wave) {
+            _stopOf[i] = (int8_t)_stopCount;
+            _stops[_stopCount++] = (uint8_t)i;
+        }
+    }
+    _dial = keep >= 0 ? _stopOf[keep] + off : 0;
+}
+
+inline int ResonanceFluxGame::stopAt(float u) const {
+    const int k = (int)lrintf(u);
+    return k < 0 ? 0 : k >= _stopCount ? _stopCount - 1 : k;
+}
+
+// Your tone: each stop's ratio's own pitch, sliding between neighbours.
+inline float ResonanceFluxGame::humAt(float u) const {
+    int lo = (int)floorf(u);
+    if (lo < 0) lo = 0;
+    if (lo > _stopCount - 1) lo = _stopCount - 1;
+    const int hi = lo + 1 < _stopCount ? lo + 1 : lo;
+    const float f = u - lo;
+    return pitchOf(_stops[lo]) * (1 - f) + pitchOf(_stops[hi]) * f;
+}
+
 inline void ResonanceFluxGame::startWave(int wave) {
     _wave = wave;
+    buildStops(wave);
     _toSpawn = 6 + 2 * wave;
     if (_toSpawn > 30) _toSpawn = 30;
     _dampens = DAMPEN_PER_WAVE;
@@ -271,7 +321,7 @@ inline int ResonanceFluxGame::aliveCount() const {
 }
 
 inline int ResonanceFluxGame::maxOnScope() const {
-    const int m = 3 + (_wave - 1) / 3;
+    const int m = ON_SCOPE_FIRST + (_wave - 1) / ON_SCOPE_EVERY;
     return m < MAX_SIGNALS ? m : MAX_SIGNALS;
 }
 
@@ -282,8 +332,8 @@ inline float ResonanceFluxGame::driftSpeed() const {
 
 // The dial as it really is: as tuned, plus static's wander.
 inline float ResonanceFluxGame::dialEff() const {
-    const float d = _dial + _jitD;
-    return d < DIAL_MIN ? DIAL_MIN : d > DIAL_MAX ? DIAL_MAX : d;
+    const float d = _dial + _jitD, top = (float)(_stopCount - 1);
+    return d < 0 ? 0 : d > top ? top : d;
 }
 
 inline void ResonanceFluxGame::addStatic(float s) {
@@ -342,14 +392,14 @@ inline void ResonanceFluxGame::tune(const InputState &in) {
     const float turnDial = in.joyY;          // screen right: up the dial
     const float turnPhase = -in.joyX;        // screen up
     _dial += curve(turnDial) * DIAL_SPEED * _dt;
-    if (_dial < DIAL_MIN) _dial = DIAL_MIN;
-    if (_dial > DIAL_MAX) _dial = DIAL_MAX;
-    const Ratio &near = RATIOS[nearestRatio(_dial)];
-    if (fabsf(turnDial) < SNAP_STICK && fabsf(_dial - near.d) < SNAP_ZONE) {
+    if (_dial < 0) _dial = 0;
+    if (_dial > _stopCount - 1) _dial = (float)(_stopCount - 1);
+    const float near = (float)stopAt(_dial);
+    if (fabsf(turnDial) < SNAP_STICK && fabsf(_dial - near) < SNAP_ZONE) {
         float k = SNAP_RATE * _dt;
         if (k > 1) k = 1;
-        _dial += (near.d - _dial) * k;
-        if (fabsf(_dial - near.d) < 0.0002f) _dial = near.d;
+        _dial += (near - _dial) * k;
+        if (fabsf(_dial - near) < 0.002f) _dial = near;
     }
     _phase += curve(turnPhase) * PHASE_SPEED * _dt;
 
@@ -366,7 +416,7 @@ inline void ResonanceFluxGame::tune(const InputState &in) {
     _jitP += (_jitTP - _jitP) * k;
 
     const float d = dialEff();
-    _phase += TWO_PI_F * (d - RATIOS[nearestRatio(d)].d) * ROLL_HZ * _dt;
+    _phase += TWO_PI_F * (d - stopAt(d)) * ROLL_RATE * _dt;
     _phase = fmodf(_phase, TWO_PI_F);
     if (_phase < 0) _phase += TWO_PI_F;
 }
@@ -377,9 +427,7 @@ inline void ResonanceFluxGame::spawnSignal() {
     Signal *slot = nullptr;
     for (auto &s : _signals) if (!s.alive) { slot = &s; break; }
     if (!slot) return;
-    int pool[RATIO_COUNT], n = 0;
-    for (int i = 0; i < RATIO_COUNT; ++i) if (RATIOS[i].firstWave <= _wave) pool[n++] = i;
-    slot->ratio = (uint8_t)pool[random(0, n)];
+    slot->ratio = _stops[random(0, _stopCount)];
     slot->phase = frand(0, TWO_PI_F);
     const float l = SIG_R + 1, r = W - SIG_R - 1, t = SCOPE_Y + SIG_R + 1, b = SCOPE_Y + SCOPE_H - SIG_R - 1;
     const float horiz = r - l, vert = b - t;
@@ -388,10 +436,10 @@ inline void ResonanceFluxGame::spawnSignal() {
     else if ((p -= horiz) < horiz) { slot->x = l + p; slot->y = b; }
     else if ((p -= horiz) < vert) { slot->x = l; slot->y = t + p; }
     else { p -= vert; slot->x = r; slot->y = t + p; }
-    const float dx = CORE_X - slot->x, dy = CORE_Y - slot->y, len = sqrtf(dx * dx + dy * dy);
-    const float v = driftSpeed();
-    slot->vx = dx / len * v;
-    slot->vy = dy / len * v;
+    slot->speed = driftSpeed();
+    slot->sway = frand(SWAY_MIN, SWAY_MAX);
+    slot->swayRate = frand(SWAY_RATE_MIN, SWAY_RATE_MAX);
+    slot->swayAt = frand(0, TWO_PI_F);
     slot->alive = true;
     --_toSpawn;
 }
@@ -401,8 +449,15 @@ inline void ResonanceFluxGame::moveSignals() {
     for (int i = 0; i < MAX_SIGNALS; ++i) {
         Signal &s = _signals[i];
         if (!s.alive) continue;
-        s.x += s.vx * slow * _dt;
-        s.y += s.vy * slow * _dt;
+        // Weave: the heading for the core, swung either side of it.
+        s.swayAt += s.swayRate * slow * _dt;
+        const float head = atan2f(CORE_Y - s.y, CORE_X - s.x) + s.sway * sinf(s.swayAt);
+        s.x += cosf(head) * s.speed * slow * _dt;
+        s.y += sinf(head) * s.speed * slow * _dt;
+        if (s.x < SIG_R) s.x = SIG_R;
+        if (s.x > W - SIG_R) s.x = W - SIG_R;
+        if (s.y < SCOPE_Y + SIG_R) s.y = SCOPE_Y + SIG_R;
+        if (s.y > SCOPE_Y + SCOPE_H - SIG_R) s.y = SCOPE_Y + SCOPE_H - SIG_R;
         const float dx = s.x - CORE_X, dy = s.y - CORE_Y;
         if (dx * dx + dy * dy <= (CORE_R + SIG_R * 0.5f) * (CORE_R + SIG_R * 0.5f)) burst(i);
     }
@@ -418,7 +473,7 @@ inline void ResonanceFluxGame::findMatch() {
         const Signal &s = _signals[i];
         if (!s.alive) continue;
         const Ratio &r = RATIOS[s.ratio];
-        const float rg = fabsf(d - r.d), pg = phaseGap(r, p, s.phase);
+        const float rg = fabsf(d - _stopOf[s.ratio]), pg = phaseGap(r, p, s.phase);
         if (rg < _focusRatioGap - 1e-4f || (fabsf(rg - _focusRatioGap) <= 1e-4f && pg < _focusPhaseGap)) {
             _focus = i;
             _focusRatioGap = rg;
@@ -506,11 +561,11 @@ inline void ResonanceFluxGame::updateShards() {
 // so the two beat; hiss with the static.
 inline void ResonanceFluxGame::updateHum(AudioEngine &audio) {
     const float d = dialEff();
-    audio.setHum(0, humHz(d), HUM_YOU_LEVEL);
+    audio.setHum(0, humAt(d), HUM_YOU_LEVEL);
     float level = 0;
     if (_focus >= 0 && _focusRatioGap < HUM_FADE_ZONE) {
         level = HUM_TARGET_LEVEL * (1.0f - _focusRatioGap / HUM_FADE_ZONE);
-        _targetHz = humHz(RATIOS[_signals[_focus].ratio].d);
+        _targetHz = pitchOf(_signals[_focus].ratio);
     }
     audio.setHum(1, _targetHz, level);     // fading out at the pitch it had
     audio.setHiss(_static / 100.0f * HISS_LEVEL);

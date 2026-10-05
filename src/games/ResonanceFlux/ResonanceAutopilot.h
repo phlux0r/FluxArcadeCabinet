@@ -23,12 +23,12 @@ inline InputState ResonanceFluxGame::autopilot() {
     if (target >= 0 && _round == ROUND_PLAY) {
         const Signal &s = _signals[target];
         const Ratio &r = RATIOS[s.ratio];
-        const float gap = r.d - _dial;
+        const float stop = (float)_stopOf[s.ratio], gap = stop - _dial;
         if (fabsf(gap) > SNAP_ZONE * 0.5f) {
-            float push = gap * 12.0f;
+            float push = gap * 1.2f;
             if (fabsf(push) < 0.35f) push = push < 0 ? -0.35f : 0.35f;
             in.joyY = push > 1 ? 1 : push < -1 ? -1 : push;
-        } else if (fabsf(dialEff() - r.d) < RATIO_TOL) {
+        } else if (fabsf(dialEff() - stop) < RATIO_TOL) {
             const float p = phaseEff();
             const float g = phaseGap(r, p, s.phase);
             if (_matched == target) {

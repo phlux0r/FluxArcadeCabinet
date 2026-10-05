@@ -164,8 +164,10 @@ fifth. `docs/design/BrickFlux.md` is the full design.
 (`docs/design/ResonanceFlux.md` is the full design, of which it's a
 slice). The screen is a green phosphor oscilloscope. Your figure, in the
 middle, is a Lissajous curve: the stick tunes its frequency ratio
-(left/right, shown on the dial along the bottom) and its phase (up/down).
-Signals, amber figures of their own, drift in from the edges. Tune to a
+(left/right, along the dial at the bottom) and its phase (up/down). The
+dial has a stop for each ratio the game has reached, evenly spaced: just
+1:2 and 1:1 on wave 1. Signals, amber figures of their own, weave in from
+the edges. Tune to a
 signal's exact shape and both glow white: A shatters it, worth more the
 further out it is. Off a clean ratio your figure rolls, and you hear your
 tone beat against the nearest signal's, slower the closer you get; let go
@@ -173,7 +175,8 @@ near a clean ratio and the needle settles onto it. A signal that reaches
 you adds static (noise on the scope, hiss, and a wander in your figure);
 so does firing out of tune. At 100 static it's over. B dampens: everything
 slows for 4s, twice a wave. Waves bring more and faster signals and more
-ratios (1:2 and 1:1, then 1:3 and 2:3, 2:5 and 3:4, 3:5 and 4:5). A line
+ratios, each a new stop on the dial (1:2 and 1:1, then 1:3 and 2:3 on
+wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A line
 in the scope's bottom corner shows the dial gap, phase gap and beat, for
 tuning the tolerances (`DEBUG_LINE` in `ResonanceConfig.h`).
 

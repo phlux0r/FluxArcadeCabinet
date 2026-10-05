@@ -20,38 +20,46 @@ constexpr int SCOPE_H   = 106;
 constexpr int STRIP_Y   = 118;           // the tuning strip: y 118-127
 constexpr float CORE_X  = W / 2.0f;
 constexpr float CORE_Y  = SCOPE_Y + SCOPE_H / 2.0f;
-constexpr float CORE_R  = 26.0f;         // your figure's size, and the ring signals burst on
+constexpr float CORE_R  = 18.0f;         // your figure's size, and the ring signals burst on
 constexpr float SIG_R   = 10.0f;         // a signal's figure (complex ratios blur smaller)
 
 // Show the match gaps and the beat on the tuning strip, for tuning the
 // tolerances on the board.
 constexpr bool DEBUG_LINE = true;
 
-// ---- The dial: a = b * d for ratio a:b ----
-constexpr float DIAL_MIN = 0.30f, DIAL_MAX = 1.0f;
-constexpr float DIAL_SPEED  = 0.47f;     // dial units/s at full push: across it in ~1.5s
+// ---- The dial ----
+// One stop per clean ratio the game has reached so far (1:2 and 1:1 on
+// wave 1), evenly spaced, in ratio order: the dial is measured in stops,
+// so every neighbour is the same push away however many there are.
+constexpr float DIAL_SPEED  = 2.5f;      // stops/s at full push
 constexpr float PHASE_SPEED = 3.1416f;   // radians/s at full push: a full turn in 2s
 constexpr float STICK_CURVE = 2.0f;      // push^curve: small pushes creep
-constexpr float SNAP_ZONE   = 0.012f;    // within this of a clean ratio, with the stick
+constexpr float SNAP_ZONE   = 0.2f;      // within this of a stop, with the stick
 constexpr float SNAP_STICK  = 0.15f;     //   nearly still, the needle eases onto it
 constexpr float SNAP_RATE   = 8.0f;      //   (per second)
-// A figure a little off a clean ratio rolls (its phase drifts) at
-// 2*pi*error*ROLL_HZ radians/s: the visual twin of the beat.
-constexpr float ROLL_HZ     = 20.0f;
+// A figure off a stop rolls (its phase drifts) at 2*pi*error*ROLL_RATE
+// radians/s (error in stops): the visual twin of the beat.
+constexpr float ROLL_RATE   = 1.3f;
 
 // ---- Matching ----
-constexpr float RATIO_TOL   = 0.006f;    // dial gap for resonance
+constexpr float RATIO_TOL   = 0.06f;     // dial gap for resonance, in stops
 constexpr float PHASE_TOL   = 0.12f;     // phase gap (radians) for resonance: also the
                                          // most the figures differ, unit size (ResonanceFigure.h),
-                                         // so ~3px at the core
+                                         // so ~2px at the core
 constexpr unsigned long FIRE_COOLDOWN_MS = 400;   // after a misfire
 
 // ---- Signals and waves ----
 constexpr int   MAX_SIGNALS = 6;
-constexpr float DRIFT_START = 7.0f;      // px/s on wave 1
-constexpr float DRIFT_GROWTH = 1.06f;    // per wave
-constexpr float DRIFT_MAX   = 20.0f;
-constexpr unsigned long SPAWN_FIRST_MS = 2500, SPAWN_MIN_MS = 1000, SPAWN_STEP_MS = 100;
+constexpr int   ON_SCOPE_FIRST = 2;      // signals on the scope at once: 2, one more every
+constexpr int   ON_SCOPE_EVERY = 3;      //   third wave, up to MAX_SIGNALS
+constexpr float DRIFT_START = 4.0f;      // px/s on wave 1
+constexpr float DRIFT_GROWTH = 1.05f;    // per wave
+constexpr float DRIFT_MAX   = 14.0f;
+constexpr unsigned long SPAWN_FIRST_MS = 4000, SPAWN_MIN_MS = 1500, SPAWN_STEP_MS = 150;
+// Signals meander: each weaves either side of the way to the core, its
+// heading swaying by up to SWAY_MAX radians at its own rate.
+constexpr float SWAY_MIN = 0.6f, SWAY_MAX = 1.0f;
+constexpr float SWAY_RATE_MIN = 0.7f, SWAY_RATE_MAX = 1.5f;   // radians/s
 constexpr unsigned long WAVE_INTRO_MS = 1800, WAVE_CLEAR_MS = 2200;
 
 // ---- Static (0-100 is the game) ----
@@ -60,7 +68,7 @@ constexpr float STATIC_MISFIRE = 3.0f;
 constexpr float STATIC_SHATTER = -1.0f;
 constexpr float STATIC_CLEAR   = -25.0f; // a wave cleared
 constexpr float STATIC_DECAY   = 0.5f;   // per second
-constexpr float JITTER_DIAL    = 0.010f; // your figure's wander at full static
+constexpr float JITTER_DIAL    = 0.10f;  // your figure's wander at full static (stops)
 constexpr float JITTER_PHASE   = 0.35f;  //   (radians)
 
 // ---- Dampen (B) ----
@@ -79,11 +87,14 @@ constexpr int   MAX_SHARDS = 144;
 constexpr unsigned long SHARD_MS = 650;
 
 // ---- Hum (the two tones) ----
-constexpr float HUM_F_LO = 300.0f;       // Hz at DIAL_MIN
-constexpr float HUM_F_SPAN = 570.0f;     // Hz per dial unit: the match tolerance is a ~3Hz beat
+// Each ratio has its own pitch, whatever stop it's on: HUM_F_LO for the
+// first in RATIOS, HUM_F_STEP higher for each after. Between stops your
+// tone slides from one to the next.
+constexpr float HUM_F_LO = 300.0f;
+constexpr float HUM_F_STEP = 40.0f;
 constexpr float HUM_YOU_LEVEL = 0.35f;
 constexpr float HUM_TARGET_LEVEL = 0.35f;
-constexpr float HUM_FADE_ZONE = 0.08f;   // the target tone fades in within this dial gap
+constexpr float HUM_FADE_ZONE = 1.0f;    // the target tone fades in within a stop of it
 constexpr float HISS_LEVEL = 0.4f;       // at full static
 
 constexpr unsigned long GAMEOVER_MIN_MS = 1500, GAMEOVER_TIMEOUT_MS = 15000;
