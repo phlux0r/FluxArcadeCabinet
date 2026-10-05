@@ -49,6 +49,7 @@ inline const GameInfo GAMES[] = {
     { "brick",     "BRICK FLUX", nullptr,      nullptr      },
     { "lander",    "LANDER",    "lander_flux", "high_score" },
     { "maze",      "MAZE",      "maze_flux",   "high_score" },
+    { "resonance", "RESONANCE", nullptr,       nullptr      },
     { "roll",      "ROLL FLUX", nullptr,       nullptr      },
     { "runner",    "RUNNER",    "pf_data",     "highscore"  },
     { "star",      "STAR FLUX", "sf_data",     "highscore"  },

@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: eight games (and a ninth's prototype) behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: nine games (and a tenth's prototype, Resonance) behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -9,6 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
+| Resonance Flux | Resonance | Landscape | Prototype. An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
@@ -159,6 +160,23 @@ levels make a loop (16 layouts and the bosses); each loop is faster, the
 wall quicker, guns and bosses sharper, the bosses tougher, up to the
 fifth. `docs/design/BrickFlux.md` is the full design.
 
+**Resonance Flux** is a prototype, for judging the idea on the board
+(`docs/design/ResonanceFlux.md` is the full design, of which it's a
+slice). The screen is a green phosphor oscilloscope. Your figure, in the
+middle, is a Lissajous curve: the stick tunes its frequency ratio
+(left/right, shown on the dial along the bottom) and its phase (up/down).
+Signals, amber figures of their own, drift in from the edges. Tune to a
+signal's exact shape and both glow white: A shatters it, worth more the
+further out it is. Off a clean ratio your figure rolls, and you hear your
+tone beat against the nearest signal's, slower the closer you get; let go
+near a clean ratio and the needle settles onto it. A signal that reaches
+you adds static (noise on the scope, hiss, and a wander in your figure);
+so does firing out of tune. At 100 static it's over. B dampens: everything
+slows for 4s, twice a wave. Waves bring more and faster signals and more
+ratios (1:2 and 1:1, then 1:3 and 2:3, 2:5 and 3:4, 3:5 and 4:5). A line
+in the scope's bottom corner shows the dial gap, phase gap and beat, for
+tuning the tolerances (`DEBUG_LINE` in `ResonanceConfig.h`).
+
 **Roll Flux** (`docs/design/RollFlux.md`): the stick tilts the course and
 the ball rolls that way (camera-relative: up rolls it away from you), to
 the chequered goal before the clock runs out. Ramps roll it up or down a
@@ -223,7 +241,8 @@ attract cycle orbits course 1 under the title (drawn live, not an image),
 three how-to-play slides and the scores; the title runs along the top,
 over the course.
 
-**Attract demos.** Left alone, every game except Maze does the same: title,
+**Attract demos.** Left alone, every game except Maze (and the Resonance
+prototype, just a title so far) does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
 an autopilot, and back to the title (Maze cycles title, how-to-play and
 table). A starts a real game straight from a demo; nothing from a demo
@@ -357,6 +376,10 @@ how-to or scores screens, hold B and press A; the stick picks the level
 there (a T before the score; nothing goes on the high-score table), B goes
 back.
 
+Resonance Flux: left/right turns the dial (the frequency ratio), up/down
+the phase; both at a rate that follows how far you push, so letting go
+keeps the setting. A fires, B dampens.
+
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
 to charge the Flux Dash, let go to dash. Hold B and the stick turns the
@@ -454,6 +477,12 @@ FluxArcadeCabinet/
         │   ├── BrickBoard.h        # The brick grid and its creep
         │   ├── BrickBall.h         # Ball/capsule types, the bat's bounce maths
         │   └── BrickLevels.h       # Layouts, as text
+        ├── ResonanceFlux/      # Oscilloscope prototype, header-only:
+        │   ├── ResonanceFluxGame.h # Class, phases, tuning, signals, waves, the hum
+        │   ├── ResonanceConfig.h   # All tuning: dial, tolerances, waves, static
+        │   ├── ResonanceFigure.h   # Lissajous maths: ratios, phase symmetry
+        │   ├── ResonanceScope.h    # The afterglow planes, HUD, dial, title
+        │   └── ResonanceAutopilot.h # The harness's player
         ├── LanderFlux/         # LanderFluxGame.h (thin) + GameEngineLander.h,
         │                       # Ship.h, CavernObstacles.h + assets/
         ├── MazeFlux/           # MazeFluxGame.h + GameEngineMaze.h, generator,
@@ -522,6 +551,9 @@ At once it can play:
   any effect too long to cache), both streamed from SD
 - six effects (`playWAV`, PROGMEM fallbacks); a seventh replaces the oldest
 - the tone/melody synth (`playTone`, `playMelody`)
+- the hum (`setHum`, `setHiss`): two sine tones and a hiss that sound for
+  as long as they're set, gliding between pitches and levels without
+  clicks (Resonance Flux's tuning tones)
 
 Music and effects are separate buses, each switchable in the launcher's
 SETUP page, under a master volume. The sum is soft-clipped rather than
@@ -595,6 +627,7 @@ fetches the real files into an existing clone.
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 | `pickup.wav` (gem); optional sounds below | Roll Flux |
+| `explosion.wav` (a shattered signal; a tone without it) | Resonance Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what
 the last column says. Mono 16-bit 44.1kHz, short (they're cached).
@@ -695,6 +728,7 @@ test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh star god 12000 # one Star Flux scenario
 test/build.sh brick play 20000   # one Brick Flux scenario
 test/build.sh roll play          # one Roll Flux scenario
+test/build.sh resonance match    # one Resonance Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```
@@ -704,6 +738,8 @@ important — what it cannot see (audio, how anything looks or plays, real
 timing, most of the older 2D games' play). Brick Flux has its own harness
 (`test/brickflux_harness.cpp`): play, the wall, the smash timing, tunnelling,
 polarity, the living bricks, every level and boss, and its attract demo.
+So does the Resonance Flux prototype (`test/resonanceflux_harness.cpp`):
+the figure maths, matching, autopilot play and quitting.
 
 For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
 It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial
@@ -730,8 +766,8 @@ slow frame:
 
 The 3D games scale their movement by measured frame time
 (`REFERENCE_FRAME_MS` in their config headers), so they play at the same
-speed whether running at 40 or 22fps. So does Brick Flux (its speeds are
-pixels per second, against the measured frame time). The other 2D games do
+speed whether running at 40 or 22fps. So do Brick and Resonance Flux
+(their speeds are pixels per second, against the measured frame time). The other 2D games do
 not; their speed still follows the frame rate.
 
 ## Adding a New Game

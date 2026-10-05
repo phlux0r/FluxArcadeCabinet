@@ -1,4 +1,4 @@
-# Host harnesses (Tank Flux, Tube Flux, Star Flux, Brick Flux)
+# Host harnesses (Tank Flux, Tube Flux, Star Flux, Brick Flux, Roll Flux, Resonance Flux)
 
 Run the 3D games' real game logic and the real Jet rasteriser on a desktop,
 so a change can be checked without flashing the board. The point is regression
@@ -101,6 +101,24 @@ with `levels` or `boss`, it writes those frames of every level
 Host µs compare runs with each other (and with Tube's `profile`, whose
 cost runs at ~30fps on the board), not with a frame budget.
 
+## Resonance Flux
+
+`test/resonanceflux_harness.cpp`, run with `test/build.sh resonance
+<scenario>`, for the prototype. Its bot is the game's own autopilot
+(`ResonanceAutopilot.h`). Each prints PASS/FAIL.
+
+| Scenario | What it checks |
+|---|---|
+| `figure` | The figure maths, against densely sampled curves: phases a multiple of 2π/b apart, and phases mirrored about π − aπ/b, draw the same figure; a phase gap bounds how far apart the figures are (so the phase tolerance is a bound in pixels); phases three tolerances apart look visibly different; the clean ratios sit further apart on the dial than the snap and tolerance |
+| `match` | Resonance needs the dial and phase both inside their tolerances, a third of a turn round counting for 2:3; the needle snaps onto a clean ratio when let go inside the snap zone, and not outside it; off a clean ratio the phase rolls, on it it holds; a misfire costs static and holds the next shot back; a shot in resonance shatters and scores, and the focus moves off it; a signal at the core adds static; high static makes your figure wander, and it settles after; static at 100 ends the game |
+| `play [N]` | The autopilot plays real games for N frames (default 20000), restarting through name entry and game over: static stays in 0-100, the score never drops within a game, at least three waves are cleared, and shatters outnumber signals let through three to one |
+| `quit` | The title waits for A; Back mid-game (`onQuit()`, `onExit()` freeing the scope's planes, `init()`) and a clean game after |
+
+`DUMP_AT=6000,6300 test/build.sh resonance play 6301` writes
+`resonance_006000.ppm` etc. The harness builds the game against the real
+(inert) audio engine, so it can't hear the hum; `audio_test` checks the
+mixer's side of it (pitch, glide, a 3Hz beat from 400 and 403Hz, mute).
+
 ## Looking at frames
 
 The GFX stub keeps a real framebuffer, so any frame can be written out:
@@ -146,7 +164,8 @@ being freed on exit to the launcher).
 - **Audio output.** The game harnesses use `stub/cabinet/AudioEngine.h`,
   which only counts calls. `audio_test.cpp` does test the real mixer and
   loader logic (mixing, clipping, voice stealing, the synth, WAV parsing,
-  resampling, caching, streaming and seamless loops, mute ordering) against
+  resampling, caching, streaming and seamless loops, mute ordering, the hum's
+  pitch, glide and beating) against
   WAV files it writes to a temp dir. What neither sees is the device glue in
   `src/cabinet/AudioEngine.h`: I2S, the FreeRTOS tasks, the SD card, timing.
   The stub was blind to the bug where the engine's shared task state was
@@ -173,6 +192,7 @@ test/
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
+├── resonanceflux_harness.cpp   # Resonance Flux prototype: figure maths, matching, play, quit
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout

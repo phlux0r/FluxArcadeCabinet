@@ -1,6 +1,7 @@
 # Resonance Flux: design
 
-A proposal, not built yet. An original game rather than a remake: the
+A prototype is built (see "Prototype" at the end); the rest is the
+proposal. An original game rather than a remake: the
 screen is a green phosphor oscilloscope, and you fight by matching shapes,
 not by aiming at a position. Your weapon is a Lissajous figure (two sine
 waves at right angles) that you shape with the stick. Hostile signals, each
@@ -58,13 +59,16 @@ The ratios used, in dial order (q/p ascending):
 Neighbours late in the table (3:4 and 4:5, 3:5 and 2:3) are close on the
 dial and alike to the eye, which is where twins (§6) come from.
 
-**Phase symmetry.** Different phases can draw the same figure (for 1:1,
-φ and π−φ are mirror images and φ+π is the same curve traced backwards).
-Matching compares phases modulo each ratio's symmetries; the table of
-equivalences is worked out per ratio at build time, and a harness check
-confirms that any two settings counted as a match draw near-identical
-point sets (the largest gap between sampled points under a couple of
-pixels).
+**Phase symmetry.** Different phases can draw the same figure. For a:b
+with phase p, two phases draw the same curve when they differ by a
+multiple of 2π/b (shifting t by 2π/b leaves y alone and turns x's phase
+by 2πa/b, which covers every multiple of 2π/b), or when they sum to
+π − aπ/b (t → π/b − t leaves y alone and mirrors x's phase). Matching
+compares phases with both taken out (`phaseGap()` in
+`ResonanceFigure.h`). And since a change of phase g moves no point of the
+figure more than g (unit size), the phase tolerance is also a bound on
+how different two matched figures look: 0.12 rad is ~3px at the core.
+The harness checks all of this against densely sampled curves.
 
 ## 2. Screen and layout
 
@@ -299,11 +303,43 @@ The autopilot:
 4. Is the match tolerance fair on the stick? That can only be judged on
    the board.
 
+## Prototype
+
+Built as a slice of the above, to judge on the board before the rest:
+tuning (rate-controlled dial and phase, the snap, the roll off a clean
+ratio, static's wander), Tone signals only, resonance and firing,
+misfires, static and the overload, dampen, waves with the growing ratio
+pool, scoring with the distance bonus and the wave tally, the afterglow
+scope, the tuning strip, the hum (your tone, the focus signal's fading in
+within one ratio-step, the hiss), and a title. High scores and name entry
+too, since the cabinet's tests expect every game to have a table.
+
+Left for later: cascades and chains, the other signals, Chords, the
+attract cycle's how-to and demo (the autopilot is there, for the harness),
+the WAV effects (tones, and `explosion.wav` when it's on the card), the
+palette shifts.
+
+Differences from the design above, found while building it:
+
+- Signals are drawn at radius 10, not 7-9: at 8, a 3:4 or 4:5 figure
+  blurred into a blob in the harness's frames.
+- The match is a phase gap with the symmetries taken out (above), not a
+  comparison of point sets: exact, cheap, and the gap bounds the look.
+- Shattered figures fly apart as the game's own shards drawn into the
+  afterglow (so they glow and fade like the rest), not `ParticleManager`.
+- The hum's pitch is linear on the dial, 300-700Hz, so the match
+  tolerance is a ~3Hz beat; the snap takes it to none.
+- `DEBUG_LINE` (on) prints the focus's dial gap, phase gap and beat in the
+  scope's corner, for tuning on the board.
+
 ## Needs the board
 
 Everything that makes or breaks it: whether the figures read clearly at
 this size on the panel, whether the beating can be heard and is pleasant
 through the MAX98357A and speaker, how the rate-controlled tuning feels,
 the match tolerance, the afterglow pass's frame cost, and whether the game
-is fun once the novelty wears off. Worth a small prototype (tuning, one
-signal type, the tones) before building the rest.
+is fun once the novelty wears off. The prototype is for exactly this. The
+first things to try: the tolerances (`RATIO_TOL`, `PHASE_TOL`, `SNAP_ZONE`),
+the stick rates and curve, whether the beat helps, the hum and hiss
+levels, the drift speeds, and the frame rate (the afterglow pass touches
+~34k bytes a frame).

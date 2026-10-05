@@ -553,6 +553,10 @@ public:
     bool isMusicEnabled() const   { return _musicOn; }
     bool isFxEnabled() const      { return _fxOn; }
     void preload(const char*)     {}
+    // The mixer engine's hum (two sine tones and a hiss): not in this engine.
+    void setHum(int, float, float) {}
+    void setHiss(float)           {}
+    void stopHum()                {}
     bool exists(const char* path) { return SD.cardType() != CARD_NONE && SD.exists(path); }
 
     void playLanderStartSound() {

@@ -515,6 +515,30 @@ public:
     }
 
     // -------------------------------------------------------------------------
+    // HUM: two sine tones and a hiss that sound for as long as they're set,
+    // changing smoothly (Resonance Flux sets them every frame). Levels 0-1;
+    // level 0 fades one out. Silenced (a demo), everything is held at 0.
+    // mute() stops it all.
+    // -------------------------------------------------------------------------
+    void setHum(int osc, float hz, float level) {
+        if (!_ready || osc < 0 || osc >= audiomix::HUM_OSCS) return;
+        if (_silenced) level = 0;
+        level = constrain(level, 0.0f, 1.0f);
+        _audioMixer.humMilliHz[osc].store(hz > 0 ? (uint32_t)(hz * 1000.0f) : 0);
+        _audioMixer.humLevelQ15[osc].store((int32_t)(level * 32767.0f));
+    }
+    void setHiss(float level) {
+        if (!_ready) return;
+        if (_silenced) level = 0;
+        level = constrain(level, 0.0f, 1.0f);
+        _audioMixer.hissLevelQ15.store((int32_t)(level * 32767.0f));
+    }
+    void stopHum() {
+        for (int o = 0; o < audiomix::HUM_OSCS; ++o) setHum(o, 0, 0);
+        setHiss(0);
+    }
+
+    // -------------------------------------------------------------------------
     // UPDATE: call every frame. The mixing happens on its own task; this
     // only runs the WAV-missing fallbacks.
     // -------------------------------------------------------------------------

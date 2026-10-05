@@ -8,7 +8,8 @@ what's been learnt the hard way.
 ## State (main at 15126e2)
 
 Nine games, all merged and played on the board: Asteroid, Brick, Lander,
-Maze, Roll, Runner (Platform Flux), Star, Tank, Tube.
+Maze, Roll, Runner (Platform Flux), Star, Tank, Tube. A tenth, Resonance,
+is a prototype on its branch (below).
 
 - **Roll Flux** (the ninth, 3D marble) is finished: 20 courses in four
   worlds, a guardian ending each, the Prism Works' colour pieces, the Flux
@@ -37,10 +38,13 @@ Maze, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lack). Read each game before proposing: a quick grep suggested none of
   the four checks for WAVs with `exists()`, but they may get sound another
   way.
-- **Resonance Flux** is proposed, not built: an original oscilloscope
-  game where you match Lissajous figures by eye and by ear.
-  docs/design/ResonanceFlux.md, including its open questions; it needs a
-  new two-sine voice in the mixer and a small prototype on the board first.
+- **Resonance Flux** is a prototype, in the menu as Resonance: an
+  original oscilloscope game where you match Lissajous figures by eye and
+  by ear (the mixer's new hum: two sines and a hiss). Built as a slice of
+  docs/design/ResonanceFlux.md to judge on the board; that note's
+  "Prototype" section says what's in and out, "Needs the board" what to
+  try. Not yet run on the cabinet. The owner decides from it whether to
+  build the rest.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.
