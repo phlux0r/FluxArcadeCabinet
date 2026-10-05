@@ -37,6 +37,10 @@ Maze, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lack). Read each game before proposing: a quick grep suggested none of
   the four checks for WAVs with `exists()`, but they may get sound another
   way.
+- **Resonance Flux** is proposed, not built: an original oscilloscope
+  game where you match Lissajous figures by eye and by ear.
+  docs/design/ResonanceFlux.md, including its open questions; it needs a
+  new two-sine voice in the mixer and a small prototype on the board first.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.
