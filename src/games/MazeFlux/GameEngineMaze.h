@@ -562,10 +562,12 @@ private:
 
         _player.update(up, down, left, right,
                        [this](int x, int y, uint8_t dir) { return canPass(x, y, dir); });
+        // The cell just reached, not where the player's already heading
+        // on (held, the next step starts the same update).
         if (_player.arrived) {
-            _visited[cellIndex(_player.x, _player.y)] = 1;
-            arriveAt(_player.x, _player.y, audio);
-            _visited[cellIndex(_player.x, _player.y)] = 1;   // and where a pad put you
+            _visited[cellIndex(_player.arrivedX, _player.arrivedY)] = 1;
+            arriveAt(_player.arrivedX, _player.arrivedY, audio);
+            if (!_player.moving) _visited[cellIndex(_player.x, _player.y)] = 1;   // where a pad put you
         }
         if (_state != STATE_PLAYING) return;
 

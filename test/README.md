@@ -145,6 +145,7 @@ switch (type B). Each prints PASS/FAIL.
 | `teleport` | Walking onto a pad puts you on its partner, and you stay there |
 | `complete` | Keys and the exit score as the rules say; the level-complete screen ignores A held through it and goes on at a fresh press |
 | `buffer` | A push towards a side passage, made mid-step and let go, is taken at the next cell |
+| `passing` | Levels 1-12, straight runs of four or more cells walked with the stick held at uneven frame times: every cell passed is marked (breadcrumbs), and a key and a boost on the way are collected, the key only once the player has reached its cell (not as the step before it ends) |
 | `play [N]` | The bot plays from level 1 for N frames (default 60000), lives pinned: it must reach level 15 losing no more than five lives (so no level is unfair to careful play), and the score never drops |
 | `quit` | Back mid-game puts the score on the table |
 | `idle` | The attract cycle (title, how-to, scores), A held from the menu ignored, then A starts level 1 |

@@ -17,7 +17,8 @@ public:
     int  x = 0, y = 0;          // the cell it's in, or moving into
     int  fromX = 0, fromY = 0;  // the cell it's moving from
     bool moving  = false;
-    bool arrived = false;       // true the update it reaches a cell
+    bool arrived = false;       // true the update it reaches a cell,
+    int  arrivedX = 0, arrivedY = 0;   // which (x, y may already be the next)
     int  lives   = 3;
     Facing  facing    = FACE_DOWN;
     uint8_t walkFrame = 0;      // flips each step
@@ -64,6 +65,7 @@ public:
         if (moving && now - _moveStart >= _moveMs) {
             moving  = false;
             arrived = true;
+            arrivedX = x; arrivedY = y;
             endedAt = _moveStart + _moveMs;
             fromX = x; fromY = y;
         }

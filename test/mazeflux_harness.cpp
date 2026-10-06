@@ -19,6 +19,9 @@
 //   teleport    walking onto a pad puts you on its partner, and not back
 //   complete    the level-complete screen waits for A to be let go
 //   buffer      a push between steps is taken at the next cell
+//   passing     walking straight on with the stick held, at uneven frame
+//               times: every cell passed is marked, keys and pickups on
+//               the way collected
 //   wayfinding  cells walked are marked (breadcrumbs); the compass aims at
 //               the next key, then the exit, with an arrow on the screen's
 //               edge pointing its way while it's off screen
@@ -367,6 +370,53 @@ static bool buffer() {
     return false;
 }
 
+// Walking straight on with the stick held: every cell passed is marked and
+// whatever's on it collected (a key mid-corridor, a pickup).
+static bool passing() {
+    static MazeFluxGame g;
+    int runs = 0, missedCrumbs = 0, missedKeys = 0, missedBoosts = 0, early = 0;
+    for (int level = 1; level <= 12; level++) {
+        GameEngineMaze &e = startAt(g, level);
+        e._safeUntil = millis() + 10000000;
+        for (int i = 0; i < e._activeTraps; i++) e._traps[i].active = false;
+        for (int i = 0; i < e._activeBombs; i++) e._bombs[i].active = false;
+        e._activePads = 0;
+        // A straight run of at least four open cells.
+        for (int y = 0; y < e._maze.height && runs < level * 3; y++)
+            for (int x = 0; x < e._maze.width && runs < level * 3; x++)
+                for (uint8_t d : MazeGenerator::DIRS) {
+                    int n = 0, cx = x, cy = y;
+                    while (n < 6 && e.canPass(cx, cy, d)) { cx += MazeGenerator::dx(d); cy += MazeGenerator::dy(d); n++; }
+                    if (n < 4) continue;
+                    // A key in the second cell, a boost in the third.
+                    const int kx = x + MazeGenerator::dx(d) * 2, ky = y + MazeGenerator::dy(d) * 2;
+                    const int bx = x + MazeGenerator::dx(d) * 3, by = y + MazeGenerator::dy(d) * 3;
+                    e._keys[0] = { kx, ky, 0, false };
+                    e._boosts[0] = { bx, by, true };
+                    memset(e._visited, 0, sizeof(e._visited));
+                    e._player.reset(x, y);
+                    for (int f = 0; f < 40 && !(e._player.x == cx && e._player.y == cy && !e._player.moving); f++) {
+                        const bool had = e._keys[0].collected;
+                        frame(g, stick(d), 17 + (f * 13) % 30);
+                        // Collected only on reaching it, not a step before.
+                        if (!had && e._keys[0].collected &&
+                            fabsf(e._player.px() - (kx + 0.5f) * CELL) + fabsf(e._player.py() - (ky + 0.5f) * CELL) > CELL / 2)
+                            early++;
+                    }
+                    for (int k = 1; k <= n; k++)
+                        missedCrumbs += !e._visited[(y + MazeGenerator::dy(d) * k) * e._maze.width + x + MazeGenerator::dx(d) * k];
+                    missedKeys += !e._keys[0].collected;
+                    missedBoosts += e._boosts[0].active;
+                    runs++;
+                    break;
+                }
+    }
+    const bool ok = runs > 20 && !missedCrumbs && !missedKeys && !missedBoosts && !early;
+    printf("passing: %d straight runs with the stick held, %d cells unmarked, %d keys and %d boosts left behind, %d keys taken a step early -> %s\n",
+           runs, missedCrumbs, missedKeys, missedBoosts, early, ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 // Breadcrumbs and the compass.
 static bool wayfinding() {
     static MazeFluxGame g;
@@ -556,6 +606,7 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "complete")) ok &= complete();
     if (all || !strcmp(which, "buffer"))   ok &= buffer();
     if (all || !strcmp(which, "wayfinding")) ok &= wayfinding();
+    if (all || !strcmp(which, "passing"))  ok &= passing();
     if (all || !strcmp(which, "play"))     ok &= play(frames);
     if (all || !strcmp(which, "quit"))     ok &= quit();
     if (all || !strcmp(which, "idle"))     ok &= idle();
