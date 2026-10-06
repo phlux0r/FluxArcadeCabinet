@@ -603,7 +603,6 @@ public:
         const bool physicsTick = steps > 0;
 
         if (_lander.isDisintegrating) {
-            if (physicsTick) _particles.update();
             if (now - _lander.explosionStartTime > 1200 && _demo) {
                 endDemo();                       // a demo crash just ends the demo
                 return true;
@@ -651,7 +650,7 @@ public:
                     _lander.fuel = min(100.0f, _lander.fuel + 40.0f);
                     for (int p = 0; p < 15; p++) {
                         _particles.spawnFire(_fuelTankX, _fuelTankY,
-                            random(-10, 10) * 0.1f, random(-10, 10) * 0.1f);
+                            random(-10, 10) * 0.1f, random(-10, 10) * 0.1f, 0, 4);
                     }
                     audio.playWAV("/audio/pickup.wav");
                 }
@@ -694,7 +693,7 @@ public:
         // ---- RENDER (every frame regardless of physics tick) ----
         canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
         _obstacles.render(canvas);
-        _particles.update();
+        _particles.update();             // once a frame, the crash's debris too
         _particles.render(canvas);
 
         if (_fuelTankActive) {

@@ -56,7 +56,7 @@ public:
         lives--;
         isDisintegrating   = true;
         explosionStartTime = millis();
-        particles.triggerExplosion(x, y);
+        particles.triggerExplosion(x, y, 60, 4);
     }
 
     // Original per-frame physics — called only when engine timer fires (~50fps)
@@ -75,7 +75,7 @@ public:
             if (random(0, 10) > 2) {
                 float fireVX = -sin(thrustAngle) * 1.5f + (random(-3, 3) * 0.1f);
                 float fireVY =  cos(thrustAngle) * 1.5f + (random(0, 3)  * 0.1f);
-                particles.spawnFire(x, y + 4, fireVX, fireVY);
+                particles.spawnFire(x, y + 4, fireVX, fireVY, 0, 2);   // a short plume
             }
         }
 

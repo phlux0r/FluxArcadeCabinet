@@ -297,8 +297,8 @@ private:
     void triggerShipExplosion(AudioEngine &audio) {
         float cx = _ship.getX() + 8.0f;
         float cy = (float)_ship.getY() + 5.0f;
-        _particles.spawnExplosion(cx, cy, ArcadeConfig::COLOR_ION_BLUE, 20);
-        _particles.spawnExplosion(cx, cy, ArcadeConfig::COLOR_YELLOW, 10);
+        _particles.spawnExplosion(cx, cy, ArcadeConfig::COLOR_ION_BLUE, 20, 600, 4);
+        _particles.spawnExplosion(cx, cy, ArcadeConfig::COLOR_YELLOW, 10, 600, 4);
         // Non-blocking: audio streams in chunks via audio.update() each frame
         audio.playExplosionSound(explosion_data, sizeof(explosion_data));
     }
@@ -389,6 +389,11 @@ public:
 
             _ship.updateAnimation();
             _ship.updateShield();
+
+            // Exhaust: a spark off the engine flame each frame, streaking
+            // back past the field as it scrolls by.
+            _particles.spawnFire(_ship.getX(), (float)_ship.getY() + 4.5f,
+                                 -random(8, 17) * 0.1f, random(-2, 3) * 0.05f, 0, 2);
 
             _powerUps.update(_score, _ship, _lives, uiNeedsUpdate, audio, _asteroids);
             _asteroids.update(_ship, _score, _asteroidsPassed, _nextTargetScore,

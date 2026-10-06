@@ -188,7 +188,15 @@ being freed on exit to the launcher).
 - **Most of the older 2D games.** Beyond the 3D games and Brick Flux, only
   the Runner, Asteroid and Lander attract demos are covered
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
-  mid-demo starts a clean game), not their gameplay.
+  mid-demo starts a clean game), not their gameplay; besides those it
+  checks Lander's crash debris moves one step a frame (`lander`), and
+  `ParticleManager`'s trails (`trails`: a spark with one leaves a line
+  behind it, dimmer back along it, one without doesn't, and neither
+  crosses the HUD line; a trailed spark dims out instead of flashing white
+  and its trail lingers a few updates after it, still dimming, while one
+  without a trail still ends white).
+  `DUMP_AT=1557,1617 test/build.sh games2d asteroid 1700` writes those idle
+  frames as `asteroid_01557.ppm` etc. (likewise `runner_`, `lander_`).
 
 So a clean harness run means "nothing changed unintentionally", not "this is
 good to ship". Hardware still decides that.
@@ -199,7 +207,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
