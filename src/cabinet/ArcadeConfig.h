@@ -176,11 +176,19 @@ struct ArcadeConfig {
     static const int   POWERUP_SPAWN_HIGH_MS    = 40000;
     static const int   SLOW_SPEED_CHANCE        = 60;
     static const int   SPEED_STEPS_TO_REDUCE    = 4;
+    // Fire: from FIRE_START_SCORE, a power-up roll (after the extra life's)
+    // is Fire FIRE_CHANCE% of the time; A then shoots for FIRE_DURATION_MS.
+    static const int   FIRE_START_SCORE         = 500;
+    static const int   FIRE_CHANCE              = 35;
+    static const unsigned long FIRE_DURATION_MS = 20000;
+    static const unsigned long FIRE_INTERVAL_MS = 160;    // between shots, A held
+    static constexpr float BOLT_SPEED           = 5.0f;   // px/frame
 
     // Power-up colours
     static const uint16_t COLOR_SHIELD = 0x07E0;   // Green
     static const uint16_t COLOR_HEALTH = 0xF81F;   // Magenta
     static const uint16_t COLOR_SLOW   = 0x07FF;   // Cyan
+    static const uint16_t COLOR_FIRE   = 0xFD20;   // Orange
 
     // Background
     static const int   MAX_STARS              = 16;

@@ -118,6 +118,22 @@ private:
         }
     }
 
+    // One more asteroid got past (or was shot): every so many, another joins
+    // the field, or once it's full the field speeds up.
+    void countCleared(int &asteroidsPassed, int &nextTargetScore) {
+        asteroidsPassed++;
+        if (asteroidsPassed >= nextTargetScore) {
+            if (_currentMaxActive < ArcadeConfig::MAX_ASTEROIDS) {
+                _currentMaxActive++;
+                _pool[_currentMaxActive - 1].active = true;
+                resetAsteroid(_currentMaxActive - 1, true);
+            } else {
+                _currentSpeed += ArcadeConfig::SPEED_STEP;
+            }
+            nextTargetScore += ArcadeConfig::SCORE_TO_SPAWN + (_currentMaxActive * 4);
+        }
+    }
+
 public:
     AsteroidManager() : _currentMaxActive(1), _currentSpeed(ArcadeConfig::BASE_SPEED), _cometOnScreen(false) {
         for (int i = 0; i < ArcadeConfig::MAX_ASTEROIDS; i++) _pool[i].active = false;
@@ -182,6 +198,28 @@ public:
         }
     }
 
+    // A bolt that went from x0 to x1 along row y this frame (after the
+    // asteroids moved): breaks the first asteroid it met, which scores and
+    // counts towards the field filling up as passing it would, and comes
+    // back in from the right. The asteroid's own move this frame is added
+    // to the bolt's sweep so a fast one can't slip through it.
+    bool shoot(float x0, float x1, float y, int &score, int &asteroidsPassed,
+               int &nextTargetScore, ParticleManager &particles) {
+        for (int i = 0; i < ArcadeConfig::MAX_ASTEROIDS; i++) {
+            Asteroid &a = _pool[i];
+            if (!a.active || fabsf(a.y - y) > a.radius) continue;
+            if (a.x - a.radius >= ArcadeConfig::SCREEN_WIDTH) continue;   // not on screen yet
+            if (a.x + a.radius < x0 || a.x - a.radius > x1 - a.vx) continue;
+            score += a.isComet ? ArcadeConfig::COMET_BONUS_SCORE : a.sizeClass;
+            particles.spawnExplosion(a.x, a.y, a.color, 8 + 3 * a.sizeClass, 600, 4);
+            particles.spawnExplosion(a.x, a.y, ST7735_WHITE, 4, 300, 2);
+            countCleared(asteroidsPassed, nextTargetScore);
+            resetAsteroid(i, true);
+            return true;
+        }
+        return false;
+    }
+
     void reduceGameSpeed() {
         _currentSpeed -= (ArcadeConfig::SPEED_STEP * ArcadeConfig::SPEED_STEPS_TO_REDUCE);
         if (_currentSpeed < ArcadeConfig::BASE_SPEED) {
@@ -231,20 +269,8 @@ public:
                     particles.spawnExplosion(0, _pool[i].y, _pool[i].color, 6, 600, 4);
                 }
                 
-                asteroidsPassed++;
                 uiNeedsUpdate = true;
-
-
-                if (asteroidsPassed >= nextTargetScore) {
-                    if (_currentMaxActive < ArcadeConfig::MAX_ASTEROIDS) {
-                        _currentMaxActive++;
-                        _pool[_currentMaxActive - 1].active = true;
-                        resetAsteroid(_currentMaxActive - 1, true);
-                    } else {
-                        _currentSpeed += ArcadeConfig::SPEED_STEP;
-                    }
-                    nextTargetScore += ArcadeConfig::SCORE_TO_SPAWN + (_currentMaxActive * 4);
-                }
+                countCleared(asteroidsPassed, nextTargetScore);
                 resetAsteroid(i, false);
                 continue;
             }

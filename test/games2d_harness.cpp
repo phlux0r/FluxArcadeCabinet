@@ -166,6 +166,78 @@ int main(int argc, char** argv) {
                (int)h._phase, h._lives, h._score, h._asteroids.activeCount(), pass ? "PASS" : "FAIL");
         ok &= pass;
     }
+    if (!strcmp(which, "all") || !strcmp(which, "fire")) {
+        // The Fire power-up: A shoots only while it lasts (20s), a bolt
+        // breaks an asteroid in its path and scores as passing it would,
+        // the line under the HUD is its timer, and it only turns up from
+        // 500 points.
+        static AsteroidFluxGame g;
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto frame = [&](bool a) {
+            InputState in{}; in.btnA = a; in.btnAPressed = false;
+            g.update(canvas, in, audio);
+            g_fakeMillis += STEP_MS;
+        };
+        auto &rock = g._asteroids._pool[0];
+        auto park = [&]() {             // one asteroid, dead ahead of the nose
+            rock.active = true; rock.isComet = false;
+            rock.x = 150; rock.y = g._ship.getY() + 5; rock.vy = 0;
+        };
+        auto away = [&]() { rock.x = 200; };   // out of the way while waiting
+        for (int f = 0; f < 150; ++f) { frame(false); away(); }   // past the spawn shield
+        park();
+        int bolts = 0;
+        for (int f = 0; f < 20; ++f) { frame(true); bolts += g._bolts.activeCount(); park(); }
+        bool pass = bolts == 0;
+        printf("fire none: A without the power-up fires %d bolts -> %s\n", bolts, pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        g._ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+        const unsigned long firedAt = millis();
+        park();
+        const int score0 = g._score, size = rock.sizeClass, passed0 = g._asteroidsPassed;
+        bool hit = false;
+        for (int f = 0; f < 40 && !hit; ++f) { frame(true); bolts += g._bolts.activeCount(); hit = rock.x > 150; }
+        pass = hit && g._score == score0 + size && g._asteroidsPassed == passed0 + 1 && g._particles.activeCount() > 0;
+        printf("fire hit: %d bolt-frames, asteroid broken %d, score +%d (size %d), passed +%d -> %s\n",
+               bolts, (int)hit, g._score - score0, size, g._asteroidsPassed - passed0, pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        // The timer: the line under the HUD is orange for the time left,
+        // from the left, green beyond; green all along once it's over.
+        while (millis() < firedAt + ArcadeConfig::FIRE_DURATION_MS / 2) { frame(false); away(); }
+        const uint16_t* line = canvas.getBuffer() + 10 * canvas.width();
+        pass = line[40] == ArcadeConfig::COLOR_ORANGE && line[120] == ArcadeConfig::COLOR_GREEN;
+        printf("fire bar: half way, x40 %04x x120 %04x -> %s\n", line[40], line[120], pass ? "PASS" : "FAIL");
+        ok &= pass;
+        while (millis() < firedAt + ArcadeConfig::FIRE_DURATION_MS + 100) { frame(false); away(); }
+        park();
+        bolts = 0;
+        for (int f = 0; f < 20; ++f) { frame(true); bolts += g._bolts.activeCount(); park(); }
+        pass = !g._ship.isFireActive() && bolts == 0 && line[40] == ArcadeConfig::COLOR_GREEN;
+        printf("fire over: after 20s active %d, bolts %d, line x40 %04x -> %s\n",
+               (int)g._ship.isFireActive(), bolts, line[40], pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        // Which power-ups turn up: Fire from 500 points, never before.
+        int fireAt400 = 0, fireAt600 = 0;
+        for (int score : { 400, 600 }) {
+            for (int k = 0; k < 300; ++k) {
+                g._powerUps._data.active = false;
+                g._powerUps._nextSpawnTime = 0;
+                int lives = 3; bool ui = false;
+                g._powerUps.update(score, g._ship, lives, ui, audio, g._asteroids);
+                if (g._powerUps._data.type == FIRE) (score == 400 ? fireAt400 : fireAt600)++;
+            }
+        }
+        g._ship.deactivateFire();
+        pass = fireAt400 == 0 && fireAt600 > 30;
+        printf("fire roll: of 300 power-ups, %d Fire at 400 points, %d at 600 -> %s\n", fireAt400, fireAt600, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "lander")) {
         static LanderFluxGame g;
         int landings = 0, crashes = 0, fastApproaches = 0, lastLandings = 0;

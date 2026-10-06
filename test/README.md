@@ -190,6 +190,10 @@ being freed on exit to the launcher).
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay; besides those it
   checks Lander's crash debris moves one step a frame (`lander`), and
+  Asteroid's Fire power-up (`fire`: A shoots nothing without it; with
+  it a bolt breaks an asteroid ahead, scoring and counting as passing it
+  would; the HUD line is orange for the time left and green again after
+  20s, when A stops shooting; Fire is never rolled below 500 points), and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

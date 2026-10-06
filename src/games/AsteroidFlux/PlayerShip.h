@@ -29,6 +29,7 @@ private:
     unsigned long _nextFrameTime;
     bool  _shieldActive;
     unsigned long _shieldEndTime;
+    unsigned long _fireEndTime = 0;   // the Fire power-up: A shoots until then
 
     // 3-frame thruster animation — unchanged from original
     const uint16_t _frames[3][160] = {
@@ -77,6 +78,7 @@ public:
     void reset() {
         _y            = ArcadeConfig::LANDSCAPE_HEIGHT / 2;
         _shieldActive = false;
+        _fireEndTime  = 0;
     }
 
     // Y position driven by accumulated offset from AsteroidFluxGame
@@ -111,6 +113,12 @@ public:
     }
 
     void deactivateShield() { _shieldActive = false; }
+
+    // The Fire power-up. A hit or a new game ends it.
+    void activateFire(unsigned long ms) { _fireEndTime = millis() + ms; }
+    void deactivateFire()               { _fireEndTime = 0; }
+    bool isFireActive() const           { return millis() < _fireEndTime; }
+    unsigned long fireRemainingMs() const { return isFireActive() ? _fireEndTime - millis() : 0; }
 
     float getX()          const { return _x; }
     int   getY()          const { return _y; }

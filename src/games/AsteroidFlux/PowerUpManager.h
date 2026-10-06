@@ -8,7 +8,7 @@
 #include "../../cabinet/AudioEngine.h"
 #include "AsteroidManager.h" // Linked to access speed controls
 
-enum PowerUpType { NONE, EXTRA_LIFE, SHIELD, SLOW_SPEED };
+enum PowerUpType { NONE, EXTRA_LIFE, SHIELD, SLOW_SPEED, FIRE };
 
 class PowerUpManager {
 private:
@@ -50,6 +50,12 @@ public:
             if (probabilityDice < ArcadeConfig::EXTRA_LIFE_CHANCE && score >= _nextExtraLifeScore) {
                 rolledType = EXTRA_LIFE;
                 rolledColor = ArcadeConfig::COLOR_HEALTH;
+            }
+            // Fire, once the score is up to it
+            else if (score >= ArcadeConfig::FIRE_START_SCORE &&
+                     random(0, 100) < ArcadeConfig::FIRE_CHANCE) {
+                rolledType = FIRE;
+                rolledColor = ArcadeConfig::COLOR_FIRE;
             }
             // Roll check for our brand new Slow Speed module
             else {
@@ -123,6 +129,11 @@ public:
                 asteroids.reduceGameSpeed(); // Dial back the hazard scroll speeds safely
                 audio.playWAV("/audio/powerup.wav");
             }
+            else if (_data.type == FIRE) {
+                ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+                uiUpdate = true;
+                audio.playWAV("/audio/powerup.wav");
+            }
             resetTimeline();
         }
     }
@@ -155,6 +166,14 @@ public:
             // Hands of the clock
             canvas.drawLine(cx, cy, cx, cy - r + 3, ST7735_BLACK);
             canvas.drawLine(cx, cy, cx + r - 3, cy, ST7735_BLACK);
+        }
+        else if (_data.type == FIRE) {
+            // An orange disc with a bolt across it, pointing the way it fires
+            canvas.fillCircle(cx, cy, r, _data.color);
+            canvas.drawCircle(cx, cy, r, ST7735_YELLOW);
+            canvas.drawFastHLine(cx - r + 2, cy, 2 * r - 4, ST7735_WHITE);
+            canvas.drawLine(cx + r - 5, cy - 2, cx + r - 3, cy, ST7735_WHITE);
+            canvas.drawLine(cx + r - 5, cy + 2, cx + r - 3, cy, ST7735_WHITE);
         }
     }
 };

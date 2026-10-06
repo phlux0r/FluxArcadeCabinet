@@ -63,6 +63,14 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
   the look, feel and frame rate need the board. Then perhaps Maze,
   Runner and Brick, the other games on `ParticleManager`.
+- **Asteroid Fire power-up** (branch `claude/asteroid-fire`): from 500
+  points a power-up roll (after the extra life's) is Fire 35% of the time;
+  holding A then shoots bolts (BoltManager.h) every 160ms for 20s. A bolt
+  breaks the asteroid it meets (a trailed burst), which scores and counts
+  towards the field filling up as passing it would. The line under the HUD
+  is the timer, flashing in the last 3s; a hit ends it. `tube_shot.wav`
+  and `shot.wav` (the owner's choice) if on the card, else tones. The demo
+  shoots when it has it. Feel and balance need the board.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.
