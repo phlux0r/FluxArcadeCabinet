@@ -13,7 +13,7 @@
 #include "ResonanceFigure.h"
 
 // =============================================================================
-// RESONANCE FLUX (prototype): a green phosphor oscilloscope, landscape.
+// RESONANCE FLUX: a green phosphor oscilloscope, landscape.
 // The stick tunes your Lissajous figure: left/right steps the dial round
 // its ring of ratios, up/down turns the phase. Signals weave in towards
 // it, each a figure of its own. On a signal's ratio with its phase
@@ -23,9 +23,9 @@
 // ratio's note and a signal's, the same note when you're on its ratio
 // (the mixer's hum, audio/AudioMixer.h).
 //
-// The prototype is for judging the idea on the board: one kind of signal,
-// no cascades, chains or Chords. docs/design/ResonanceFlux.md has the
-// full design. Left alone, the title cycles through three how-to slides,
+// Every fifth wave is a Chord (the boss, ResonanceChord.h).
+// docs/design/ResonanceFlux.md has the design and how it changed in play
+// (cascades, chains and the other signal types were left out). Left alone, the title cycles through three how-to slides,
 // the high scores and a silent demo; B held with A on them opens the wave
 // select, for test runs that put nothing on the table, and B on its own
 // the options (the ratio hint, the notes, the pace, bosses, the debug

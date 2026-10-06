@@ -1,7 +1,9 @@
 # Resonance Flux: design
 
-A prototype is built (see "Prototype" at the end); the rest is the
-proposal. An original game rather than a remake: the
+Built and finished: it began as a prototype and was tuned over several
+plays on the board; "Prototype" and the sections after it say what was
+built and how it changed from the proposal below (the stepped dial, the
+pace, the options, the Chords). An original game rather than a remake: the
 screen is a green phosphor oscilloscope, and you fight by matching shapes,
 not by aiming at a position. Your weapon is a Lissajous figure (two sine
 waves at right angles) that you shape with the stick. Hostile signals, each
@@ -434,8 +436,8 @@ Everything that makes or breaks it: whether the figures read clearly at
 this size on the panel, whether the beating can be heard and is pleasant
 through the MAX98357A and speaker, how the rate-controlled tuning feels,
 the match tolerance, the afterglow pass's frame cost, and whether the game
-is fun once the novelty wears off. The prototype is for exactly this. The
-first things to try: `PHASE_TOL`, the step repeat timing and phase
+is fun once the novelty wears off. Most of that has now been judged (see
+the sections above). Still worth checking: `PHASE_TOL`, the step repeat timing and phase
 speed, whether the notes help, the hum and hiss levels, the drift
 speeds, and the frame rate (the afterglow pass touches ~34k bytes a
 frame).

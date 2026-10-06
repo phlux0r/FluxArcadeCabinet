@@ -76,7 +76,7 @@ echo "building brickflux_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
     -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
     "$HERE/brickflux_harness.cpp" -o "$OUT/brickflux_harness"
-# Resonance Flux (the prototype): figure maths, matching, play, quitting.
+# Resonance Flux: figure maths, matching, play, attract, options, Chords.
 # Real (inert) audio engine, no Jet.
 echo "building resonanceflux_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \

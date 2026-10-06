@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: nine games (and a tenth's prototype, Resonance) behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: ten games behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -9,7 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
-| Resonance Flux | Resonance | Landscape | Prototype. An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
+| Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
@@ -160,9 +160,8 @@ levels make a loop (16 layouts and the bosses); each loop is faster, the
 wall quicker, guns and bosses sharper, the bosses tougher, up to the
 fifth. `docs/design/BrickFlux.md` is the full design.
 
-**Resonance Flux** is a prototype, for judging the idea on the board
-(`docs/design/ResonanceFlux.md` is the full design, of which it's a
-slice). The screen is a green phosphor oscilloscope. Your figure, in the
+**Resonance Flux** (`docs/design/ResonanceFlux.md`, with how it came to
+be as it is) is an original game, not a remake. The screen is a green phosphor oscilloscope. Your figure, in the
 middle, is a Lissajous curve: left/right steps its frequency ratio round
 the dial at the bottom, a stop at a time, and up/down turns its phase.
 The dial has a stop for each ratio the game has reached (just 1:2 and 1:1
@@ -509,7 +508,7 @@ FluxArcadeCabinet/
         │   ├── BrickBoard.h        # The brick grid and its creep
         │   ├── BrickBall.h         # Ball/capsule types, the bat's bounce maths
         │   └── BrickLevels.h       # Layouts, as text
-        ├── ResonanceFlux/      # Oscilloscope prototype, header-only:
+        ├── ResonanceFlux/      # Oscilloscope game, header-only:
         │   ├── ResonanceFluxGame.h # Class, phases, tuning, signals, waves, the hum
         │   ├── ResonanceConfig.h   # All tuning: dial, tolerances, waves, static
         │   ├── ResonanceFigure.h   # Lissajous maths: ratios, phase symmetry
@@ -791,7 +790,7 @@ important — what it cannot see (audio, how anything looks or plays, real
 timing, most of the older 2D games' play). Brick Flux has its own harness
 (`test/brickflux_harness.cpp`): play, the wall, the smash timing, tunnelling,
 polarity, the living bricks, every level and boss, and its attract demo.
-So does the Resonance Flux prototype (`test/resonanceflux_harness.cpp`):
+So does Resonance Flux (`test/resonanceflux_harness.cpp`):
 the figure maths, matching, autopilot play, quitting, its attract demo and
 the wave select.
 

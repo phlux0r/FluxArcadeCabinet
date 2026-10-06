@@ -104,7 +104,7 @@ cost runs at ~30fps on the board), not with a frame budget.
 ## Resonance Flux
 
 `test/resonanceflux_harness.cpp`, run with `test/build.sh resonance
-<scenario>`, for the prototype. Its bot is the game's own autopilot
+<scenario>`. Its bot is the game's own autopilot
 (`ResonanceAutopilot.h`). Each prints PASS/FAIL.
 
 | Scenario | What it checks |
@@ -201,7 +201,7 @@ test/
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
-├── resonanceflux_harness.cpp   # Resonance Flux prototype: figure maths, matching, play, quit
+├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout

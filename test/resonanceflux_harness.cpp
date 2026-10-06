@@ -1,4 +1,4 @@
-// Host harness for Resonance Flux (the prototype): the real game logic
+// Host harness for Resonance Flux: the real game logic
 // against a fake clock and seeded RNG, like the other harnesses. Scenarios:
 //
 //   figure      the figure maths: phases ResonanceFigure.h calls the same

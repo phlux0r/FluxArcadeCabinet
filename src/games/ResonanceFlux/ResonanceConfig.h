@@ -4,9 +4,8 @@
 #include <stdint.h>
 
 // =============================================================================
-// RESONANCE FLUX: every tuning number in one place. The prototype's: the
-// match tolerances, speeds and static amounts are first guesses, to be
-// judged on the board (docs/design/ResonanceFlux.md, "Needs the board").
+// RESONANCE FLUX: every tuning number in one place, tuned over several
+// plays on the board (docs/design/ResonanceFlux.md has how they got here).
 // =============================================================================
 
 namespace resonance {
