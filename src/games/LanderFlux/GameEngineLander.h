@@ -53,6 +53,15 @@ private:
     const float GRAVITY_START      = 0.012f;
     const float GRAVITY_STEP       = 0.0025f;
     const int   GRAVITY_TOP_LEVEL  = 20;
+    // The pad narrows a pixel every two levels, PAD_WIDEST to PAD_NARROWEST;
+    // the tank starts full to FUEL_FULL_TO_LEVEL, then FUEL_STEP% less a
+    // level down to FUEL_LOWEST% (the fuel cores, from level 7, still top
+    // it up by 40).
+    const int   PAD_WIDEST         = 24;
+    const int   PAD_NARROWEST      = 16;
+    const int   FUEL_FULL_TO_LEVEL = 10;
+    const float FUEL_STEP          = 4.0f;
+    const float FUEL_LOWEST        = 60.0f;
 
     int   _score         = 0;
     int   _level         = 1;
@@ -79,7 +88,7 @@ private:
     int _groundY[GROUND_SEGMENTS];
     int _groundStepX;
     int _padX;
-    const int _padWidth = 24;
+    int _padWidth = 24;                 // by level, initLevel()
 
 
     // Game-over attract timeout
@@ -124,6 +133,8 @@ private:
 
     void initLevel() {
         _lander.spawn();
+        _lander.fuel = max(FUEL_LOWEST, 100.0f - FUEL_STEP * max(0, _level - FUEL_FULL_TO_LEVEL));
+        _padWidth = max(PAD_NARROWEST, PAD_WIDEST - (_level - 1) / 2);
         _padX = random(15, ArcadeConfig::PORTRAIT_WIDTH - 15 - _padWidth);
 
         // Gentle to begin with (about half what level 1 used to have), a

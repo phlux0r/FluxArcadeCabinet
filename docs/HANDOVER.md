@@ -78,8 +78,10 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   ground follows the same rule. The demo autopilot was retuned for it
   (holds A while it wants more than the engine gives, brakes on a
   stopping-distance profile, comes upright over the pad). Feel needs the
-  board; the next ideas, not done: narrower pads and less fuel by level,
-  stick up/down as a throttle.
+  board. By level, too: the pad narrows a pixel every two levels, 24px
+  to 16px from level 17 (the owner's floor), and the tank starts full to
+  level 10, then 4% less a level to 60% from level 20; the fuel cores
+  (from level 7, +40) stay. Not done: stick up/down as a throttle.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.

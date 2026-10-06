@@ -195,7 +195,9 @@ being freed on exit to the launcher).
   spooling up over 8 steps and down over 5-6, the ship turning to the
   stick at 180 degrees a second and ignoring an off-centre raw reading,
   and the landing rule case by case: down under 1.0, sideways under 0.5,
-  tilt under 15 degrees, an empty tank still landing); and
+  tilt under 15 degrees, an empty tank still landing; the pad 24px
+  narrowing a pixel every two levels to 16px from level 17, and the tank
+  full to level 10 then 4% less a level to 60% from level 20); and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

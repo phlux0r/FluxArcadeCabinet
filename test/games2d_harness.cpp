@@ -286,6 +286,25 @@ int main(int argc, char** argv) {
                rest, oneStep, turn, good ? "PASS" : "FAIL");
         pass &= good;
 
+        // By level: the pad 24px, a pixel narrower every two levels, 16px
+        // from level 17; a full tank to level 10, then 4% less a level, 60%
+        // from level 20.
+        {
+            const int lv[] = { 1, 2, 3, 10, 11, 16, 17, 20, 30 };
+            const int pad[] = { 24, 24, 23, 20, 19, 17, 16, 16, 16 };
+            const int fuel[] = { 100, 100, 100, 100, 96, 76, 72, 60, 60 };
+            bool byLevel = true;
+            for (int i = 0; i < 9; ++i) {
+                e._level = lv[i]; e.initLevel();
+                const bool good = e._padWidth == pad[i] && (int)lroundf(s.fuel) == fuel[i] &&
+                                  e._padX >= 15 && e._padX + e._padWidth <= ArcadeConfig::PORTRAIT_WIDTH - 15;
+                if (!good) printf("  level %d: pad %d (want %d), fuel %.0f (want %d)\n", lv[i], e._padWidth, pad[i], s.fuel, fuel[i]);
+                byLevel &= good;
+            }
+            printf("landerphys levels: pad 24 to 16, fuel 100 to 60 -> %s\n", byLevel ? "PASS" : "FAIL");
+            pass &= byLevel;
+        }
+
         // Landing: the ship just above the pad's middle, one step to touch down.
         struct Case { const char* what; float vx, vy, deg, fuel; bool lands; };
         const Case cases[] = {
