@@ -86,6 +86,16 @@ public:
     bool hasWall(int x, int y, uint8_t dir) const {
         return grid[y * width + x] & dir;
     }
+
+    bool inside(int x, int y) const { return x >= 0 && x < width && y >= 0 && y < height; }
+
+    // A direction's step, and its opposite.
+    static int dx(uint8_t dir) { return dir == WALL_E ? 1 : dir == WALL_W ? -1 : 0; }
+    static int dy(uint8_t dir) { return dir == WALL_S ? 1 : dir == WALL_N ? -1 : 0; }
+    static uint8_t opposite(uint8_t dir) {
+        return dir == WALL_N ? WALL_S : dir == WALL_S ? WALL_N : dir == WALL_E ? WALL_W : WALL_E;
+    }
+    static constexpr uint8_t DIRS[4] = { WALL_N, WALL_S, WALL_E, WALL_W };
 };
 
 #endif // MAZE_GENERATOR_H

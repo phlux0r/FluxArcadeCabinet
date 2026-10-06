@@ -3,61 +3,44 @@
 
 #include <Arduino.h>
 
-// -----------------------------------------------------------------------------
-// Key — collected to unlock matching Door
-// -----------------------------------------------------------------------------
+// Keys, doors, the exit, pickups and teleport pads. Positions are cells.
+
+// A key: opens the door of its colour (or, the last one, the exit).
 struct Key {
     int     x, y;
-    uint8_t colourId;   // matches a Door colourId
+    uint8_t colourId;
     bool    collected = false;
 };
 
-// -----------------------------------------------------------------------------
-// Door — blocks passage until matching Key is collected
-// -----------------------------------------------------------------------------
+// A door across the way out of cell (x, y) towards dir (a WALL_ bit): it
+// blocks that crossing, both ways, until its key is collected.
 struct Door {
     int     x, y;
+    uint8_t dir;
     uint8_t colourId;
     bool    open = false;
-
-    void tryOpen(uint8_t keyColourId) {
-        if (keyColourId == colourId) open = true;
-    }
 };
 
-// -----------------------------------------------------------------------------
-// SpeedBoost pickup
-// -----------------------------------------------------------------------------
 struct SpeedBoost {
     int  x, y;
-    bool collected = false;
+    bool active = false;
 };
 
-// -----------------------------------------------------------------------------
-// TimeBonus pickup
-// -----------------------------------------------------------------------------
 struct TimeBonus {
     int  x, y;
-    int  bonusSeconds = 15;
-    bool collected    = false;
+    bool active = false;
 };
 
-// -----------------------------------------------------------------------------
-// Exit — locked until all keys on this floor collected
-// -----------------------------------------------------------------------------
+// The exit: open once every key is collected.
 struct Exit {
     int  x, y;
     bool unlocked = false;
 };
 
-// -----------------------------------------------------------------------------
-// Teleport — auto on contact, links two floor positions
-// -----------------------------------------------------------------------------
+// A teleport pad: walking onto it puts you on its partner.
 struct Teleport {
-    int  x, y;
-    int  destFloor;
-    int  destX, destY;
-    bool active = true;
+    int x, y;
+    int partner;     // index of the other pad
 };
 
 #endif // COLLECTIBLES_H

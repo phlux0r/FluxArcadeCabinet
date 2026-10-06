@@ -2,80 +2,47 @@
 #define OBSTACLES_H
 
 #include <Arduino.h>
+#include "MazeConfig.h"
+#include "MazeGenerator.h"
 
 // -----------------------------------------------------------------------------
-// Bullet
-// -----------------------------------------------------------------------------
-struct Bullet {
-    float x, y;
-    int   dx, dy;   // direction: one of {-1,0,1}
-    bool  active = false;
-
-    void spawn(int startX, int startY, int dirX, int dirY) {
-        x = startX; y = startY;
-        dx = dirX;  dy = dirY;
-        active = true;
-    }
-
-    void update() {
-        if (!active) return;
-        x += dx;
-        y += dy;
-    }
-};
-
-// -----------------------------------------------------------------------------
-// ProximityBomb
+// ProximityBomb: a fuse starts once you're within reach (BOMB_RANGE steps,
+// as the game measures it, walls in the way), counts down while you stay,
+// and resets if you back off. At zero it goes off, catching you if you're
+// still within reach.
 // -----------------------------------------------------------------------------
 class ProximityBomb {
 public:
     int  x, y;
-    bool active    = true;
-    bool exploded  = false;
-
-    // Fuse state
-    int           fuseCount   = 0;   // 3,2,1 then boom
-    bool          fuseActive  = false;
+    bool active     = false;
+    int  fuseCount  = 0;      // FUSE_TICKS down to 1, then boom
+    bool fuseActive = false;
     unsigned long _lastTickMs = 0;
-
-    static const int PROXIMITY_RADIUS = 2;  // tiles
-    static const int FUSE_TICK_MS     = 800;
 
     void init(int tx, int ty) {
         x = tx; y = ty;
-        active = true; exploded = false;
+        active = true;
         fuseActive = false; fuseCount = 0;
     }
 
-    // Returns true if bomb just exploded this update
-    bool update(int playerX, int playerY) {
-        if (!active || exploded) return false;
+    void disarm() { fuseActive = false; fuseCount = 0; }
 
-        int dx = abs(playerX - x);
-        int dy = abs(playerY - y);
-        bool inRange = (dx <= PROXIMITY_RADIUS && dy <= PROXIMITY_RADIUS);
-
-        if (!inRange) {
-            // Reset fuse if player backs off
-            fuseActive = false;
-            fuseCount  = 0;
-            return false;
-        }
-
+    // inReach: whether you're within its reach now. True the update it
+    // goes off.
+    bool update(bool inReach) {
+        if (!active) return false;
+        if (!inReach) { disarm(); return false; }
+        const unsigned long now = millis();
         if (!fuseActive) {
             fuseActive  = true;
-            fuseCount   = 3;
-            _lastTickMs = millis();
+            fuseCount   = mazecfg::FUSE_TICKS;
+            _lastTickMs = now;
             return false;
         }
-
-        unsigned long now = millis();
-        if (now - _lastTickMs >= (unsigned long)FUSE_TICK_MS) {
+        if (now - _lastTickMs >= mazecfg::FUSE_TICK_MS) {
             _lastTickMs = now;
-            fuseCount--;
-            if (fuseCount <= 0) {
-                exploded = true;
-                active   = false;
+            if (--fuseCount <= 0) {
+                active = false;
                 return true;
             }
         }
@@ -84,96 +51,114 @@ public:
 };
 
 // -----------------------------------------------------------------------------
-// TrapEmitter
+// TrapEmitter: fires bullets from its cell along (dirX, dirY), down a
+// straight corridor (its lane), every interval. Bullets move in pixels at
+// BULLET_CELLS_PER_S whatever the frame rate, and stop at the first wall
+// (or closed door) they meet. Type A leaves room to walk the whole lane,
+// either way, between bullets. Type B fires too often to run through; A
+// pressed in or beside its lane (its switch) clears its bullets and pauses
+// it for SWITCH_PAUSE_MS.
 // -----------------------------------------------------------------------------
 class TrapEmitter {
 public:
-    static const int MAX_BULLETS = 4;
-
     enum Type { TYPE_A, TYPE_B };
 
+    struct Bullet {
+        float x, y;          // px, centre, in the maze (not the screen)
+        int   cellX, cellY;  // the cell it's in
+        bool  active = false;
+    };
+
     int   x, y;
-    int   dirX, dirY;   // bullet travel direction
+    int   dirX, dirY;
+    int   laneLen = 0;   // cells of lane in front of it
     Type  type;
-    bool  active       = true;
-    bool  switchPaused = false;   // Type B only
+    bool  active = false;
+    Bullet bullets[mazecfg::MAX_BULLETS];
 
-    Bullet bullets[MAX_BULLETS];
+    unsigned long _lastFireMs = 0;
+    unsigned long _pauseEndMs = 0;
+    unsigned long _intervalMs = 0;
 
-private:
-    unsigned long _lastFireMs  = 0;
-    unsigned long _pauseEndMs  = 0;
-
-    // Type A: generous timing — fire interval long enough to traverse corridor
-    // Type B: tight timing — requires switch activation to pause
-    int _fireIntervalMs  = 0;
-    int _bulletRangeMs   = 0;   // how long bullet lives before despawning
-
-public:
-    static const int PAUSE_DURATION_MS   = 3000;  // Type B switch pause
-    static const int BULLET_SPEED_TILES  = 1;     // tiles per tick
-
-    void init(int tx, int ty, int dx, int dy, Type t, int corridorLength) {
+    // lane: cells of straight corridor in front of it. Type A's interval
+    // is a bullet's run down it, then a walk along all of it (and the
+    // emitter's cell) at the unboosted pace, then TRAP_A_SPARE_MS.
+    void init(int tx, int ty, int dx, int dy, Type t, int lane) {
         x = tx; y = ty; dirX = dx; dirY = dy; type = t;
-        active = true; switchPaused = false;
+        laneLen = lane;
+        active = true;
         for (auto &b : bullets) b.active = false;
-
-        // Type A: interval = travel time across corridor + safe gap
-        // Type B: tight interval, barely passable without switch
-        int travelMs = corridorLength * 200;  // ~200ms per tile (player move speed)
-        if (type == TYPE_A) {
-            _fireIntervalMs = travelMs * 2;   // generous: full corridor + equal gap
-        } else {
-            _fireIntervalMs = travelMs / 2;   // tight: impossible to traverse
-        }
-        _bulletRangeMs = travelMs;
-        _lastFireMs    = millis();
+        const unsigned long runMs  = (unsigned long)(lane * 1000.0f / mazecfg::BULLET_CELLS_PER_S);
+        const unsigned long walkMs = (lane + 1) * mazecfg::MOVE_MS;
+        _intervalMs = t == TYPE_A ? runMs + walkMs + mazecfg::TRAP_A_SPARE_MS : mazecfg::TRAP_B_INTERVAL_MS;
+        _lastFireMs = millis();
+        _pauseEndMs = 0;
     }
 
+    bool paused() const { return millis() < _pauseEndMs; }
+
+    // Whether (cx, cy) is in its line of fire (its own cell included).
+    bool inLane(int cx, int cy) const {
+        for (int i = 0; i <= laneLen; i++) if (cx == x + dirX * i && cy == y + dirY * i) return true;
+        return false;
+    }
+    // Whether its switch can be reached from (cx, cy): in the lane or
+    // beside it.
+    bool switchReach(int cx, int cy) const {
+        for (int i = 0; i <= laneLen; i++)
+            if (abs(cx - (x + dirX * i)) + abs(cy - (y + dirY * i)) <= 1) return true;
+        return false;
+    }
+    unsigned long msToNextShot() const {
+        const unsigned long since = millis() - _lastFireMs;
+        return since >= _intervalMs ? 0 : _intervalMs - since;
+    }
+    bool bulletsInFlight() const {
+        for (const auto &b : bullets) if (b.active) return true;
+        return false;
+    }
+
+    // Type B's switch: no more bullets for a while, and those in the air
+    // gone, so the lane is clear at once.
     void activateSwitch() {
-        if (type == TYPE_B) {
-            switchPaused = true;
-            _pauseEndMs  = millis() + PAUSE_DURATION_MS;
-        }
+        if (type != TYPE_B) return;
+        _pauseEndMs = millis() + mazecfg::SWITCH_PAUSE_MS;
+        clearBullets();
     }
 
-    void update() {
+    void clearBullets() { for (auto &b : bullets) b.active = false; }
+
+    // dtMs since the last update. canPass(x, y, dir) says whether the way
+    // out of cell (x, y) towards dir is open.
+    template <typename CanPass>
+    void update(unsigned long dtMs, CanPass canPass) {
         if (!active) return;
-
-        unsigned long now = millis();
-
-        // Handle Type B pause
-        if (switchPaused && now > _pauseEndMs) switchPaused = false;
-
-        // Update existing bullets
+        const float step = mazecfg::BULLET_CELLS_PER_S * mazecfg::CELL * dtMs / 1000.0f;
+        const uint8_t dir = dirX > 0 ? WALL_E : dirX < 0 ? WALL_W : dirY > 0 ? WALL_S : WALL_N;
         for (auto &b : bullets) {
             if (!b.active) continue;
-            b.update();
-            // Despawn after range exceeded (simple time-based)
-            if (now - _lastFireMs > (unsigned long)_bulletRangeMs) b.active = false;
-        }
-
-        if (switchPaused) return;
-
-        // Fire new bullet
-        if (now - _lastFireMs >= (unsigned long)_fireIntervalMs) {
-            _lastFireMs = now;
-            for (auto &b : bullets) {
-                if (!b.active) {
-                    b.spawn(x, y, dirX, dirY);
-                    break;
-                }
+            b.x += dirX * step;
+            b.y += dirY * step;
+            // Into the next cell only through an open way.
+            const int cx = (int)floorf(b.x / mazecfg::CELL), cy = (int)floorf(b.y / mazecfg::CELL);
+            while (b.active && (cx != b.cellX || cy != b.cellY)) {
+                if (!canPass(b.cellX, b.cellY, dir)) { b.active = false; break; }
+                b.cellX += dirX; b.cellY += dirY;
             }
         }
-    }
-
-    // Returns true if any bullet occupies tile (tx, ty)
-    bool checkBulletHit(int tx, int ty) const {
-        for (const auto &b : bullets) {
-            if (!b.active) continue;
-            if ((int)b.x == tx && (int)b.y == ty) return true;
+        const unsigned long now = millis();
+        if (paused()) { _lastFireMs = now; return; }
+        if (now - _lastFireMs >= _intervalMs) {
+            _lastFireMs = now;
+            for (auto &b : bullets) {
+                if (b.active) continue;
+                b.x = (x + 0.5f) * mazecfg::CELL;
+                b.y = (y + 0.5f) * mazecfg::CELL;
+                b.cellX = x; b.cellY = y;
+                b.active = true;
+                break;
+            }
         }
-        return false;
     }
 };
 

@@ -241,15 +241,17 @@ public:
     }
 
     // -------------------------------------------------------------------------
-    // RENDER — call after update(), before canvas flush
+    // RENDER — call after update(), before canvas flush. offX/offY: a
+    // scrolling game's camera, subtracted from every position (particles
+    // spawned where things are in its world).
     // -------------------------------------------------------------------------
-    void render(GFXcanvas16 &canvas, int clipTop = 0) {
+    void render(GFXcanvas16 &canvas, int clipTop = 0, int offX = 0, int offY = 0) {
         unsigned long now = millis();
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
 
-            int cx = (int)_pool[i].x;
-            int cy = (int)_pool[i].y;
+            int cx = (int)_pool[i].x - offX;
+            int cy = (int)_pool[i].y - offY;
             unsigned long remaining = _pool[i].expireMs - now;
 
             // The trail first, oldest and dimmest segment first, so newer
@@ -260,9 +262,9 @@ public:
             if (p.kept) {
                 static const uint8_t FALLOFF[TRAIL_MAX] = { 180, 115, 64, 31 };
                 for (int k = p.kept - 1; k >= 0; k--) {
-                    const int toX = k ? p.tx[k - 1] : cx, toY = k ? p.ty[k - 1] : cy;
+                    const int toX = k ? p.tx[k - 1] - offX : cx, toY = k ? p.ty[k - 1] - offY : cy;
                     const int q = (p.tq[k] * FALLOFF[k]) >> 8;
-                    if (q) segment(canvas, p.tx[k], p.ty[k], toX, toY, scaled(p.color, q), clipTop);
+                    if (q) segment(canvas, p.tx[k] - offX, p.ty[k] - offY, toX, toY, scaled(p.color, q), clipTop);
                 }
             }
             if (now >= p.expireMs) continue;   // just its trail, draining

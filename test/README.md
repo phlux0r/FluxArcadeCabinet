@@ -128,6 +128,30 @@ from ~182, ~364 and ~546, scores ~728, then the demo), and with `pick`,
 (inert) audio engine, so it can't hear the hum; `audio_test` checks the
 mixer's side of it (pitch, glide, a 3Hz beat from 400 and 403Hz, mute).
 
+## Maze Flux
+
+`test/mazeflux_harness.cpp`, run with `test/build.sh maze <scenario>`. Its
+bot walks the shortest open way to the next key (lowest colour first),
+then the exit, never through a teleport pad it isn't heading for; at a
+trap's line of fire it waits for a gap (type A) or presses A for the
+switch (type B). Each prints PASS/FAIL.
+
+| Scenario | What it checks |
+|---|---|
+| `layout` | Levels 1-20, four mazes each: a key per door plus the exit's, each in its stretch and reachable once the doors before it are open; with doors shut the exit can't be reached; nothing outside the maze, on the exit, within three steps of the start or two on one cell; no bomb that reaches the start; every trap with three or more cells of lane, none through the start's surroundings; teleport pads paired, in one stretch, apart and in dead ends; the clock sized to the maze |
+| `doors` | A shut door stops you; collecting its key opens it and you go through |
+| `bullets` | Three thousand frames of levels 9-15 at frame times from 17 to 56ms: every cell a bullet enters, it enters through an open way, and its cell matches its position; 300ms of flight covers the same distance at 17ms and 50ms frames |
+| `death` | A bullet: the pause, then a life gone, back at the start, safe (a bullet on you does nothing), then hit again once that's over; the clock: a life gone and the clock back to the level's time; a bomb you stand by goes off after its fuse and costs a life |
+| `teleport` | Walking onto a pad puts you on its partner, and you stay there |
+| `complete` | Keys and the exit score as the rules say; the level-complete screen ignores A held through it and goes on at a fresh press |
+| `buffer` | A push towards a side passage, made mid-step and let go, is taken at the next cell |
+| `play [N]` | The bot plays from level 1 for N frames (default 60000), lives pinned: it must reach level 15 losing no more than five lives (so no level is unfair to careful play), and the score never drops |
+| `quit` | Back mid-game puts the score on the table |
+| `idle` | The attract cycle (title, how-to, scores), A held from the menu ignored, then A starts level 1 |
+
+`DUMP_AT=300,9000 test/build.sh maze play 9001` writes `maze_000300.ppm`
+etc. `MAZE_TRACE=1` prints the bot's progress and every life lost.
+
 ## Looking at frames
 
 The GFX stub keeps a real framebuffer, so any frame can be written out:
@@ -226,6 +250,7 @@ test/
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
+├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout

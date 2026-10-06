@@ -10,6 +10,7 @@
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
 #   test/build.sh brick play 20000       # one Brick Flux scenario
 #   test/build.sh resonance match        # one Resonance Flux scenario
+#   test/build.sh maze play 60000        # one Maze Flux scenario
 #   test/build.sh cabinet          # main.cpp: every game launched and quit
 #   test/build.sh hiscore          # the high-score tables and name entry
 #   test/build.sh --build-only
@@ -82,6 +83,12 @@ echo "building resonanceflux_harness"
 g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
     -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
     "$HERE/resonanceflux_harness.cpp" -o "$OUT/resonanceflux_harness"
+# Maze Flux: layout, doors, bullets, deaths, teleports, the bot. Real
+# (inert) audio engine, no Jet.
+echo "building mazeflux_harness"
+g++ "${CXXFLAGS[@]}" -Wall -Wno-unused-variable -Wno-unused-function -Wno-sign-compare \
+    -I"$ROOT/src" -I"$HERE/stub" -I"$ROOT/include" \
+    "$HERE/mazeflux_harness.cpp" -o "$OUT/mazeflux_harness"
 # The whole cabinet: main.cpp, launcher and every game, real audio engine
 # (inert), so src/ ahead of the stubs again. Needs Jet for the 3D games.
 echo "building cabinet_sim"
@@ -105,6 +112,7 @@ cd "$OUT"
 [ "${1:-}" = games2d ] && { shift; exec ./games2d_harness "$@"; }
 [ "${1:-}" = brick ] && { shift; exec ./brickflux_harness "$@"; }
 [ "${1:-}" = resonance ] && { shift; exec ./resonanceflux_harness "$@"; }
+[ "${1:-}" = maze ] && { shift; exec ./mazeflux_harness "$@"; }
 [ "${1:-}" = cabinet ] && exec ./cabinet_sim
 [ "${1:-}" = hiscore ] && exec ./hiscore_test
 game=tankflux
@@ -139,6 +147,11 @@ else
     echo "=== resonance $s"
     # shellcheck disable=SC2086
     ./resonanceflux_harness $s | tail -1
+  done
+  for s in layout doors bullets death teleport complete buffer "play 60000" quit idle; do
+    echo "=== maze $s"
+    # shellcheck disable=SC2086
+    ./mazeflux_harness $s | tail -1
   done
   for g in tankflux tubeflux starflux; do
     scenarios=("play 20000" "god 30000" "menus 12000")
