@@ -63,6 +63,25 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
   the look, feel and frame rate need the board. Then perhaps Maze,
   Runner and Brick, the other games on `ParticleManager`.
+- **Lander flight** (branch `claude/lander-gravity`): the owner found it
+  unbalanced from the start. Gravity 0.012 a physics step on level 1 (was
+  0.025), +0.0025 every level to level 20 (0.0595); the HUD's G is the
+  level up to 20; fuel tanks still from level 7. The engine was a fixed
+  0.09 (7.5x gravity on level 1, a kick at every tap; 1.5x by level 20):
+  now 2.8x the level's gravity, spooling up over 150ms and down over
+  100ms, burning fuel as hard as it pushes. The stick is the normalised
+  one (deadzone; the raw reading held the ship a few degrees off upright)
+  and the ship turns to it at 180 degrees a second. A landing is over the
+  pad with descent under 1.0, drift under 0.5 and tilt under 15 degrees,
+  fuel or not (it was total speed under 1.1 with fuel left); V H A under
+  the HUD show each check green or red, and the hull's flash near the
+  ground follows the same rule. The demo autopilot was retuned for it
+  (holds A while it wants more than the engine gives, brakes on a
+  stopping-distance profile, comes upright over the pad). Feel needs the
+  board. By level, too: the pad narrows a pixel every two levels, 24px
+  to 16px from level 17 (the owner's floor), and the tank starts full to
+  level 10, then 4% less a level to 60% from level 20; the fuel cores
+  (from level 7, +40) stay. Not done: stick up/down as a throttle.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.

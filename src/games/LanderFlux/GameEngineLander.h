@@ -39,8 +39,29 @@ private:
     ParticleManager  _particles;
     Ship             _lander;
 
-    const float THRUST_POWER       = 0.09f;
-    const float SAFE_LANDING_SPEED = 1.1f;
+    // The engine at full is a fixed multiple of the level's gravity, so the
+    // ship handles the same on every level and only gets quicker (it was a
+    // fixed 0.09: 7.5x gravity on level 1, a kick at every tap, and 1.5x by
+    // level 20).
+    const float THRUST_RATIO       = 2.8f;
+    // A landing: over the pad, coming down slower than SAFE_DESCENT, drifting
+    // sideways slower than SAFE_DRIFT, tilted less than SAFE_TILT.
+    const float SAFE_DESCENT       = 1.0f;
+    const float SAFE_DRIFT         = 0.5f;
+    const float SAFE_TILT          = 15.0f * PI / 180.0f;
+    // Gravity per physics step, by level (initLevel()).
+    const float GRAVITY_START      = 0.012f;
+    const float GRAVITY_STEP       = 0.0025f;
+    const int   GRAVITY_TOP_LEVEL  = 20;
+    // The pad narrows a pixel every two levels, PAD_WIDEST to PAD_NARROWEST;
+    // the tank starts full to FUEL_FULL_TO_LEVEL, then FUEL_STEP% less a
+    // level down to FUEL_LOWEST% (the fuel cores, from level 7, still top
+    // it up by 40).
+    const int   PAD_WIDEST         = 24;
+    const int   PAD_NARROWEST      = 16;
+    const int   FUEL_FULL_TO_LEVEL = 10;
+    const float FUEL_STEP          = 4.0f;
+    const float FUEL_LOWEST        = 60.0f;
 
     int   _score         = 0;
     int   _level         = 1;
@@ -67,7 +88,7 @@ private:
     int _groundY[GROUND_SEGMENTS];
     int _groundStepX;
     int _padX;
-    const int _padWidth = 24;
+    int _padWidth = 24;                 // by level, initLevel()
 
 
     // Game-over attract timeout
@@ -86,7 +107,6 @@ private:
     unsigned long _demoUntil = 0;
     int  _demoLandings = 0;
     float _demoDescent = 0.6f;          // speed it lands at (over 1.1 crashes)
-    float _demoThrustAcc = 0.0f;        // banked thrust, see demoPilot()
     bool _prevBtnA = false, _prevBtnB = false;
     static const unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
     static const unsigned long DEMO_LANDED_MS = 2000;   // success screen, then on
@@ -103,18 +123,29 @@ private:
         if (millis() % 1000 < 600) hiscore::printCentred(canvas, "HIT BUTTON TO START", 130, ArcadeConfig::COLOR_WHITE);
     }
 
+    float thrustPower() const { return THRUST_RATIO * _currentGravity; }
+
+    // The landing rule's three checks, as they stand now.
+    bool descentOk() const { return _lander.vy < SAFE_DESCENT; }
+    bool driftOk()   const { return fabsf(_lander.vx) < SAFE_DRIFT; }
+    bool tiltOk()    const { return fabsf(_lander.thrustAngle) < SAFE_TILT; }
+    bool safeToLand() const { return descentOk() && driftOk() && tiltOk(); }
+
     void initLevel() {
         _lander.spawn();
+        _lander.fuel = max(FUEL_LOWEST, 100.0f - FUEL_STEP * max(0, _level - FUEL_FULL_TO_LEVEL));
+        _padWidth = max(PAD_NARROWEST, PAD_WIDEST - (_level - 1) / 2);
         _padX = random(15, ArcadeConfig::PORTRAIT_WIDTH - 15 - _padWidth);
 
-        int gravityIncrements = (_level - 1) / 3;
-        _currentGravity = 0.025f + (gravityIncrements * 0.005f);
-        if (_currentGravity > 0.10f) _currentGravity = 0.10f;
+        // Gentle to begin with (about half what level 1 used to have), a
+        // little stronger every level: the old start by level 6, and no
+        // stronger after level 20.
+        _currentGravity = GRAVITY_START + GRAVITY_STEP * (min(_level, GRAVITY_TOP_LEVEL) - 1);
 
         _obstacles.generateNewMap(_level, _padX, _padWidth);
 
-        // Safe-spawn fuel tank — original 50-attempt collision check
-        if (gravityIncrements >= 2) {
+        // Safe-spawn fuel tank from level 7 — original 50-attempt collision check
+        if (_level >= 7) {
             _fuelTankActive = true;
             bool safeSpawnFound = false;
             int attempts = 0;
@@ -184,6 +215,7 @@ private:
         canvas.setCursor(1, 64);  canvas.print("> WATCH FUEL GAUGE");
         canvas.setCursor(1, 76);  canvas.print("> PICK UP FUEL CORES");
         canvas.setCursor(1, 88);  canvas.print("> LAND SLOW ON PAD");
+        canvas.setCursor(1, 100); canvas.print("> V H A GREEN = SAFE");
 
         canvas.drawRect(4, 106,
             ArcadeConfig::PORTRAIT_WIDTH - 12, 28, ArcadeConfig::COLOR_ION_BLUE);
@@ -305,13 +337,13 @@ private:
         _demoPathIdx = 0;
     }
 
-    // The autopilot, as the game's own inputs: a stick angle (the raw
-    // 0-4095 the game maps to -45..45 degrees) and the thrust button. Heads
+    // The autopilot, as the game's own inputs: the stick (-1..1, the game
+    // maps to -45..45 degrees) and the thrust button. Heads
     // for the furthest route point in clear sight, at a capped speed; over
     // the pad it comes straight down at _demoDescent. The wanted change of
     // velocity becomes a thrust direction, and thrust is pulsed so its
     // average matches the force wanted.
-    void demoPilot(bool &btnA, int &joyX) {
+    void demoPilot(bool &btnA, float &stick) {
         const float x = _lander.x, y = _lander.y;
         const float padC = _padX + _padWidth / 2.0f;
         // Pure pursuit: from the route point nearest the ship (never going
@@ -331,7 +363,11 @@ private:
         // gravity do the work: falls fast while well clear of the ground and
         // brakes late, as a player would, rather than hovering all the way.
         const float padTop = ArcadeConfig::PORTRAIT_HEIGHT - 14.0f;
-        const float fall = (padTop - y > 30.0f) ? 1.3f : _demoDescent;
+        const float T = thrustPower(), g = _currentGravity;
+        // As fast as it can still brake to its touchdown speed by the pad,
+        // braking at half what the engine can do against gravity.
+        const float h = max(0.0f, padTop - y - 4.0f);
+        const float fall = min(1.3f, _demoDescent + sqrtf(2.0f * 0.5f * (T - g) * h));
         float vxWant, vyWant;
         // Anywhere over the pad (a few px in from its ends) with a clear
         // drop below counts: it then centres up on the way down.
@@ -344,23 +380,26 @@ private:
             float dx = tx - x, dy = ty - y;
             // Along the route at a steady pace, faster only when it's a drop.
             float d = sqrtf(dx * dx + dy * dy) + 0.001f;
-            float v = dy > d * 0.8f ? min(fall, 0.9f) : 0.6f;
+            float v = dy > d * 0.8f ? min(fall, 0.9f) : 0.45f;
             vxWant = dx / d * v;
             vyWant = dy / d * v;
         }
-        // Wanted acceleration, then the thrust that gives it against gravity.
-        float ax = constrain((vxWant - _lander.vx) * 0.2f, -0.1f, 0.1f);
-        float ay = constrain((vyWant - _lander.vy) * 0.2f, -0.1f, 0.1f);
-        float fx = ax, fy = ay - _currentGravity;          // thrust must supply this
+        // Wanted acceleration, within what the engine can give, then the
+        // thrust that gives it against gravity.
+        float ax = constrain((vxWant - _lander.vx) * 0.15f, -0.4f * T, 0.4f * T);
+        float ay = constrain((vyWant - _lander.vy) * 0.15f, -0.9f * (T - g), g);
+        float fx = ax, fy = ay - g;                        // thrust must supply this
         float angle = atan2f(fx, -fy);                     // 0 = straight up
         angle = constrain(angle, -PI / 4.0f, PI / 4.0f);
-        // Thrust is all or nothing, so pulse it: bank the fraction of a full
-        // burn wanted each step and fire once a whole one's due.
+        // The last stretch down nearly upright, as the landing
+        // rule wants (it turns at a limited rate, so it starts early).
+        const bool abovePad = x >= _padX - 2.0f && x <= _padX + _padWidth + 2.0f;
+        if (abovePad && padTop - y < 18.0f) angle = constrain(angle, -0.12f, 0.12f);
+        // The engine spools, so hold A while it wants more thrust than the
+        // engine is giving, and let go once it's giving enough.
         float need = fy < 0.0f ? sqrtf(fx * fx + fy * fy) : 0.0f;
-        _demoThrustAcc += min(need / THRUST_POWER, 1.0f);
-        btnA = _demoThrustAcc >= 1.0f && _lander.fuel > 0.0f;
-        if (btnA) _demoThrustAcc -= 1.0f;
-        joyX = (int)((angle / (PI / 4.0f) + 1.0f) * 0.5f * 4095.0f);
+        btnA = need > _lander.engine * T && _lander.fuel > 0.0f;
+        stick = angle / (PI / 4.0f);
     }
 
     void startDemo() {
@@ -459,7 +498,8 @@ public:
         audio.mute();
     }
 
-    // `input` is for the name entry (the rest of the game reads the raw values).
+    // `input` is for the name entry and the stick (its normalised joyX,
+    // deadzone and all); the buttons come separately.
     bool update(GFXcanvas16 &canvas, bool btnA, bool btnB,
                 int joyX, int joyY, AudioEngine &audio, const InputState &input) {
 
@@ -473,8 +513,9 @@ public:
             if (aPressed) { endDemo(); _titleAWasHeld = true; startGame(audio); return true; }
             if (bPressed) { endDemo(); return true; }
             if (millis() >= _demoUntil && !_lander.isDisintegrating) { endDemo(); return true; }
-            demoPilot(btnA, joyX);
         }
+        float stick = input.joyX;
+        if (_demo) demoPilot(btnA, stick);
         Silence silence(audio, _demo);
 
         // ---- NAME ENTRY: then the game-over screen ----
@@ -626,9 +667,9 @@ public:
             }
         } else {
           for (int step = 0; step < steps && !_lander.isDisintegrating && !_isGameOver; ++step) {
-            float targetAngle = map(joyX, 0, 4095, -45, 45) * (PI / 180.0f);
+            const float targetAngle = constrain(stick, -1.0f, 1.0f) * (PI / 4.0f);
             _lander.updatePhysics(btnA, targetAngle, _currentGravity,
-                                  THRUST_POWER, _particles);
+                                  thrustPower(), _particles);
 
             // Thrust sound — once per press
             if (btnA && _lander.fuel > 0.0f) {
@@ -672,10 +713,10 @@ public:
 
             if (_lander.y >= floorY - 4) {
                 _lander.y = floorY - 4;
-                float speed = sqrt(_lander.vx * _lander.vx + _lander.vy * _lander.vy);
                 bool overPad = ((int)_lander.x >= _padX &&
                                 (int)_lander.x <= (_padX + _padWidth));
-                if (overPad && speed < SAFE_LANDING_SPEED && _lander.fuel > 0.0f) {
+                // Fuel or not: a glide down on an empty tank still lands.
+                if (overPad && safeToLand()) {
                     _score += (int)_lander.fuel;
                     _level++;
                     _isGameOver        = true;
@@ -728,10 +769,10 @@ public:
             canvas.drawFastVLine(gx, padY - 1, 2, ArcadeConfig::COLOR_ION_BLUE);
         }
 
-        _lander.render(canvas, btnA, SAFE_LANDING_SPEED);
+        _lander.render(canvas, btnA, safeToLand());
 
         // HUD
-        int gravityTier = ((_level - 1) / 3) + 1;
+        int gravityTier = min(_level, GRAVITY_TOP_LEVEL);   // it rises every level to 20
         int fuelPercent = constrain((int)_lander.fuel, 0, 100);
 
         canvas.setTextSize(1);
@@ -754,6 +795,12 @@ public:
         canvas.setCursor(104, 4);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.print("G:"); canvas.print(gravityTier);
+
+        // The landing rule, under the HUD: Vertical speed, Horizontal
+        // drift, Angle, each green while it would pass, red while not.
+        canvas.setCursor(110, 14); canvas.setTextColor(descentOk() ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_RED); canvas.print("V");
+        canvas.setCursor(116, 14); canvas.setTextColor(driftOk()   ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_RED); canvas.print("H");
+        canvas.setCursor(122, 14); canvas.setTextColor(tiltOk()    ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_RED); canvas.print("A");
         if (_demo) drawDemoOverlay(canvas);
 
         if (_tft) _tft->drawRGBBitmap(0, 0, canvas.getBuffer(),
