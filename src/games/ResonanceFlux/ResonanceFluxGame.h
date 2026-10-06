@@ -52,6 +52,9 @@ private:
     enum Slide : uint8_t { SLIDE_TITLE, SLIDE_TUNE, SLIDE_MATCH, SLIDE_STATIC, SLIDE_SCORES, SLIDE_DEMO };
     // Within a game: the wave's number showing, play, and the wave's tally.
     enum Round : uint8_t { ROUND_INTRO, ROUND_PLAY, ROUND_CLEAR };
+    // The optional sounds (RES_SFX below has their files and fallbacks).
+    enum Sfx : uint8_t { SFX_TITLE, SFX_START, SFX_WAVE, SFX_LOCK, SFX_SHATTER, SFX_MISS, SFX_HIT,
+                         SFX_DAMP, SFX_CLEAR, SFX_OVER, SFX_COUNT };
 
     struct Signal {
         bool alive = false;
@@ -97,7 +100,8 @@ private:
     float driftSpeed() const;
     static float curve(float v);
     static float frand(float lo, float hi);
-    void tone(int hz, int ms) { if (_audio) _audio->playTone(hz, ms); }
+    void findSounds(AudioEngine &audio);
+    void sfx(Sfx s);
 
     // ---- The scope and drawing (ResonanceScope.h) ----
     bool allocGlow();
@@ -164,7 +168,9 @@ private:
     float _focusPhaseGap = 1;
     float _beamX = 0, _beamY = 0;
     unsigned long _beamUntil = 0, _hitFlashUntil = 0;
-    bool  _bang = false;                 // explosion.wav on the card
+    bool  _sfxOnCard[SFX_COUNT] = {}, _fallbackOnCard[SFX_COUNT] = {};
+    const char *_lastSfx = "";           // what the last sfx() played, for the harness
+    bool  _wasMatched = false;           // for the lock sound, as resonance begins
     float _targetHz = 400;               // the focus signal's tone
 
     // Title: the figure it morphs through.
@@ -203,20 +209,65 @@ inline float ResonanceFluxGame::frand(float lo, float hi) {
     return lo + (hi - lo) * (float)random(0, 10001) / 10000.0f;
 }
 
+namespace {
+// The optional sounds, by Sfx: the file, a shared file to use instead if
+// it isn't on the card, and the tone or melody that plays if neither is
+// (or nothing, for the two that only play from the card: the wave's start
+// and the moment of resonance, which had no sound before the WAVs).
+struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
+const int RES_TITLE_N[] = { 330, 495, 660, 990 },  RES_TITLE_D[] = {  90,  90,  90, 220 };
+const int RES_CLEAR_N[] = { 660, 880, 1320 },      RES_CLEAR_D[] = {  80,  80,  200 };
+const int RES_OVER_N[]  = { 440, 415, 392, 220 },  RES_OVER_D[]  = { 140, 140, 140, 400 };
+const SfxDef RES_SFX[] = {
+    { "/audio/res_title.wav",   nullptr, 0, 0, RES_TITLE_N, RES_TITLE_D, 4 },   // SFX_TITLE
+    { "/audio/res_start.wav",   nullptr, 900, 80, nullptr, nullptr, 0 },        // SFX_START
+    { "/audio/res_wave.wav",    nullptr, 0, 0, nullptr, nullptr, 0 },           // SFX_WAVE (card only)
+    { "/audio/res_lock.wav",    nullptr, 0, 0, nullptr, nullptr, 0 },           // SFX_LOCK (card only)
+    { "/audio/res_shatter.wav", "/audio/explosion.wav", 1400, 60, nullptr, nullptr, 0 },   // SFX_SHATTER
+    { "/audio/res_miss.wav",    nullptr, 140, 90, nullptr, nullptr, 0 },        // SFX_MISS
+    { "/audio/res_hit.wav",     nullptr, 90, 160, nullptr, nullptr, 0 },        // SFX_HIT
+    { "/audio/res_damp.wav",    nullptr, 220, 200, nullptr, nullptr, 0 },       // SFX_DAMP
+    { "/audio/res_clear.wav",   nullptr, 0, 0, RES_CLEAR_N, RES_CLEAR_D, 3 },   // SFX_CLEAR
+    { "/audio/res_over.wav",    nullptr, 0, 0, RES_OVER_N, RES_OVER_D, 4 },     // SFX_OVER
+};
+static_assert(sizeof(RES_SFX) / sizeof(RES_SFX[0]) == 10, "one SfxDef per Sfx");
+}  // namespace
+
+// Which optional sounds are on the card, checked once: a missing file
+// would otherwise cost an SD open every time it's asked for. What will
+// play is decoded into the mixer's cache now, so the first play isn't late.
+inline void ResonanceFluxGame::findSounds(AudioEngine &audio) {
+    for (int i = 0; i < SFX_COUNT; ++i) {
+        _sfxOnCard[i] = audio.exists(RES_SFX[i].path);
+        _fallbackOnCard[i] = !_sfxOnCard[i] && RES_SFX[i].fallback && audio.exists(RES_SFX[i].fallback);
+        if (_sfxOnCard[i]) audio.preload(RES_SFX[i].path);
+        else if (_fallbackOnCard[i]) audio.preload(RES_SFX[i].fallback);
+    }
+}
+
+// The file if it's on the card, else its fallback file, else the tone or
+// melody. In the demo the engine is silenced, so nothing plays.
+inline void ResonanceFluxGame::sfx(Sfx s) {
+    if (!_audio) return;
+    const SfxDef &d = RES_SFX[s];
+    if (_sfxOnCard[s])           { _audio->playWAV(d.path); _lastSfx = d.path; }
+    else if (_fallbackOnCard[s]) { _audio->playWAV(d.fallback); _lastSfx = d.fallback; }
+    else if (d.notes)            { _audio->playMelody(d.notes, d.durs, d.len); _lastSfx = "melody"; }
+    else if (d.hz)               { _audio->playTone(d.hz, d.ms); _lastSfx = "tone"; }
+    else                         _lastSfx = "none";
+}
+
 inline void ResonanceFluxGame::init(AudioEngine &audio) {
     _audio = &audio;
     _scores.begin("resonance");
     allocGlow();
     buildLut();
-    _bang = audio.exists("/audio/explosion.wav");
-    if (_bang) audio.preload("/audio/explosion.wav");
+    findSounds(audio);
     _lastFrameMs = millis();
     _demo = _test = false;
     resetRun(1);
     enterAttract();
-    static const int n[] = { 330, 495, 660, 990 };
-    static const int d[] = {  90,  90,  90, 220 };
-    audio.playMelody(n, d, 4);
+    sfx(SFX_TITLE);
 }
 
 inline void ResonanceFluxGame::updateFrameTime() {
@@ -415,7 +466,7 @@ inline void ResonanceFluxGame::startGame(AudioEngine &audio, int first) {
     resetRun(_testFrom);
     _phaseState = PHASE_PLAYING;
     _phaseAt = _now;
-    audio.playTone(900, 80);
+    sfx(SFX_START);
 }
 
 // The stops for the ratios a wave has reached. You stay on the ratio you
@@ -447,6 +498,7 @@ inline void ResonanceFluxGame::startWave(int wave) {
     _dampUntil = 0;
     for (auto &s : _signals) s.alive = false;
     _focus = _matched = _threat = -1;
+    _wasMatched = false;
     _round = ROUND_INTRO;
     _roundAt = _now;
 }
@@ -458,9 +510,7 @@ inline void ResonanceFluxGame::enterGameOver(AudioEngine &audio) {
     _phaseAt = _now;
     _static = 100;
     audio.stopHum();
-    static const int n[] = { 440, 415, 392, 220 };
-    static const int d[] = { 140, 140, 140, 400 };
-    audio.playMelody(n, d, 4);
+    sfx(SFX_OVER);
 }
 
 inline int ResonanceFluxGame::aliveCount() const {
@@ -492,7 +542,7 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
     addStatic(-STATIC_DECAY * _dt);
 
     if (_round == ROUND_INTRO) {
-        if (_now - _roundAt >= WAVE_INTRO_MS) { _round = ROUND_PLAY; _roundAt = _now; _spawnAt = _now; }
+        if (_now - _roundAt >= WAVE_INTRO_MS) { _round = ROUND_PLAY; _roundAt = _now; _spawnAt = _now; sfx(SFX_WAVE); }
         return;
     }
     if (_round == ROUND_CLEAR) {
@@ -507,12 +557,14 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
     }
     moveSignals();
     findMatch();
+    if (_matched >= 0 && !_wasMatched) sfx(SFX_LOCK);     // resonance just begun
+    _wasMatched = _matched >= 0;
     if (in.btnAPressed) fire();
     if (in.btnBPressed && _dampens > 0 && _now >= _dampUntil) {
         --_dampens;
         _dampUntil = _now + DAMPEN_MS;
         ++_statDampens;
-        tone(220, 200);
+        sfx(SFX_DAMP);
     }
     if (_toSpawn == 0 && aliveCount() == 0) {
         _clearBonus = PTS_STATIC_LEFT * (long)(100.0f - _static) + PTS_DAMPEN_LEFT * _dampens;
@@ -521,9 +573,7 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
         ++_statWaves;
         _round = ROUND_CLEAR;
         _roundAt = _now;
-        static const int n[] = { 660, 880, 1320 };
-        static const int d[] = {  80,  80,  200 };
-        if (_audio) _audio->playMelody(n, d, 3);
+        sfx(SFX_CLEAR);
     }
 }
 
@@ -636,7 +686,7 @@ inline void ResonanceFluxGame::fire() {
     ++_statMisfires;
     addStatic(STATIC_MISFIRE);
     _fireReadyAt = _now + FIRE_COOLDOWN_MS;
-    tone(140, 90);
+    sfx(SFX_MISS);
 }
 
 // A shot in resonance: the signal's figure flies apart, worth up to double
@@ -670,8 +720,7 @@ inline void ResonanceFluxGame::shatter(int i) {
     s.alive = false;
     if (_focus == i) _focus = _matched = -1;
     if (_threat == i) _threat = -1;
-    if (_bang && _audio) _audio->playWAV("/audio/explosion.wav");
-    else tone(1400, 60);
+    sfx(SFX_SHATTER);
 }
 
 // A signal reached you: static, and a crackle of white.
@@ -695,7 +744,7 @@ inline void ResonanceFluxGame::burst(int i) {
     s.alive = false;
     if (_focus == i) _focus = _matched = -1;
     if (_threat == i) _threat = -1;
-    tone(90, 160);
+    sfx(SFX_HIT);
 }
 
 inline void ResonanceFluxGame::updateShards() {

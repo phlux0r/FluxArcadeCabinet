@@ -115,6 +115,7 @@ cost runs at ~30fps on the board), not with a frame budget.
 | `quit` | The title waits for A; Back mid-game (`onQuit()`, `onExit()` freeing the scope's planes, `init()`) puts the score on the table, and a clean game after |
 | `idle [N]` | No input (default 3000 frames): title, the three how-to slides and the scores, then the demo (the autopilot shattering signals, making no sound) and back to the title, the high scores untouched |
 | `demoexit` | A mid-demo: a real game starts clean (wave 1's two stops, no score, no static, no signals, sound back on) |
+| `sounds` | The optional WAVs: with no card each event's tone, melody or nothing; `explosion.wav` for a shatter when it's there and `res_shatter.wav` isn't; with every file on the card, a misfire, resonance beginning, a shatter, a signal reaching you, dampen, a wave cleared, the next wave starting and overload each ask for their own file |
 | `pick` | The wave select: B held with A on the title opens it (B still held doesn't close it); the stick steps the wave by one and by five, wrapping 1-20; B goes back; A starts a test run on the chosen wave (fresh, its stops), whose game over skips the name entry and whose quit saves nothing, and A at its game over starts the same wave again; plain A still starts wave 1; left alone the picker goes back to the title |
 
 `DUMP_AT=6000,6300 test/build.sh resonance play 6301` writes

@@ -636,7 +636,7 @@ fetches the real files into an existing clone.
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 | `pickup.wav` (gem); optional sounds below | Roll Flux |
-| `explosion.wav` (a shattered signal; a tone without it) | Resonance Flux |
+| `explosion.wav` (a shattered signal, if no `res_shatter.wav`); optional sounds below | Resonance Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what
 the last column says. Mono 16-bit 44.1kHz, short (they're cached).
@@ -702,6 +702,24 @@ Roll Flux's optional sounds, the same again (none on the card yet):
 | `roll_boss_hit.wav` | a hit on a guardian | ~0.3s | a tone |
 | `roll_boss_down.wav` | a guardian beaten | ~2.5s | `star_boss_die.wav` |
 | `roll_slam.wav` | the Piston's pistons slam | ~0.2s | a tone |
+
+Resonance Flux's optional sounds, the same again (none on the card yet).
+It has no music: the two notes of the hum are its soundtrack, and music
+would hide them. Keep these short and away from a steady pitch, so they
+don't muddle the notes.
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `res_title.wav` | the game's launched | ~0.6s | four rising notes |
+| `res_start.wav` | a game starts | ~0.2s | a tone |
+| `res_wave.wav` | a wave's signals start coming | ~0.4s | nothing |
+| `res_lock.wav` | resonance begins (both figures glow) | ~0.1s | nothing |
+| `res_shatter.wav` | a signal shattered | ~0.4s | `explosion.wav`, else a tone |
+| `res_miss.wav` | a misfire (out of tune) | ~0.2s | a low tone |
+| `res_hit.wav` | a signal reaches you | ~0.3s | a low tone |
+| `res_damp.wav` | dampen (B) | ~0.4s | a tone |
+| `res_clear.wav` | a wave cleared | ~0.8s | three rising notes |
+| `res_over.wav` | overload: game over | ~1.2s | a falling run of notes |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

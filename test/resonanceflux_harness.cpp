@@ -21,6 +21,8 @@
 //   pick        the wave select: B held with A on the title opens it, the
 //               stick steps the wave, A starts a test run that puts nothing
 //               on the table; plain A still starts wave 1
+//   sounds      the optional WAVs: each event's file if it's on the card,
+//               else its fallback file, else its tone, melody or nothing
 //   all         everything (the default)
 //
 // DUMP_AT=frame,frame writes those frames of `play` as resonance_<frame>.ppm,
@@ -537,6 +539,67 @@ static bool scenarioPick() {
     return ok;
 }
 
+// The optional sounds: with no card, each event's tone, melody or nothing;
+// with its file on the card, the file; with only the fallback file, that.
+// And each event in play asks for the sound it should.
+static bool scenarioSounds() {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    bool ok = true;
+    printf("sounds:\n");
+    startPlaying(g, audio, canvas);
+    using G = ResonanceFluxGame;
+    auto plays = [&](G::Sfx sfx, const char *want) {
+        g.sfx(sfx);
+        return !strcmp(g._lastSfx, want);
+    };
+    check("no card: shatter is a tone, wave clear a melody, the wave's start nothing",
+          plays(G::SFX_SHATTER, "tone") && plays(G::SFX_CLEAR, "melody") && plays(G::SFX_WAVE, "none") &&
+          plays(G::SFX_LOCK, "none") && plays(G::SFX_TITLE, "melody") && plays(G::SFX_OVER, "melody"), ok);
+    g._fallbackOnCard[G::SFX_SHATTER] = true;
+    check("explosion.wav on the card: the shatter uses it", plays(G::SFX_SHATTER, "/audio/explosion.wav"), ok);
+    for (int i = 0; i < G::SFX_COUNT; ++i) g._sfxOnCard[i] = true;
+    check("res_shatter.wav on the card: that instead", plays(G::SFX_SHATTER, "/audio/res_shatter.wav"), ok);
+
+    // Each event, every file on the card.
+    const int r12 = 2;
+    place(g, r12, 1.0f, 20, 30);
+    g._stop = g._stopOf[r12]; g._phase = 1.0f + 2 * PHASE_TOL;
+    step(g, audio, canvas);
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    step(g, audio, canvas, a);
+    check("a misfire: res_miss.wav", !strcmp(g._lastSfx, "/audio/res_miss.wav"), ok);
+    g._phase = 1.0f;
+    step(g, audio, canvas);
+    check("resonance begins: res_lock.wav", !strcmp(g._lastSfx, "/audio/res_lock.wav"), ok);
+    for (int i = 0; i < 15; ++i) { g._phase = 1.0f; step(g, audio, canvas); }
+    g._phase = 1.0f;
+    step(g, audio, canvas, a);
+    check("a shatter: res_shatter.wav", !strcmp(g._lastSfx, "/audio/res_shatter.wav"), ok);
+    auto &s = place(g, r12, 0.5f, CORE_X + CORE_R + SIG_R, CORE_Y);
+    s.speed = 20;
+    for (int i = 0; i < 20 && g._signals[0].alive; ++i) step(g, audio, canvas);
+    check("a signal reaching you: res_hit.wav", !strcmp(g._lastSfx, "/audio/res_hit.wav"), ok);
+    InputState b{}; b.btnB = b.btnBPressed = true;
+    step(g, audio, canvas, b);
+    check("dampen: res_damp.wav", !strcmp(g._lastSfx, "/audio/res_damp.wav"), ok);
+    g._toSpawn = 0;
+    for (auto &sg : g._signals) sg.alive = false;
+    step(g, audio, canvas);
+    check("the wave cleared: res_clear.wav", !strcmp(g._lastSfx, "/audio/res_clear.wav"), ok);
+    for (unsigned long t = 0; t <= WAVE_CLEAR_MS + WAVE_INTRO_MS + 2 * STEP_MS; t += STEP_MS) {
+        g._spawnAt = g_fakeMillis + 1000000;
+        step(g, audio, canvas);
+    }
+    check("the next wave starts: res_wave.wav", !strcmp(g._lastSfx, "/audio/res_wave.wav"), ok);
+    g._static = 101;
+    step(g, audio, canvas);
+    check("overload: res_over.wav", !strcmp(g._lastSfx, "/audio/res_over.wav"), ok);
+    printf("sounds -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 int main(int argc, char** argv) {
     const char* which = argc > 1 ? argv[1] : "all";
     const long frames = argc > 2 ? atol(argv[2]) : 0;
@@ -549,5 +612,6 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "idle"))     ok &= scenarioIdle(frames ? frames : 3000);
     if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
     if (all || !strcmp(which, "pick"))     ok &= scenarioPick();
+    if (all || !strcmp(which, "sounds"))   ok &= scenarioSounds();
     return ok ? 0 : 1;
 }

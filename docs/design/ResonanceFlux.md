@@ -314,9 +314,10 @@ scope, the tuning strip, the hum (your tone, the focus signal's fading in
 within one ratio-step, the hiss), and a title. High scores and name entry
 too, since the cabinet's tests expect every game to have a table.
 
-Left for later: cascades and chains, the other signals, Chords, the WAV
-effects (tones, and `explosion.wav` when it's on the card), the palette
-shifts. Added since, while the owner plays: the attract cycle (title,
+Left for later: cascades and chains, the other signals, Chords, the
+palette shifts. The optional WAVs are in (`res_*.wav`, README.md's audio
+section), each falling back to the tones it had, plus two that play only
+from the card: the wave's start and the moment of resonance. Added since, while the owner plays: the attract cycle (title,
 three how-to slides, scores, the silent demo, the autopilot pausing a
 moment on each new target so it looks played) and a wave select for test
 runs (hold B and press A on the title, as Brick and Roll). No music, by
