@@ -197,7 +197,15 @@ being freed on exit to the launcher).
   and the landing rule case by case: down under 1.0, sideways under 0.5,
   tilt under 15 degrees, an empty tank still landing; the pad 24px
   narrowing a pixel every two levels to 16px from level 17, and the tank
-  full to level 10 then 4% less a level to 60% from level 20); and
+  full to level 10 then 4% less a level to 60% from level 20);
+  Asteroid's Fire power-up (`fire`: A shoots nothing without it; with
+  it a bolt breaks an asteroid ahead, scoring and counting as passing it
+  would; the HUD line is orange for the time left and green again after
+  20s, when A stops shooting), its power-ups (`powerups`: the mix drawn
+  at 300, 550 and 700 points, Fire only from 500 and the extra life only
+  when due, repeats only from the one redraw, 12-25s apart, and over 30000
+  frames of a full demo field with one always on its way, under 0.1% of
+  its on-screen frames over an asteroid), and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

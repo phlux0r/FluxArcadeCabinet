@@ -5,7 +5,7 @@ the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
 |---|---|---|---|
-| Asteroid Flux | Asteroids | Landscape | Asteroid shooter with power-ups and a nebula backdrop |
+| Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer) and a nebula backdrop |
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
@@ -498,7 +498,7 @@ FluxArcadeCabinet/
     └── games/
         ├── IGame.h             # Interface every game implements
         ├── AsteroidFlux/       # AsteroidFluxGame.h + ship/asteroid/power-up/
-        │                       # background managers + assets/
+        │                       # bolt/background managers + assets/
         ├── BrickFlux/          # Brick breaker, header-only:
         │   ├── BrickFluxGame.h     # Class, phases, attract cycle, sounds
         │   ├── BrickConfig.h       # All tuning: field, bat, ball, smash, wall, capsules
@@ -651,7 +651,7 @@ fetches the real files into an existing clone.
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
 | `lander_start.wav`, `land_success.wav`, `pickup.wav` (fuel pickup) | Lander Flux |
-| `powerup.wav` (extra life, shield and slow-time pickups) | Asteroid Flux |
+| `powerup.wav` (any pickup); optional, else a tone: `tube_shot.wav` (a Fire shot), `shot.wav` (a shot asteroid) | Asteroid Flux |
 | `jump.wav`, `death.wav` | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |

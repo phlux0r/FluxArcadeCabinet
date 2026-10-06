@@ -10,6 +10,7 @@
 #include "AsteroidManager.h"
 #include "PlayerShip.h"
 #include "PowerUpManager.h"
+#include "BoltManager.h"
 #include "BackgroundStars.h"
 #include "NebulaManager.h"
 
@@ -30,8 +31,18 @@ private:
     BackgroundStars _background;
     NebulaManager   _nebula;
     ParticleManager _particles;
+    BoltManager     _bolts;
 
     Adafruit_ST7735* _tft = nullptr;
+
+    // The Fire power-up: when A may next shoot, whether the timer bar was
+    // up last frame (the HUD line goes back to green when it ends), and
+    // which of its sounds are on the card (checked once, in init()).
+    unsigned long _nextShotMs = 0;
+    bool _fireBarShown = false;
+    bool _shotOnCard = false, _hitOnCard = false;
+    static constexpr const char* SHOT_WAV = "/audio/tube_shot.wav";
+    static constexpr const char* HIT_WAV  = "/audio/shot.wav";
 
     int  _score           = 0;
     int  _highScore       = 0;
@@ -111,6 +122,26 @@ private:
         canvas.print(_lives); canvas.print(" UP");
     }
 
+    // The Fire power-up's timer: the line under the HUD, orange from the
+    // left for the time left and green beyond, flashing in its last 3s.
+    void drawFireBar(GFXcanvas16 &canvas) {
+        const int W = ArcadeConfig::LANDSCAPE_WIDTH;
+        const unsigned long left = _ship.fireRemainingMs();
+        int w = (int)((unsigned long)W * left / ArcadeConfig::FIRE_DURATION_MS);
+        if (left < 3000 && (millis() / 125) % 2) w = 0;
+        canvas.drawFastHLine(0, 10, W, ArcadeConfig::COLOR_GREEN);
+        if (w > 0) canvas.drawFastHLine(0, 10, w, ArcadeConfig::COLOR_ORANGE);
+    }
+
+    void sfxShot(AudioEngine &audio) {
+        if (_shotOnCard) audio.playWAV(SHOT_WAV);
+        else             audio.playSound(1800, 25);
+    }
+    void sfxHit(AudioEngine &audio) {
+        if (_hitOnCard) audio.playWAV(HIT_WAV);
+        else            audio.playSound(500, 60);
+    }
+
     void renderSplash(GFXcanvas16 &canvas) {
         for (int i = 0; i < 20480; i++) {
             uint8_t b1 = splash_bitmap[i * 2];
@@ -162,11 +193,13 @@ private:
         // TomThumb rows — "SHIELD:  ABSORBS 1 HIT" = 22 chars = 132px → x=14
         canvas.setFont(&TomThumb);
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(14, 76);  canvas.print("CLOCK:   SLOWS SECTOR");
+        canvas.setCursor(14, 75);  canvas.print("CLOCK:   SLOWS SECTOR");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(14, 89);  canvas.print("SHIELD:  ABSORBS 1 HIT");
+        canvas.setCursor(14, 85);  canvas.print("SHIELD:  ABSORBS 1 HIT");
         canvas.setTextColor(ArcadeConfig::COLOR_RED);
-        canvas.setCursor(14, 102); canvas.print("HEART:   EXTRA LIFE");
+        canvas.setCursor(14, 95);  canvas.print("HEART:   EXTRA LIFE");
+        canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+        canvas.setCursor(14, 105); canvas.print("FIRE:    HOLD A, 20 SEC");
 
         // Footer
         canvas.setFont();
@@ -188,8 +221,10 @@ private:
         _asteroidsPassed = 0;
         _nextTargetScore = ArcadeConfig::SCORE_TO_SPAWN;
         _ship.reset();
-        _powerUps.resetTimeline();
+        _powerUps.newGame();
         _particles.clearAll();
+        _bolts.clearAll();
+        _fireBarShown = false;
         _asteroids.initGame();
         _shipXOffset  = 0.0f;
         _shipYOffset  = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
@@ -243,6 +278,7 @@ private:
         }
         _demoTargetX = bestX;
         _demoTargetY = bestY;
+        in.btnA = _ship.isFireActive();          // shoots whenever it can
         // Rotation-1 axes, as updatePlaying's input reads them.
         in.joyX = constrain((bestY - _shipYOffset) / SHIP_MOVE_SPEED, -1.0f, 1.0f);
         in.joyY = constrain((bestX - _shipXOffset) / SHIP_MOVE_SPEED, -1.0f, 1.0f);
@@ -317,6 +353,10 @@ public:
         _demo              = false;
         // No start sound: the attract loop starts straight away.
         audio.preload("/audio/powerup.wav");   // every pickup; loaded now, not on the first
+        _shotOnCard = audio.exists(SHOT_WAV);
+        _hitOnCard  = audio.exists(HIT_WAV);
+        if (_shotOnCard) audio.preload(SHOT_WAV);
+        if (_hitOnCard)  audio.preload(HIT_WAV);
     }
 
     void setTFT(Adafruit_ST7735 &tft) override { _tft = &tft; }
@@ -399,6 +439,10 @@ public:
             _asteroids.update(_ship, _score, _asteroidsPassed, _nextTargetScore,
                               uiNeedsUpdate, playerHit, audio, _particles);
 
+            if (playerHit) {                         // a hit ends the Fire power-up
+                _ship.deactivateFire();
+                _bolts.clearAll();
+            }
             if (playerHit && _demo) {                // a demo hit just ends the demo
                 triggerShipExplosion(audio);
                 _phase      = PHASE_HIT;
@@ -434,6 +478,17 @@ public:
                 return true;
             }
 
+            // Fire: A held shoots from the nose every FIRE_INTERVAL_MS
+            if (_ship.isFireActive() && in.btnA && millis() >= _nextShotMs) {
+                _bolts.fire(_ship.getX() + ArcadeConfig::SHIP_WIDTH - 1, (float)_ship.getY() + 4.0f);
+                _nextShotMs = millis() + ArcadeConfig::FIRE_INTERVAL_MS;
+                sfxShot(audio);
+            }
+            if (_bolts.update(_asteroids, _score, _asteroidsPassed, _nextTargetScore, _particles) > 0) {
+                sfxHit(audio);
+                uiNeedsUpdate = true;
+            }
+
             // Normal gameplay render
             canvas.fillRect(0, 11,
                             ArcadeConfig::LANDSCAPE_WIDTH,
@@ -444,12 +499,16 @@ public:
             _particles.render(canvas, 11);
             _powerUps.render(canvas);
             _asteroids.render(canvas);
+            _bolts.render(canvas);
             _ship.render(canvas);
 
-            if (uiNeedsUpdate || _uiDirty) {
+            const bool fireBar = _ship.isFireActive();
+            if (uiNeedsUpdate || _uiDirty || (_fireBarShown && !fireBar)) {
                 drawUI(canvas);
                 _uiDirty = false;
             }
+            if (fireBar) drawFireBar(canvas);
+            _fireBarShown = fireBar;
             if (_demo) drawDemoOverlay(canvas);
 
             flushLandscape(canvas);

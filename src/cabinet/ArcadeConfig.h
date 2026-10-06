@@ -171,16 +171,27 @@ struct ArcadeConfig {
     static const int   POWERUP_START_SCORE      = 100;
     static const int   MIN_SCORE_FOR_EXTRA_LIFE = 600;
     static const int   SHIELD_DURATION_MS       = 10000;
-    static const int   EXTRA_LIFE_CHANCE        = 30;
-    static const int   POWERUP_SPAWN_LOW_MS     = 15000;
-    static const int   POWERUP_SPAWN_HIGH_MS    = 40000;
-    static const int   SLOW_SPEED_CHANCE        = 60;
+    static const int   POWERUP_SPAWN_LOW_MS     = 12000;   // after the last one
+    static const int   POWERUP_SPAWN_HIGH_MS    = 25000;
     static const int   SPEED_STEPS_TO_REDUCE    = 4;
+    // Which power-up: one draw weighted over those available (Fire from
+    // FIRE_START_SCORE, an extra life once the score is past its next
+    // threshold), drawn once more if it's the same as last time.
+    static const int   WEIGHT_SHIELD            = 30;
+    static const int   WEIGHT_SLOW              = 20;
+    static const int   WEIGHT_FIRE              = 35;
+    static const int   WEIGHT_EXTRA_LIFE        = 15;
+    // Fire: A shoots for FIRE_DURATION_MS.
+    static const int   FIRE_START_SCORE         = 500;
+    static const unsigned long FIRE_DURATION_MS = 20000;
+    static const unsigned long FIRE_INTERVAL_MS = 160;    // between shots, A held
+    static constexpr float BOLT_SPEED           = 5.0f;   // px/frame
 
     // Power-up colours
     static const uint16_t COLOR_SHIELD = 0x07E0;   // Green
     static const uint16_t COLOR_HEALTH = 0xF81F;   // Magenta
     static const uint16_t COLOR_SLOW   = 0x07FF;   // Cyan
+    static const uint16_t COLOR_FIRE   = 0xFD20;   // Orange
 
     // Background
     static const int   MAX_STARS              = 16;

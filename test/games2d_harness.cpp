@@ -166,6 +166,142 @@ int main(int argc, char** argv) {
                (int)h._phase, h._lives, h._score, h._asteroids.activeCount(), pass ? "PASS" : "FAIL");
         ok &= pass;
     }
+    if (!strcmp(which, "all") || !strcmp(which, "fire")) {
+        // The Fire power-up: A shoots only while it lasts (20s), a bolt
+        // breaks an asteroid in its path and scores as passing it would,
+        // the line under the HUD is its timer, and it only turns up from
+        // 500 points.
+        static AsteroidFluxGame g;
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto frame = [&](bool a) {
+            InputState in{}; in.btnA = a; in.btnAPressed = false;
+            g.update(canvas, in, audio);
+            g_fakeMillis += STEP_MS;
+        };
+        auto &rock = g._asteroids._pool[0];
+        auto park = [&]() {             // one asteroid, dead ahead of the nose
+            rock.active = true; rock.isComet = false;
+            rock.x = 150; rock.y = g._ship.getY() + 5; rock.vy = 0;
+        };
+        auto away = [&]() { rock.x = 200; };   // out of the way while waiting
+        for (int f = 0; f < 150; ++f) { frame(false); away(); }   // past the spawn shield
+        park();
+        int bolts = 0;
+        for (int f = 0; f < 20; ++f) { frame(true); bolts += g._bolts.activeCount(); park(); }
+        bool pass = bolts == 0;
+        printf("fire none: A without the power-up fires %d bolts -> %s\n", bolts, pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        g._ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+        const unsigned long firedAt = millis();
+        park();
+        const int score0 = g._score, size = rock.sizeClass, passed0 = g._asteroidsPassed;
+        bool hit = false;
+        for (int f = 0; f < 40 && !hit; ++f) { frame(true); bolts += g._bolts.activeCount(); hit = rock.x > 150; }
+        pass = hit && g._score == score0 + size && g._asteroidsPassed == passed0 + 1 && g._particles.activeCount() > 0;
+        printf("fire hit: %d bolt-frames, asteroid broken %d, score +%d (size %d), passed +%d -> %s\n",
+               bolts, (int)hit, g._score - score0, size, g._asteroidsPassed - passed0, pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        // The timer: the line under the HUD is orange for the time left,
+        // from the left, green beyond; green all along once it's over.
+        while (millis() < firedAt + ArcadeConfig::FIRE_DURATION_MS / 2) { frame(false); away(); }
+        const uint16_t* line = canvas.getBuffer() + 10 * canvas.width();
+        pass = line[40] == ArcadeConfig::COLOR_ORANGE && line[120] == ArcadeConfig::COLOR_GREEN;
+        printf("fire bar: half way, x40 %04x x120 %04x -> %s\n", line[40], line[120], pass ? "PASS" : "FAIL");
+        ok &= pass;
+        while (millis() < firedAt + ArcadeConfig::FIRE_DURATION_MS + 100) { frame(false); away(); }
+        park();
+        bolts = 0;
+        for (int f = 0; f < 20; ++f) { frame(true); bolts += g._bolts.activeCount(); park(); }
+        pass = !g._ship.isFireActive() && bolts == 0 && line[40] == ArcadeConfig::COLOR_GREEN;
+        printf("fire over: after 20s active %d, bolts %d, line x40 %04x -> %s\n",
+               (int)g._ship.isFireActive(), bolts, line[40], pass ? "PASS" : "FAIL");
+        ok &= pass;
+
+        g._ship.deactivateFire();
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "powerups")) {
+        // Asteroid's power-ups: one weighted draw over those available
+        // (shield 30, slow 20, Fire 35 from 500 points, extra life 15 when
+        // due), the same one twice running only if drawn twice, every
+        // 12-25s; and none drawn over an asteroid.
+        static AsteroidFluxGame g;
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto &pu = g._powerUps;
+        bool pass = true;
+        struct Mix { int score; int lo[5], hi[5]; };   // % by type: NONE, LIFE, SHIELD, SLOW, FIRE
+        const Mix mixes[] = {
+            { 300, { 0, 0, 50, 35, 0 },  { 0, 0, 65, 50, 0 } },
+            { 550, { 0, 0, 25, 17, 35 }, { 0, 0, 38, 30, 48 } },
+            { 700, { 0, 9, 22, 14, 29 }, { 0, 20, 35, 26, 42 } },
+        };
+        for (const Mix &m : mixes) {
+            int n[5] = {}, repeats = 0, last = -1;
+            const int N = 4000;
+            for (int k = 0; k < N; ++k) {
+                pu._data.active = false;
+                pu._nextSpawnTime = 0;
+                int lives = 3; bool ui = false;
+                pu.update(m.score, g._ship, lives, ui, audio, g._asteroids);
+                const int t = (int)pu._data.type;
+                ++n[t];
+                repeats += t == last;
+                last = t;
+            }
+            bool good = repeats * 100 < N * 30;   // one redraw: below 500 there are only two
+            printf("powerups at %d:", m.score);
+            for (int t = 1; t < 5; ++t) {
+                const int pc = n[t] * 100 / N;
+                good &= pc >= m.lo[t] && pc <= m.hi[t];
+                printf(" %s %d%%", t == 1 ? "life" : t == 2 ? "shield" : t == 3 ? "slow" : "fire", pc);
+            }
+            printf(", %d%% repeats -> %s\n", repeats * 100 / N, good ? "PASS" : "FAIL");
+            pass &= good;
+        }
+        unsigned long lo = ~0UL, hi = 0;
+        for (int k = 0; k < 500; ++k) {
+            pu.resetTimeline();
+            const unsigned long d = pu._nextSpawnTime - millis();
+            lo = min(lo, d); hi = max(hi, d);
+        }
+        bool good = lo >= 12000 && hi <= 25000;
+        printf("powerups interval: %lu-%lums -> %s\n", lo, hi, good ? "PASS" : "FAIL");
+        pass &= good;
+
+        // A busy demo field with a power-up always on its way: count the
+        // frames one is on screen over an asteroid.
+        static AsteroidFluxGame h;
+        h.init(audio);
+        h.startDemo();
+        h._asteroids.setDemoField(6, ArcadeConfig::BASE_SPEED + ArcadeConfig::SPEED_STEP * 6);
+        int shown = 0, over = 0;
+        for (int f = 0; f < 30000; ++f) {
+            if (!h._demo) { h.startDemo(); h._asteroids.setDemoField(6, ArcadeConfig::BASE_SPEED + ArcadeConfig::SPEED_STEP * 6); }
+            if (!h._powerUps._data.active) h._powerUps._nextSpawnTime = 0;
+            h._score = 600;
+            h._demoUntil = millis() + 60000;
+            InputState in{}; h.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+            const auto &d = h._powerUps._data;
+            if (!d.active || d.x - d.radius > ArcadeConfig::SCREEN_WIDTH || d.x + d.radius < 0) continue;
+            ++shown;
+            for (const auto &a : h._asteroids._pool) {
+                if (!a.active) continue;
+                const float dx = a.x - d.x, dy = a.y - d.y, r = a.radius + d.radius;
+                if (dx * dx + dy * dy < r * r) { ++over; break; }
+            }
+        }
+        good = shown > 5000 && over * 1000 < shown;
+        printf("powerups clear: %d of %d frames on screen over an asteroid -> %s\n", over, shown, good ? "PASS" : "FAIL");
+        pass &= good;
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "lander")) {
         static LanderFluxGame g;
         int landings = 0, crashes = 0, fastApproaches = 0, lastLandings = 0;

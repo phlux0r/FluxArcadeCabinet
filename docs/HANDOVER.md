@@ -49,7 +49,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lack). Read each game before proposing: a quick grep suggested none of
   the four checks for WAVs with `exists()`, but they may get sound another
   way.
-- **Particle trails** (branch `claude/particle-trails`, not merged yet):
+- **Particle trails** (merged):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
   a particle with one keeps its last positions, and how bright it was at
   each, and render() draws lines back through them, falling off to about
@@ -63,7 +63,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
   the look, feel and frame rate need the board. Then perhaps Maze,
   Runner and Brick, the other games on `ParticleManager`.
-- **Lander flight** (branch `claude/lander-gravity`): the owner found it
+- **Lander flight** (merged): the owner found it
   unbalanced from the start. Gravity 0.012 a physics step on level 1 (was
   0.025), +0.0025 every level to level 20 (0.0595); the HUD's G is the
   level up to 20; fuel tanks still from level 7. The engine was a fixed
@@ -82,6 +82,21 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   to 16px from level 17 (the owner's floor), and the tank starts full to
   level 10, then 4% less a level to 60% from level 20; the fuel cores
   (from level 7, +40) stay. Not done: stick up/down as a throttle.
+- **Asteroid Fire power-up** (merged): from 500
+  points Fire is in the power-up draw; holding A then shoots bolts (BoltManager.h) every 160ms for 20s. A bolt
+  breaks the asteroid it meets (a trailed burst), which scores and counts
+  towards the field filling up as passing it would. The line under the HUD
+  is the timer, flashing in the last 3s; a hit ends it. `tube_shot.wav`
+  and `shot.wav` (the owner's choice) if on the card, else tones. The demo
+  shoots when it has it. The owner found Fire rare, so the power-ups were
+  rebalanced: one every 12-25s (was 15-40s), one draw weighted shield 30,
+  slow 20, Fire 35 (from 500), extra life 15 (when due), drawn once more
+  on a repeat (it was a chain of rolls that left Fire about 1 in 4 and
+  slow-time the commonest). The extra life's threshold now resets with a
+  new game. Power-ups also keep clear of asteroids: they spawn in a clear
+  lane and steer away from any about to cross them (AsteroidManager::
+  dodge(), 14 frames ahead; boxed in or at the top or bottom, forwards or
+  back). Feel and balance need the board.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.
