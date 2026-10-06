@@ -1064,7 +1064,7 @@ private:
         canvas.setCursor(1, 32); canvas.print("> JOYSTICK TO MOVE");
         canvas.setCursor(1, 43); canvas.print("> KEYS OPEN DOORS");
         canvas.setCursor(1, 54); canvas.print("> LAST KEY: THE EXIT");
-        canvas.setCursor(1, 65); canvas.print("> [A] TRAP SWITCH");
+        canvas.setCursor(1, 65); canvas.print("> A: STOP PURPLE GUNS");
         canvas.setCursor(1, 76); canvas.print("> HOLD [B]: MAP");
         canvas.setCursor(1, 87); canvas.print("> AVOID BOMBS+BULLETS");
         canvas.setCursor(1, 98); canvas.print("> BEAT THE CLOCK");
