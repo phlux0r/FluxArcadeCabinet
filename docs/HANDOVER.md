@@ -5,7 +5,7 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at the Resonance merge)
+## State (main at the Maze redesign merge)
 
 Ten games, all merged and played on the board: Asteroid, Brick, Lander,
 Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
@@ -29,10 +29,15 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   docs/design/RollFlux.md.
 - **Brick Flux** is finished, with bosses every fifth level.
   docs/design/BrickFlux.md.
-- **Stage select** (a test cheat), in Roll and Brick only: on the title,
-  how-to or scores screens, hold B and press A; the stick picks the course
-  or level, A starts a test run (an orange T before the score, nothing put
-  on the high-score table), B goes back. Harness scenario `pick` in both.
+- **Stage select** (a test cheat), in Roll, Brick, Resonance and Maze: on
+  the title, how-to or scores screens, hold B and press A; the stick picks
+  the course, level or wave, A starts a test run (an orange T before the
+  score, nothing put on the high-score table), B goes back. Harness
+  scenario `pick` in each.
+- **Since Resonance**, all merged: particle trails (Asteroid, Lander,
+  Maze), Lander's flight rebalanced, Asteroid's Fire power-up and
+  rebalanced power-ups, and Maze Flux reviewed and redesigned; the entries
+  under Open below say what each did and what's left to check.
 - The full suite was 60 PASS before Resonance; since then, by the owner's
   choice, only the harnesses a change touches run before a push (CLAUDE.md).
 
@@ -42,13 +47,23 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   the fallback tones are good enough for now and the owner will make the
   WAVs another time. README.md's audio section lists every file each game
   looks for.
-- **What's next** was left open. The idea on the table: bring the older
-  2D games (Asteroid, Lander, Maze, Runner) up to the newer ones' standard
-  (optional WAVs checked with `audio.exists()` and preloaded, a stage
-  select where it fits, anything else the newer games have that they
-  lack). Read each game before proposing: a quick grep suggested none of
-  the four checks for WAVs with `exists()`, but they may get sound another
-  way.
+- **Next up: a critical review of Runner (Platform Flux)**, the one older
+  2D game not yet reviewed, the way Maze's went: read all of it, list
+  what's broken (features that look present but don't work), what's weak
+  in the design, and what it lacks against the newer games (optional WAVs
+  checked with `audio.exists()` and preloaded, a stage select, its own
+  harness scenarios beyond games2d's demo checks, particle trails), then
+  propose in order and ask before changing anything. Maze's review found
+  half-working features that only a harness bot playing through exposed;
+  expect the same.
+- **Also outstanding:** Lander still has no optional WAVs checked with
+  `exists()` and no stage select; trails could go on Runner and Brick;
+  the owner's own WAVs for Roll, Brick, Resonance and Maze (the
+  maze_door/switch/teleport files).
+- **Needs the board:** the frame rate of Maze (its textured walls doubled
+  the host cost), Asteroid (exhaust and Fire bolts) and Lander; the last
+  `pio run` size line seen was 38.4% flash, 31.1% RAM, before the Maze
+  redesign and Asteroid's Fire.
 - **Particle trails** (merged):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
   a particle with one keeps its last positions, and how bright it was at
@@ -150,6 +165,16 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   continuous on it clicks; Roll's ticks give way to other synth sounds
   instead (sfxTone()/sfxMelody() note when their sound ends).
 - When fixing a bug, write the harness check first and watch it fail.
+- A bot that plays the game through (lives pinned, counting what kills
+  it and where) finds design flaws no rule check does: in Maze it found
+  traps that couldn't be walked past, a switch out of reach and teleport
+  pads that couldn't be crossed. Make it play like a careful player, so
+  each death it can't avoid is the game's fault.
+- Movement that starts the next step in the same update as it finishes
+  one hides the cell just reached: Maze checked the cell the player was
+  already heading into, so cells passed with the stick held weren't
+  marked or their items collected. Record the arrival separately, and
+  test with the stick held, not just stopping on each target.
 - The owner sometimes commits WAVs (Git LFS) to the working branch: fetch
   before merging, and use the `-c filter.lfs.*` flags from CLAUDE.md.
 
