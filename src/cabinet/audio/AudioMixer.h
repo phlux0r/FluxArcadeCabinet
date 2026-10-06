@@ -13,6 +13,8 @@
 //     cache) or PROGMEM samples. A new effect with every voice busy
 //     replaces the oldest.
 //   - 1 synth: the square-wave tones and melodies playTone/playMelody make.
+//   - the hum: two sine oscillators and a hiss, held at whatever pitch and
+//     level the game last set (Resonance Flux's tuning tones).
 // Music is one bus; everything else is the effects bus. Each bus has its
 // own volume (and can be switched off), under a master volume. Sources are summed at
 // their own level (a sound plays as loud mixed as alone) and only the peaks
@@ -35,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <atomic>
+#include <cmath>
 
 namespace audiomix {
 
@@ -46,6 +49,11 @@ constexpr int      STREAMS       = 2;
 constexpr uint32_t RING_SAMPLES  = 32768;      // per stream: ~743ms at 44.1kHz, riding out
                                                // SD stalls of 250-400ms seen on hardware
 constexpr int16_t  SYNTH_AMP     = 8000;       // the old engine's tone level
+constexpr int      HUM_OSCS      = 2;
+constexpr int16_t  HUM_AMP       = 7000;       // each oscillator at full level
+constexpr int16_t  HISS_AMP      = 5000;
+constexpr int32_t  HUM_RAMP      = 37;         // Q15 per sample: silence to full in ~20ms, so
+                                               // level changes never click
 
 static_assert((RING_SAMPLES & (RING_SAMPLES - 1)) == 0, "ring size must be a power of two");
 
@@ -146,6 +154,14 @@ public:
     std::atomic<bool>    musicOn{true};         // off: the loader stops streaming too
     std::atomic<bool>    fxOn{true};
 
+    // The hum, set directly by the game loop (no commands: it changes every
+    // frame). Pitch in milli-Hz, levels Q15; each level glides to its
+    // target, and pitch changes keep the phase, so neither clicks. It's on
+    // the effects bus. MC_STOP_ALL zeroes it.
+    std::atomic<uint32_t> humMilliHz[HUM_OSCS];
+    std::atomic<int32_t>  humLevelQ15[HUM_OSCS];
+    std::atomic<int32_t>  hissLevelQ15{0};
+
     // Status, written here after each block, read by the game loop.
     std::atomic<bool> fxBusy{false};            // an effect voice or the jingle
     std::atomic<bool> musicBusy{false};
@@ -172,11 +188,23 @@ public:
         const int32_t musicGain = music ? musicQ15.load(std::memory_order_relaxed) : 0;
         const int32_t fxGain = fx ? fxQ15.load(std::memory_order_relaxed) : 0;
 
+        int32_t humTarget[HUM_OSCS];
+        bool hum = false;
+        for (int o = 0; o < HUM_OSCS; ++o) {
+            humTarget[o] = fx ? humLevelQ15[o].load(std::memory_order_relaxed) : 0;
+            _humStep[o] = (uint32_t)(((uint64_t)humMilliHz[o].load(std::memory_order_relaxed) << 32)
+                                     / (OUT_RATE * 1000ull));
+            hum |= humTarget[o] > 0 || _humLevel[o] > 0;
+        }
+        const int32_t hissTarget = fx ? hissLevelQ15.load(std::memory_order_relaxed) : 0;
+        hum |= hissTarget > 0 || _hissLevel > 0;
+
         for (int i = 0; i < frames; ++i) {
             int32_t fxSum = 0;
             for (auto &v : _voices) if (v.pcm) fxSum += voiceSample(v);
             if (_streamOn[STREAM_JINGLE]) fxSum += streamSample(STREAM_JINGLE);
             if (_synthOn) fxSum += synthSample();
+            if (hum) fxSum += humSample(humTarget, hissTarget);
             int32_t musicSum = _streamOn[STREAM_MUSIC] ? streamSample(STREAM_MUSIC) : 0;
 
             int64_t mix = (int64_t)musicSum * musicGain + (int64_t)fxSum * fxGain;   // Q15
@@ -187,7 +215,12 @@ public:
         publishStatus();
     }
 
-    Mixer() { for (auto &u : underruns) u.store(0); }
+    Mixer() {
+        for (auto &u : underruns) u.store(0);
+        for (int o = 0; o < HUM_OSCS; ++o) { humMilliHz[o].store(0); humLevelQ15[o].store(0); }
+        for (int i = 0; i <= SINE_SIZE; ++i)
+            _sine[i] = (int16_t)lrintf(32767.0f * sinf(6.2831853f * (float)i / SINE_SIZE));
+    }
 
     // Host tests: how many voices are sounding.
     int activeVoices() const {
@@ -226,6 +259,14 @@ private:
     int        _melLen = 0, _melIdx = 0;
     bool       _melody = false;
 
+    // The hum's state. The sine table has one extra entry so interpolation
+    // never wraps.
+    static constexpr int SINE_SIZE = 256;
+    int16_t  _sine[SINE_SIZE + 1];
+    uint32_t _humPhase[HUM_OSCS] = {}, _humStep[HUM_OSCS] = {};
+    int32_t  _humLevel[HUM_OSCS] = {}, _hissLevel = 0;
+    uint32_t _hissSeed = 0x2545F491u;
+
     void drainCommands() {
         MixCmd c;
         while (fromGame.pop(c)) apply(c);
@@ -238,6 +279,9 @@ private:
             for (auto &v : _voices) stopVoice(v);
             for (int s = 0; s < STREAMS; ++s) _streamOn[s] = false;
             _synthOn = _melody = false;
+            for (int o = 0; o < HUM_OSCS; ++o) { humLevelQ15[o].store(0); _humLevel[o] = 0; }
+            hissLevelQ15.store(0);
+            _hissLevel = 0;
             return;
         }
         // Counted however it ends (played, dropped, fx off), so the game
@@ -382,6 +426,35 @@ private:
         if (_noteLeft > 0 && --_noteLeft == 0) {
             if (_melody) nextMelodyNote();
             else _synthOn = false;
+        }
+        return s;
+    }
+
+    static int32_t glide(int32_t cur, int32_t target) {
+        if (cur < target) return cur + HUM_RAMP < target ? cur + HUM_RAMP : target;
+        if (cur > target) return cur - HUM_RAMP > target ? cur - HUM_RAMP : target;
+        return cur;
+    }
+
+    // Two interpolated sines from the table, and xorshift noise for the hiss.
+    // 32-bit throughout (every product fits): no 64-bit maths per sample.
+    int32_t humSample(const int32_t* target, int32_t hissTarget) {
+        int32_t s = 0;
+        for (int o = 0; o < HUM_OSCS; ++o) {
+            _humLevel[o] = glide(_humLevel[o], target[o]);
+            if (_humLevel[o] > 0) {
+                const uint32_t i = _humPhase[o] >> 24, f = (_humPhase[o] >> 8) & 0xFFFF;
+                const int32_t a = _sine[i], b = _sine[i + 1];
+                const int32_t v = a + (((b - a) * (int32_t)f) >> 16);
+                s += (((v * HUM_AMP) >> 15) * _humLevel[o]) >> 15;
+            }
+            _humPhase[o] += _humStep[o];
+        }
+        _hissLevel = glide(_hissLevel, hissTarget);
+        if (_hissLevel > 0) {
+            _hissSeed ^= _hissSeed << 13; _hissSeed ^= _hissSeed >> 17; _hissSeed ^= _hissSeed << 5;
+            const int32_t n = (int16_t)(_hissSeed >> 16);
+            s += (((n * HISS_AMP) >> 15) * _hissLevel) >> 15;
         }
         return s;
     }

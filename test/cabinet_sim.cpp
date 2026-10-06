@@ -47,8 +47,9 @@ int main() {
     bool ok = true;
     // What each game takes while it runs (its object, built on launch; the
     // 3D games' scenes come on top, from the heap, and go on exit).
-    printf("game object sizes: Asteroids %zu, Brick %zu, Lander %zu, Maze %zu, Roll %zu, Runner %zu, Star %zu, Tank %zu, Tube %zu bytes\n",
-           sizeof(AsteroidFluxGame), sizeof(BrickFluxGame), sizeof(LanderFluxGame), sizeof(MazeFluxGame), sizeof(RollFluxGame),
+    printf("game object sizes: Asteroids %zu, Brick %zu, Lander %zu, Maze %zu, Resonance %zu, Roll %zu, Runner %zu, Star %zu, Tank %zu, Tube %zu bytes\n",
+           sizeof(AsteroidFluxGame), sizeof(BrickFluxGame), sizeof(LanderFluxGame), sizeof(MazeFluxGame), sizeof(ResonanceFluxGame),
+           sizeof(RollFluxGame),
            sizeof(PlatformFluxGame), sizeof(StarFluxGame), sizeof(TankFluxGame), sizeof(TubeFluxGame));
     setup();
     frames(30);

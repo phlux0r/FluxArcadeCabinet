@@ -1,6 +1,6 @@
 # Flux Arcade Cabinet v2.0
 
-ESP32-S3 handheld arcade cabinet: eight games (and a ninth's prototype) behind one launcher, all sharing
+ESP32-S3 handheld arcade cabinet: ten games behind one launcher, all sharing
 the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
@@ -9,6 +9,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
 | Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
+| Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
@@ -159,6 +160,47 @@ levels make a loop (16 layouts and the bosses); each loop is faster, the
 wall quicker, guns and bosses sharper, the bosses tougher, up to the
 fifth. `docs/design/BrickFlux.md` is the full design.
 
+**Resonance Flux** (`docs/design/ResonanceFlux.md`, with how it came to
+be as it is) is an original game, not a remake. The screen is a green phosphor oscilloscope. Your figure, in the
+middle, is a Lissajous curve: left/right steps its frequency ratio round
+the dial at the bottom, a stop at a time, and up/down turns its phase.
+The dial has a stop for each ratio the game has reached (just 1:2 and 1:1
+on wave 1) and goes round: right from the last stop is the first.
+Signals, amber figures of their own, weave in from the sides and corners.
+The nearest signal's stop is lit amber on the dial, so you can step
+straight to it. On a signal's ratio, turn to its exact shape and both
+glow white: A shatters it, worth more the further out it is. You hear your ratio's note
+and the nearest signal's: the same note when you're on its ratio. A
+signal that reaches you adds static (noise on the scope, hiss, and a
+wander in your phase); so does firing out of tune. At 100 static it's
+over. B dampens: everything slows for 4s, twice a wave (a cyan block top
+right for each charge left; the one spent drains while it lasts, and
+your figure's ring turns cyan). Waves bring more
+signals, a little faster (capped by about wave 20, as the screen is
+small), up to four at once, and more ratios, each a new stop on the dial (1:2 and
+1:1, then 1:3 and 2:3 on wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A
+line in the scope's bottom corner shows the phase gap to the signal on
+your stop, for tuning the tolerance.
+
+Every fifth wave is a **Chord** (with BOSSES on): one big figure of three
+ratios drawn over one another at the left or right edge, the brightest
+full and the other two faint. Match the brightest layer (its stop is
+marked red above the dial) and fire to strip it; it jumps to the other
+side and the next is the one. Fire in resonance with a faint layer
+(it shows green, not white) and the stripped layers come back. It sends
+ordinary signals in every 5s, two at a time at most. From wave 10 its
+layers drift slowly in phase; from wave 15 its middle layer swaps
+between two ratios every 3s. 300 a layer, 5,000 for bringing it down
+and 1,000 for each second under 45.
+
+Its options (B on the title, how-to or scores screens, saved on the
+cabinet): **RATIO HINT** (the amber stop) and **NOTES** (the two notes;
+the hiss stays) on or off, **PACE** calm, normal or fast (drift speed and
+how often signals come, x0.75 or x1.25), **BOSSES** (the Chords) and
+**DEBUG LINE**. Points are worth more with less help: x1.25 for each
+help off, x1.5 fast, x0.75 calm, multiplied together (the HUD shows the
+multiplier when it isn't 1).
+
 **Roll Flux** (`docs/design/RollFlux.md`): the stick tilts the course and
 the ball rolls that way (camera-relative: up rolls it away from you), to
 the chequered goal before the clock runs out. Ramps roll it up or down a
@@ -238,6 +280,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
+| Resonance | a random wave 1-8 (5 a Chord, with bosses on); takes the signal nearest the core, pauses a moment as a person would, steps the dial the shorter way round to its ratio, turns the phase to match and fires; dampens when one's about to get through |
 | Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights; at a guardian, it fills its dash meter from the arena's gems, then lines up on the lit weak point (leading a moving one) and dashes into it |
 
 ## Build
@@ -357,6 +400,17 @@ how-to or scores screens, hold B and press A; the stick picks the level
 there (a T before the score; nothing goes on the high-score table), B goes
 back.
 
+Resonance Flux: left/right steps the dial (the frequency ratio) a stop at
+a time, round from end to end; held, it repeats. Up/down turns the phase
+at a rate that follows how far you push, so letting go keeps it. A fires,
+B dampens. B pressed and let go on the title, how-to or scores screens
+opens the options: up/down picks a line, left/right or A changes it, B
+goes back. Wave select, for testing: on the same screens, hold B and
+press A; the stick picks the wave (left/right by one,
+up/down by five, from 1 to 20, each shown with its ratios, how many
+signals and how fast), A starts a test run there (a T before the score;
+nothing goes on the high-score table), B goes back.
+
 Roll Flux: the joystick tilts the course, camera-relative (up rolls the
 ball away from you), harder for a bigger push. Hold A (with a dash step)
 to charge the Flux Dash, let go to dash. Hold B and the stick turns the
@@ -454,6 +508,12 @@ FluxArcadeCabinet/
         │   ├── BrickBoard.h        # The brick grid and its creep
         │   ├── BrickBall.h         # Ball/capsule types, the bat's bounce maths
         │   └── BrickLevels.h       # Layouts, as text
+        ├── ResonanceFlux/      # Oscilloscope game, header-only:
+        │   ├── ResonanceFluxGame.h # Class, phases, tuning, signals, waves, the hum
+        │   ├── ResonanceConfig.h   # All tuning: dial, tolerances, waves, static
+        │   ├── ResonanceFigure.h   # Lissajous maths: ratios, phase symmetry
+        │   ├── ResonanceScope.h    # The afterglow planes, HUD, dial, title
+        │   └── ResonanceAutopilot.h # The harness's player
         ├── LanderFlux/         # LanderFluxGame.h (thin) + GameEngineLander.h,
         │                       # Ship.h, CavernObstacles.h + assets/
         ├── MazeFlux/           # MazeFluxGame.h + GameEngineMaze.h, generator,
@@ -522,6 +582,9 @@ At once it can play:
   any effect too long to cache), both streamed from SD
 - six effects (`playWAV`, PROGMEM fallbacks); a seventh replaces the oldest
 - the tone/melody synth (`playTone`, `playMelody`)
+- the hum (`setHum`, `setHiss`): two sine tones and a hiss that sound for
+  as long as they're set, gliding between pitches and levels without
+  clicks (Resonance Flux's tuning tones)
 
 Music and effects are separate buses, each switchable in the launcher's
 SETUP page, under a master volume. The sum is soft-clipped rather than
@@ -595,6 +658,7 @@ fetches the real files into an existing clone.
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 | `pickup.wav` (gem); optional sounds below | Roll Flux |
+| `explosion.wav` (a shattered signal, if no `res_shatter.wav`); optional sounds below | Resonance Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what
 the last column says. Mono 16-bit 44.1kHz, short (they're cached).
@@ -661,6 +725,27 @@ Roll Flux's optional sounds, the same again (none on the card yet):
 | `roll_boss_down.wav` | a guardian beaten | ~2.5s | `star_boss_die.wav` |
 | `roll_slam.wav` | the Piston's pistons slam | ~0.2s | a tone |
 
+Resonance Flux's optional sounds, the same again (none on the card yet).
+It has no music: the two notes of the hum are its soundtrack, and music
+would hide them. Keep these short and away from a steady pitch, so they
+don't muddle the notes.
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `res_title.wav` | the game's launched | ~0.6s | four rising notes |
+| `res_start.wav` | a game starts | ~0.2s | a tone |
+| `res_wave.wav` | a wave's signals start coming | ~0.4s | nothing |
+| `res_lock.wav` | resonance begins (both figures glow) | ~0.1s | nothing |
+| `res_shatter.wav` | a signal shattered | ~0.4s | `explosion.wav`, else a tone |
+| `res_miss.wav` | a misfire (out of tune) | ~0.2s | a low tone |
+| `res_hit.wav` | a signal reaches you | ~0.3s | a low tone |
+| `res_damp.wav` | dampen (B) | ~0.4s | a tone |
+| `res_clear.wav` | a wave cleared | ~0.8s | three rising notes |
+| `res_over.wav` | overload: game over | ~1.2s | a falling run of notes |
+| `res_chord_warn.wav` | a Chord's wave starts | ~1s | three low beeps |
+| `res_chord_hit.wav` | a Chord's layer stripped | ~0.3s | a tone |
+| `res_chord_down.wav` | a Chord brought down | ~2s | `star_boss_die.wav`, else a falling run of notes |
+
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to
 any other synth sound rather than cut it short.
@@ -695,6 +780,7 @@ test/build.sh tube god 30000 # one Tube Flux scenario
 test/build.sh star god 12000 # one Star Flux scenario
 test/build.sh brick play 20000   # one Brick Flux scenario
 test/build.sh roll play          # one Roll Flux scenario
+test/build.sh resonance match    # one Resonance Flux scenario
 test/build.sh profile 40000  # per-frame render cost by what was on screen
 DUMP_AT=500,4000 test/build.sh tube play 5000   # also write those frames as .ppm
 ```
@@ -704,6 +790,9 @@ important — what it cannot see (audio, how anything looks or plays, real
 timing, most of the older 2D games' play). Brick Flux has its own harness
 (`test/brickflux_harness.cpp`): play, the wall, the smash timing, tunnelling,
 polarity, the living bricks, every level and boss, and its attract demo.
+So does Resonance Flux (`test/resonanceflux_harness.cpp`):
+the figure maths, matching, autopilot play, quitting, its attract demo and
+the wave select.
 
 For timing on the actual hardware, uncomment `-DSHOW_FPS` in `platformio.ini`.
 It draws `fps avgMs/peakMs` in the corner and logs a fuller line to serial
@@ -730,8 +819,8 @@ slow frame:
 
 The 3D games scale their movement by measured frame time
 (`REFERENCE_FRAME_MS` in their config headers), so they play at the same
-speed whether running at 40 or 22fps. So does Brick Flux (its speeds are
-pixels per second, against the measured frame time). The other 2D games do
+speed whether running at 40 or 22fps. So do Brick and Resonance Flux
+(their speeds are pixels per second, against the measured frame time). The other 2D games do
 not; their speed still follows the frame rate.
 
 ## Adding a New Game

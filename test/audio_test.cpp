@@ -426,6 +426,68 @@ int main() {
         CHECK(r.loader.cacheBytes() <= 17000, "within budget: %u", (unsigned)r.loader.cacheBytes());
     }
 
+    // --- The hum: pitch, glide-in, beating between two close tones, and
+    //     mute / fx off stopping it.
+    {
+        Rig r;
+        r.mixer.humMilliHz[0] = 1000 * 1000;
+        r.mixer.humLevelQ15[0] = 32767;
+        auto out = r.run(100);
+        int peak = 0;
+        for (auto s : out) peak = std::max(peak, std::abs((int)s));
+        CHECK(peak > 0 && peak < HUM_AMP / 5, "glides in rather than clicking: %d", peak);
+        out = r.run(44100);
+        int crossings = 0;
+        for (size_t i = 1; i < out.size(); ++i) crossings += (out[i - 1] < 0) != (out[i] < 0);
+        CHECK(std::abs(crossings - 2000) <= 4, "1kHz: %d zero crossings in 1s", crossings);
+        peak = 0;
+        for (auto s : out) peak = std::max(peak, std::abs((int)s));
+        CHECK(std::abs(peak - HUM_AMP) < HUM_AMP / 50, "full level: %d", peak);
+
+        // 400 and 403Hz together beat at 3Hz: the 10ms loudness dips 3 times a second.
+        r.mixer.humMilliHz[0] = 400 * 1000;
+        r.mixer.humMilliHz[1] = 403 * 1000;
+        r.mixer.humLevelQ15[1] = 32767;
+        r.run(4410);
+        out = r.run(44100);
+        std::vector<int> env;
+        for (size_t w = 0; w + 441 <= out.size(); w += 441) {
+            int m = 0;
+            for (size_t i = w; i < w + 441; ++i) m = std::max(m, std::abs((int)out[i]));
+            env.push_back(m);
+        }
+        int dips = 0;
+        bool low = false;
+        for (int e : env) {
+            if (!low && e < HUM_AMP / 2) { low = true; ++dips; }
+            else if (low && e > HUM_AMP) low = false;
+        }
+        CHECK(dips == 3, "3Hz beating: %d dips in 1s", dips);
+
+        r.mute();
+        out = r.run(1000);
+        CHECK(nonZero(out) == 0 && r.mixer.humLevelQ15[0] == 0 && r.mixer.humLevelQ15[1] == 0,
+              "mute stops the hum");
+
+        r.mixer.humLevelQ15[0] = 32767;
+        r.mixer.hissLevelQ15 = 32767;
+        out = r.run(4000);
+        long sum = 0;
+        for (auto s : out) sum += s;
+        CHECK(nonZero(out) > 3000, "hum and hiss back after a mute when set again");
+        r.mixer.humLevelQ15[0] = 0;
+        r.run(2000);
+        out = r.run(44100);
+        sum = 0; peak = 0;
+        for (auto s : out) { sum += s; peak = std::max(peak, std::abs((int)s)); }
+        CHECK(peak > HISS_AMP / 2 && std::labs(sum / (long)out.size()) < 200, "hiss: peak %d, mean %ld",
+              peak, sum / (long)out.size());
+        r.mixer.fxOn = false;
+        r.run(2000);
+        out = r.run(1000);
+        CHECK(nonZero(out) == 0, "fx off fades the hum out");
+    }
+
     printf("audio_test: %d passed, %d failed; allocations outstanding in the last rig: %d\n",
            g_pass, g_fail, g_allocs);
     printf("%s\n", g_fail ? "FAIL" : "PASS");

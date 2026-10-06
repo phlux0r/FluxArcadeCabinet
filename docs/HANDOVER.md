@@ -5,10 +5,21 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at 15126e2)
+## State (main at the Resonance merge)
 
-Nine games, all merged and played on the board: Asteroid, Brick, Lander,
-Maze, Roll, Runner (Platform Flux), Star, Tank, Tube.
+Ten games, all merged and played on the board: Asteroid, Brick, Lander,
+Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
+
+- **Resonance Flux** (the tenth, original: an oscilloscope where you match
+  Lissajous figures by eye and by ear) is finished: the stepped dial of
+  ratios, signals weaving in, static, dampen, Chord bosses every fifth
+  wave, the attract cycle and demo, a wave select, options (ratio hint,
+  notes, pace, bosses, debug line) with a score multiplier, optional
+  WAVs. It brought the mixer's hum (two sine tones and a hiss). The
+  owner played it to wave 14 and tuned it over several rounds;
+  docs/design/ResonanceFlux.md has the design and that history. Still to
+  check on the board: `pio run`'s size line and the frame rate (the
+  afterglow touches ~34kB a frame).
 
 - **Roll Flux** (the ninth, 3D marble) is finished: 20 courses in four
   worlds, a guardian ending each, the Prism Works' colour pieces, the Flux
@@ -22,11 +33,12 @@ Maze, Roll, Runner (Platform Flux), Star, Tank, Tube.
   how-to or scores screens, hold B and press A; the stick picks the course
   or level, A starts a test run (an orange T before the score, nothing put
   on the high-score table), B goes back. Harness scenario `pick` in both.
-- The full suite was 60 PASS at the last push.
+- The full suite was 60 PASS before Resonance; since then, by the owner's
+  choice, only the harnesses a change touches run before a push (CLAUDE.md).
 
 ## Open
 
-- **Sounds.** Roll's and Brick's own effect WAVs aren't on the card yet;
+- **Sounds.** Roll's, Brick's and Resonance's own effect WAVs aren't on the card yet;
   the fallback tones are good enough for now and the owner will make the
   WAVs another time. README.md's audio section lists every file each game
   looks for.

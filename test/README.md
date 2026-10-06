@@ -1,4 +1,4 @@
-# Host harnesses (Tank Flux, Tube Flux, Star Flux, Brick Flux)
+# Host harnesses (Tank Flux, Tube Flux, Star Flux, Brick Flux, Roll Flux, Resonance Flux)
 
 Run the 3D games' real game logic and the real Jet rasteriser on a desktop,
 so a change can be checked without flashing the board. The point is regression
@@ -101,6 +101,33 @@ with `levels` or `boss`, it writes those frames of every level
 Host µs compare runs with each other (and with Tube's `profile`, whose
 cost runs at ~30fps on the board), not with a frame budget.
 
+## Resonance Flux
+
+`test/resonanceflux_harness.cpp`, run with `test/build.sh resonance
+<scenario>`. Its bot is the game's own autopilot
+(`ResonanceAutopilot.h`). Each prints PASS/FAIL.
+
+| Scenario | What it checks |
+|---|---|
+| `figure` | The figure maths, against densely sampled curves: phases a multiple of 2π/b apart, and phases mirrored about π − aπ/b, draw the same figure; a phase gap bounds how far apart the figures are (so the phase tolerance is a bound in pixels); phases three tolerances apart look visibly different; the ratios are in dial order |
+| `match` | Wave 1's dial is two stops (1:2, 1:1) and wave 3's four; resonance needs your stop on the signal's ratio and the phase inside the tolerance, a third of a turn round counting for 2:3; on the next stop it's no match, and the signal is only marked as nearest the core; a small push doesn't step, a push steps one stop, right from the last goes to the first and left from the first to the last, and held it steps once then repeats; up turns the phase and it holds when let go; on a signal's stop you hear its note; a misfire costs static and holds the next shot back; a shot in resonance shatters and scores, and the focus moves off it; a signal at the core adds static; dampen on the HUD: a block per charge, the one spent draining over the slowdown and gone after, the core's ring cyan meanwhile; high static makes your phase wander, and it settles after; a swaying signal strays from the straight line in and arrives later; 400 spawns all start on the sides or near the corners, 40px or more out; a new wave's stops keep you on your ratio; the nearest signal's stop is lit amber on the dial (not yours); the pace through wave 20 (speed capped, four at once at most, arrivals 2.5s apart, over 5s from the nearest start); static at 100 ends the game |
+| `play [N]` | The autopilot plays real games for N frames (default 20000), restarting through name entry and game over: static stays in 0-100, the score never drops within a game, at least three waves are cleared, and shatters outnumber signals let through three to one |
+| `quit` | The title waits for A; Back mid-game (`onQuit()`, `onExit()` freeing the scope's planes, `init()`) puts the score on the table, and a clean game after |
+| `idle [N]` | No input (default 3000 frames): title, the three how-to slides and the scores, then the demo (the autopilot shattering signals, making no sound) and back to the title, the high scores untouched |
+| `demoexit` | A mid-demo: a real game starts clean (wave 1's two stops, no score, no static, no signals, sound back on) |
+| `sounds` | The optional WAVs: with no card each event's tone, melody or nothing; `explosion.wav` for a shatter when it's there and `res_shatter.wav` isn't; with every file on the card, a misfire, resonance beginning, a shatter, a signal reaching you, dampen, a wave cleared, the next wave starting and overload each ask for their own file |
+| `options` | The how-to slides clear the bands above and below the scope (the last screen's lines once showed under theirs); B pressed and let go on the title opens the options and B there goes back, while B held with A is still the wave select and letting B go there opens nothing; right turns the ratio hint off, down and right the notes, the pace steps round both ways, bosses goes off and on again, A turns the debug line off; the score multiplier for those (x1.25 x1.25 x1.5); saved and back after `init()`; in play, no amber on the dial, neither note, 1.25x the drift, a shatter scoring its points times the multiplier; then the defaults back |
+| `chord` | The boss: no Chord on wave 4, one on wave 5 (three different ratios, no wave signals of its own), none with bosses off; the brightest layer in resonance and fired strips it, scores and moves it to the other side; a dimmer one fired at brings the stripped layer back with static; escorts come while it's up, two at most; wave 10's layers drift, wave 15's middle layer swaps ratio; the autopilot (static pinned) brings down waves 5, 10, 15 and 20's and the wave clears |
+| `pick` | The wave select: B held with A on the title opens it (B still held doesn't close it); the stick steps the wave by one and by five, wrapping 1-20; B goes back; A starts a test run on the chosen wave (fresh, its stops), whose game over skips the name entry and whose quit saves nothing, and A at its game over starts the same wave again; plain A still starts wave 1; left alone the picker goes back to the title |
+
+`DUMP_AT=6000,6300 test/build.sh resonance play 6301` writes
+`resonance_006000.ppm` etc.; with `idle`, `resonance_idle_<frame>.ppm`
+(each attract slide lasts ~182 frames: title from 0, the how-to slides
+from ~182, ~364 and ~546, scores ~728, then the demo), and with `pick`,
+`resonance_pick_<frame>.ppm`. The harness builds the game against the real
+(inert) audio engine, so it can't hear the hum; `audio_test` checks the
+mixer's side of it (pitch, glide, a 3Hz beat from 400 and 403Hz, mute).
+
 ## Looking at frames
 
 The GFX stub keeps a real framebuffer, so any frame can be written out:
@@ -146,7 +173,8 @@ being freed on exit to the launcher).
 - **Audio output.** The game harnesses use `stub/cabinet/AudioEngine.h`,
   which only counts calls. `audio_test.cpp` does test the real mixer and
   loader logic (mixing, clipping, voice stealing, the synth, WAV parsing,
-  resampling, caching, streaming and seamless loops, mute ordering) against
+  resampling, caching, streaming and seamless loops, mute ordering, the hum's
+  pitch, glide and beating) against
   WAV files it writes to a temp dir. What neither sees is the device glue in
   `src/cabinet/AudioEngine.h`: I2S, the FreeRTOS tasks, the SD card, timing.
   The stub was blind to the bug where the engine's shared task state was
@@ -173,6 +201,7 @@ test/
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
+├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout
