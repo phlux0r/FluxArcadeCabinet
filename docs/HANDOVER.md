@@ -51,10 +51,13 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   way.
 - **Particle trails** (branch `claude/particle-trails`, not merged yet):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
-  a particle with one keeps its last positions and render() draws lines
-  back through them at 1/2, 1/4, 1/8 brightness, a step dimmer in the last
-  third of its life. On in Asteroid (every burst, plus a new engine
-  exhaust off the ship each frame) and Lander (crash and fuel-pickup
+  a particle with one keeps its last positions, and how bright it was at
+  each, and render() draws lines back through them, falling off to about
+  70%, 45%, 25% and 12%. To look like Resonance's afterglow, a trailed
+  spark dims to a quarter over the last 40% of its life (no white flash) and
+  its trail lingers and drains for a few updates after it. On in Asteroid
+  (every burst, plus an engine exhaust off the ship each frame, shortened
+  once after the owner found it busy) and Lander (crash and fuel-pickup
   sparks 4, the thrust plume 2). Lander's particles were updated twice a
   frame while the ship broke up, so the debris flew at double speed; now
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;

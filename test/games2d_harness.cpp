@@ -228,11 +228,17 @@ int main(int argc, char** argv) {
             static ParticleManager pm;
             pm.clearAll();
             pm.spawnFire(40, 60, 2.0f, 0.0f, ArcadeConfig::COLOR_WHITE, trail);
-            for (int f = 0; f < 5; ++f) { pm.update(); g_fakeMillis += STEP_MS; }
+            pm._pool[0].expireMs = g_fakeMillis + 1000;   // well before its fade
+            pm._pool[0].totalLifeMs = 1000;
+            for (int f = 0; f < 4; ++f) { pm.update(); g_fakeMillis += STEP_MS; }
             canvas.fillScreen(0);
             pm.render(canvas);
             int dim, n = lit(canvas, dim);
-            const bool good = trail ? n >= 6 && dim == n - 1 : n == 1;
+            // Along the row, dimmer and dimmer back from the spark.
+            bool fades = true;
+            const uint16_t* row = canvas.getBuffer() + 60 * canvas.width();
+            for (int x = 41; x <= 47; ++x) fades &= (row[x] & 0x1F) >= (row[x - 1] & 0x1F);
+            const bool good = trail ? n >= 6 && dim == n - 1 && fades : n == 1;
             printf("trails %d: %d pixels lit, %d dimmed -> %s\n", trail, n, dim, good ? "PASS" : "FAIL");
             pass &= good;
         }
@@ -247,6 +253,49 @@ int main(int argc, char** argv) {
         for (int y = 0; y < 11; ++y) for (int x = 0; x < canvas.width(); ++x) above += canvas.getBuffer()[y * canvas.width() + x] != 0;
         printf("trails clip: %d pixels above the HUD line -> %s\n", above, above == 0 ? "PASS" : "FAIL");
         ok &= pass && above == 0;
+
+        // Fading like Resonance's afterglow: a spark with a trail dims out
+        // at the end of its life rather than flashing white, and its trail
+        // lingers a few frames after it, dimming, then goes. One without
+        // still ends in white.
+        auto brightest = [&](int &n) {
+            int top = 0; n = 0;
+            const uint16_t* b = canvas.getBuffer();
+            for (int i = 0; i < canvas.width() * canvas.height(); ++i)
+                if (b[i]) { ++n; if ((b[i] & 0x1F) > top) top = b[i] & 0x1F; }
+            return top;
+        };
+        pm.clearAll();
+        pm.spawnFire(40, 60, 2.0f, 0.0f, ArcadeConfig::COLOR_WHITE, 4);
+        auto &sp = pm._pool[0];
+        sp.expireMs = g_fakeMillis + 150;   // the shortest fire life
+        sp.totalLifeMs = 150;
+        int frames = 0, white = 0, n = 0, after = 0, lingered = 0, top = 31;
+        bool dimming = true;
+        while (sp.active && frames < 100) {
+            const bool expired = g_fakeMillis >= sp.expireMs;
+            pm.update();
+            g_fakeMillis += STEP_MS;
+            ++frames;
+            canvas.fillScreen(0);
+            pm.render(canvas);
+            const int b = brightest(n);
+            for (int i = 0; i < canvas.width() * canvas.height(); ++i) white += canvas.getBuffer()[i] == ArcadeConfig::COLOR_WHITE && g_fakeMillis + 40 > sp.expireMs;
+            if (expired && sp.active) { ++after; lingered += n > 0; dimming &= b <= top; }
+            top = b;
+        }
+        bool good = !sp.active && white == 0 && after >= 2 && lingered >= 2 && dimming;
+        printf("trails fade: %d frames after expiry, %d of them lit, dimming %d, white flashes %d -> %s\n",
+               after, lingered, (int)dimming, white, good ? "PASS" : "FAIL");
+        ok &= good;
+        pm.clearAll();
+        pm.spawnFire(40, 60, 0.0f, 0.0f, ArcadeConfig::COLOR_AMBER, 0);
+        g_fakeMillis = pm._pool[0].expireMs - 40;
+        canvas.fillScreen(0);
+        pm.render(canvas);
+        good = canvas.getBuffer()[60 * canvas.width() + 40] == ArcadeConfig::COLOR_WHITE;
+        printf("trails none: a spark without one still ends white -> %s\n", good ? "PASS" : "FAIL");
+        ok &= good;
     }
     return ok ? 0 : 1;
 }

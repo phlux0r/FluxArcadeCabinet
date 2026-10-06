@@ -190,8 +190,11 @@ being freed on exit to the launcher).
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay; besides those it
   checks Lander's crash debris moves one step a frame (`lander`), and
-  `ParticleManager`'s trails (`trails`: a spark with one leaves a dimmer
-  line behind it, one without doesn't, and neither crosses the HUD line).
+  `ParticleManager`'s trails (`trails`: a spark with one leaves a line
+  behind it, dimmer back along it, one without doesn't, and neither
+  crosses the HUD line; a trailed spark dims out instead of flashing white
+  and its trail lingers a few updates after it, still dimming, while one
+  without a trail still ends white).
   `DUMP_AT=1557,1617 test/build.sh games2d asteroid 1700` writes those idle
   frames as `asteroid_01557.ppm` etc. (likewise `runner_`, `lander_`).
 

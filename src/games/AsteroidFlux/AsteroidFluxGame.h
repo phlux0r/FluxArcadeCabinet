@@ -393,7 +393,7 @@ public:
             // Exhaust: a spark off the engine flame each frame, streaking
             // back past the field as it scrolls by.
             _particles.spawnFire(_ship.getX(), (float)_ship.getY() + 4.5f,
-                                 -random(15, 26) * 0.1f, random(-2, 3) * 0.05f, 0, 3);
+                                 -random(8, 17) * 0.1f, random(-2, 3) * 0.05f, 0, 2);
 
             _powerUps.update(_score, _ship, _lives, uiNeedsUpdate, audio, _asteroids);
             _asteroids.update(_ship, _score, _asteroidsPassed, _nextTargetScore,
