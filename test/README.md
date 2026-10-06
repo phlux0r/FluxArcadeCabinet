@@ -190,7 +190,12 @@ being freed on exit to the launcher).
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay; besides those it
   checks Lander's crash debris moves one step a frame and its gravity by
-  level (gentle on level 1, rising every level to 20) (`lander`), and
+  level (gentle on level 1, rising every level to 20) (`lander`); its
+  flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
+  spooling up over 8 steps and down over 5-6, the ship turning to the
+  stick at 180 degrees a second and ignoring an off-centre raw reading,
+  and the landing rule case by case: down under 1.0, sideways under 0.5,
+  tilt under 15 degrees, an empty tank still landing); and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

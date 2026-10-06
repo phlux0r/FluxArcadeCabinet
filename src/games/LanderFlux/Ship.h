@@ -8,9 +8,13 @@
 
 // =============================================================================
 // LANDER FLUX — SHIP
-// Physics are original per-frame constants — no delta-time.
-// The engine throttles to 50fps (20ms/frame) so these constants produce
-// identical behaviour to the original standalone delay(20) loop.
+// Physics are per-step constants, no delta-time: the engine runs them in
+// fixed 20ms steps (50 a second), whatever the frame rate.
+//
+// The engine spools: A held brings it up to full over SPOOL_UP_STEPS, let
+// go it dies away over SPOOL_DOWN_STEPS, so a tap gives a nudge rather than
+// a full kick. The ship turns towards the angle the stick asks for at
+// TURN_PER_STEP, not snapping to it.
 // =============================================================================
 
 class Ship {
@@ -18,6 +22,10 @@ public:
     float x, y;
     float vx, vy;
     float thrustAngle;
+    float engine = 0.0f;              // 0 (off) to 1 (full thrust)
+    static constexpr float SPOOL_UP_STEPS   = 7.5f;    // 150ms to full
+    static constexpr float SPOOL_DOWN_STEPS = 5.0f;    // 100ms to off
+    static constexpr float TURN_PER_STEP    = PI / 50.0f;   // 180 degrees a second
     int   lives;
     float fuel;
     bool  isDisintegrating;
@@ -49,6 +57,8 @@ public:
         vx = 0.0f;
         vy = 0.0f;
         fuel = 100.0f;
+        thrustAngle = 0.0f;
+        engine = 0.0f;
         isDisintegrating = false;
     }
 
@@ -59,19 +69,24 @@ public:
         particles.triggerExplosion(x, y, 60, 4);
     }
 
-    // Original per-frame physics — called only when engine timer fires (~50fps)
-    void updatePhysics(bool isThrusterFiring, float dialAngle,
+    // One physics step (20ms). targetAngle is where the stick points
+    // (radians, 0 = upright); thrustPower is the engine at full.
+    void updatePhysics(bool isThrusterFiring, float targetAngle,
                        float gravity, float thrustPower,
                        ParticleManager &particles) {
-        thrustAngle = dialAngle;
+        thrustAngle += constrain(targetAngle - thrustAngle, -TURN_PER_STEP, TURN_PER_STEP);
+        const bool firing = isThrusterFiring && fuel > 0.0f;
+        engine = firing ? min(1.0f, engine + 1.0f / SPOOL_UP_STEPS)
+                        : max(0.0f, engine - 1.0f / SPOOL_DOWN_STEPS);
         vy += gravity;
 
-        if (isThrusterFiring && fuel > 0.0f) {
-            vx += thrustPower * sin(thrustAngle);
-            vy -= thrustPower * cos(thrustAngle);
-            fuel -= 0.4f;
+        if (engine > 0.0f) {
+            vx += thrustPower * engine * sin(thrustAngle);
+            vy -= thrustPower * engine * cos(thrustAngle);
+            fuel -= 0.4f * engine;           // burns as hard as it pushes
             if (fuel < 0.0f) fuel = 0.0f;
-
+        }
+        if (firing) {
             if (random(0, 10) > 2) {
                 float fireVX = -sin(thrustAngle) * 1.5f + (random(-3, 3) * 0.1f);
                 float fireVY =  cos(thrustAngle) * 1.5f + (random(0, 3)  * 0.1f);
@@ -87,7 +102,9 @@ public:
         if (y < 4) { y = 4; vy = 0; }
     }
 
-    void render(GFXcanvas16 &canvas, bool isThrusterFiring, float safeSpeedThreshold) {
+    // safeToLand: whether touching down now would be a landing (the hull
+    // flashes green near the ground if so, red if not).
+    void render(GFXcanvas16 &canvas, bool isThrusterFiring, bool safeToLand) {
         if (isDisintegrating) return;
 
         float cosA = cos(thrustAngle);
@@ -111,8 +128,7 @@ public:
         uint16_t hullFillColor    = ArcadeConfig::COLOR_CYAN;
 
         if (y >= (ArcadeConfig::PORTRAIT_HEIGHT - 45)) {
-            float totalSpeed = sqrt((vx * vx) + (vy * vy));
-            if (totalSpeed < safeSpeedThreshold) {
+            if (safeToLand) {
                 hullOutlineColor = (millis() % 300 < 150) ? ArcadeConfig::COLOR_GREEN   : ArcadeConfig::COLOR_MAGENTA;
             } else {
                 hullOutlineColor = (millis() % 300 < 150) ? ArcadeConfig::COLOR_RED     : ArcadeConfig::COLOR_MAGENTA;

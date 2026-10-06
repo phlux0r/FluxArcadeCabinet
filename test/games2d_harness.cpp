@@ -229,6 +229,94 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "landerphys")) {
+        // Lander's flight: the engine a fixed 2.8x gravity on every level,
+        // spooling up and down rather than all or nothing; the ship turning
+        // towards the stick at a limited rate (the normalised stick, with
+        // its deadzone, not the raw reading); and the landing rule: down
+        // under 1.0, sideways under 0.5, tilt under 15 degrees, fuel or not.
+        static LanderFluxGame l;
+        AudioEngine audio;
+        auto &e = l._engine;
+        l.init(audio);
+        e.startGame(audio);
+        auto &s = e._lander;
+        ParticleManager &pm = e._particles;
+        bool pass = true;
+        for (int lv : { 1, 20 }) {
+            e._level = lv; e.initLevel();
+            s.y = 60; s.vx = s.vy = 0;
+            for (int k = 0; k < 20; ++k) s.updatePhysics(true, 0, e._currentGravity, e.thrustPower(), pm);
+            const float v0 = s.vy;
+            s.updatePhysics(true, 0, e._currentGravity, e.thrustPower(), pm);
+            const float ratio = 1.0f - (s.vy - v0) / e._currentGravity;   // thrust / gravity
+            const bool good = fabsf(ratio - 2.8f) < 0.02f;
+            printf("landerphys ratio: level %d, thrust %.2fx gravity -> %s\n", lv, ratio, good ? "PASS" : "FAIL");
+            pass &= good;
+        }
+        e._level = 1; e.initLevel();
+        s.y = 60; s.vx = s.vy = 0;
+        float v0 = s.vy;
+        s.updatePhysics(true, 0, e._currentGravity, e.thrustPower(), pm);
+        const float first = 1.0f - (s.vy - v0) / e._currentGravity;
+        int up = 1;
+        while (s.engine < 1.0f && up < 30) { s.updatePhysics(true, 0, e._currentGravity, e.thrustPower(), pm); ++up; }
+        int down = 0;
+        while (s.engine > 0.0f && down < 30) { s.updatePhysics(false, 0, e._currentGravity, e.thrustPower(), pm); ++down; }
+        bool good = first < 0.6f && up >= 6 && up <= 9 && down >= 4 && down <= 6;
+        printf("landerphys spool: first step %.2fx gravity, full after %d steps, off after %d -> %s\n",
+               first, up, down, good ? "PASS" : "FAIL");
+        pass &= good;
+
+        auto frame = [&](float stick, int raw) {
+            InputState in{}; in.joyX = stick; in.rawJoyX = raw; in.rawJoyY = 2048;
+            l.update(canvas, in, audio);
+            g_fakeMillis += 20;
+        };
+        e._level = 1; e.initLevel();
+        for (int f = 0; f < 3; ++f) frame(0, 2048);
+        for (int f = 0; f < 10; ++f) { frame(0, 2350); s.y = 40; s.vy = 0; }   // stick at rest, off centre
+        const float rest = s.thrustAngle;
+        frame(1.0f, 4095); s.y = 40; s.vy = 0;
+        const float oneStep = s.thrustAngle;
+        int turn = 1;
+        while (s.thrustAngle < PI / 4 - 0.001f && turn < 40) { frame(1.0f, 4095); s.y = 40; s.vy = 0; ++turn; }
+        good = rest == 0.0f && oneStep > 0.0f && oneStep < 0.07f && turn >= 11 && turn <= 14;
+        printf("landerphys steer: at rest %.3f, one step %.3f rad, 45 degrees after %d steps -> %s\n",
+               rest, oneStep, turn, good ? "PASS" : "FAIL");
+        pass &= good;
+
+        // Landing: the ship just above the pad's middle, one step to touch down.
+        struct Case { const char* what; float vx, vy, deg, fuel; bool lands; };
+        const Case cases[] = {
+            { "gentle",          0.0f, 0.8f,  0, 50, true  },
+            { "down too fast",   0.0f, 1.1f,  0, 50, false },
+            { "sideways drift",  0.3f, 0.6f,  0, 50, true  },
+            { "sideways fast",   0.7f, 0.6f,  0, 50, false },
+            { "tilted a little", 0.0f, 0.6f, 10, 50, true  },
+            { "tilted too far",  0.0f, 0.6f, 22, 50, false },
+            { "out of fuel",     0.0f, 0.6f,  0,  0, true  },
+        };
+        for (const Case &c : cases) {
+            e._level = 3; e.initLevel();
+            e._isGameOver = false; s.lives = 3;
+            frame(0, 2048);
+            const float px = e._padX + e._padWidth / 2.0f;
+            int seg = (int)px / e._groundStepX;
+            const float floorY = e._groundY[seg] + (px - seg * e._groundStepX) / e._groundStepX * (e._groundY[seg + 1] - e._groundY[seg]);
+            s.x = px; s.y = floorY - 4 - c.vy * 0.5f; s.vx = c.vx; s.vy = c.vy - e._currentGravity;
+            s.thrustAngle = c.deg * PI / 180.0f + 0.0628f * (c.deg > 0);   // turns back a step first
+            s.fuel = c.fuel;
+            for (int f = 0; f < 3 && !e._isGameOver && !s.isDisintegrating; ++f) frame(0, 2048);
+            const bool landed = e._isGameOver && !s.isDisintegrating;
+            good = landed == c.lands && (landed || s.isDisintegrating);
+            printf("landerphys land %-15s -> %s, %s\n", c.what, landed ? "landed" : s.isDisintegrating ? "crashed" : "neither",
+                   good ? "PASS" : "FAIL");
+            pass &= good;
+        }
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "trails")) {
         // A spark with a trail leaves dimmer pixels behind it, in a line
         // back along its path; one without leaves just the spark.
