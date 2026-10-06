@@ -128,6 +128,35 @@ from ~182, ~364 and ~546, scores ~728, then the demo), and with `pick`,
 (inert) audio engine, so it can't hear the hum; `audio_test` checks the
 mixer's side of it (pitch, glide, a 3Hz beat from 400 and 403Hz, mute).
 
+## Maze Flux
+
+`test/mazeflux_harness.cpp`, run with `test/build.sh maze <scenario>`. Its
+bot is the game's own autopilot (`GameEngineMaze::autopilot()`, which
+plays the attract demo): it walks the shortest open way to the next key (lowest colour first),
+then the exit, never through a teleport pad it isn't heading for; at a
+trap's line of fire it waits for a gap (type A) or presses A for the
+switch (type B). Each prints PASS/FAIL.
+
+| Scenario | What it checks |
+|---|---|
+| `layout` | Levels 1-20, four mazes each: a key per door plus the exit's, each in its stretch and reachable once the doors before it are open; with doors shut the exit can't be reached; nothing outside the maze, on the exit, within three steps of the start or two on one cell; no bomb that reaches the start; every trap with three or more cells of lane, none through the start's surroundings; teleport pads paired, in one stretch, apart and in dead ends; the clock sized to the maze |
+| `doors` | A shut door stops you; collecting its key opens it and you go through |
+| `bullets` | Three thousand frames of levels 9-15 at frame times from 17 to 56ms: every cell a bullet enters, it enters through an open way, and its cell matches its position; 300ms of flight covers the same distance at 17ms and 50ms frames |
+| `death` | A bullet: the pause, then a life gone, back at the start, safe (a bullet on you does nothing), then hit again once that's over; the clock: a life gone and the clock back to the level's time; a bomb you stand by goes off after its fuse and costs a life |
+| `teleport` | Walking onto a pad puts you on its partner, and you stay there |
+| `complete` | Keys and the exit score as the rules say; the level-complete screen ignores A held through it and goes on at a fresh press |
+| `buffer` | A push towards a side passage, made mid-step and let go, is taken at the next cell |
+| `passing` | Levels 1-12, straight runs of four or more cells walked with the stick held at uneven frame times: every cell passed is marked (breadcrumbs), and a key and a boost on the way are collected, the key only once the player has reached its cell (not as the step before it ends) |
+| `play [N]` | The bot plays from level 1 for N frames (default 60000), lives pinned: it must reach level 15 losing no more than five lives (so no level is unfair to careful play), and the score never drops |
+| `quit` | Back mid-game puts the score on the table |
+| `idle` | No input for two minutes: title, how-to, scores, then the demo (a level 2-8, about 35s), back to the title and round again; A held from the menu ignored, the table untouched, sound on afterwards |
+| `demoexit` | A mid-demo starts a real game at level 1, score 0, three lives, at the start, sound on |
+| `pick` | The stage select: B held with A on the title opens it; the stick steps by one and five, wrapping 1-30, loading each maze; A starts a test run there, whose game over skips the name entry and whose A starts the same level again; its quit saves nothing; B goes back, and plain A still starts level 1 |
+| `map` | B held shows the map; you don't move while it's up but the clock goes on; only cells that have been on screen are drawn (the far corner black); letting go closes it |
+
+`DUMP_AT=300,9000 test/build.sh maze play 9001` writes `maze_000300.ppm`
+etc. `MAZE_TRACE=1` prints the bot's progress and every life lost.
+
 ## Looking at frames
 
 The GFX stub keeps a real framebuffer, so any frame can be written out:
@@ -226,6 +255,7 @@ test/
 ├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
+├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot
 ├── brickflux_harness.cpp       # Brick Flux: play, wall, smash, tunnelling, polarity, living bricks, levels, bosses, demo
 ├── cabinet_sim.cpp             # all of main.cpp: launch every game, quit it with Back (B and a short Back mustn't); a Back quit records the score; menu scrolling; idle score cycle
 ├── hiscore_test.cpp            # high-score tables: storage, carry-over, ranking, name entry, timeout

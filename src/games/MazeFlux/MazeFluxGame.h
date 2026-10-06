@@ -18,17 +18,7 @@ public:
     bool update(GFXcanvas16 &canvas,
                 const InputState &input,
                 AudioEngine &audio) override {
-        return _engine.update(
-            canvas,
-            input.btnA,
-            input.btnB,
-            input.joyUp,
-            input.joyDown,
-            input.joyLeft,
-            input.joyRight,
-            audio,
-            input
-        );
+        return _engine.update(canvas, audio, input);
     }
 
     void onQuit(AudioEngine &audio) override { _engine.onQuit(audio); }

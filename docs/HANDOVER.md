@@ -97,9 +97,29 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lane and steer away from any about to cross them (AsteroidManager::
   dodge(), 14 frames ahead; boxed in or at the top or bottom, forwards or
   back). Feel and balance need the board.
-- **Maze has no attract demo, and that stays.** The owner doesn't want
-  one: it isn't an exciting game to watch. Maze's attract cycle is title,
-  how-to-play and the table.
+- **Maze redesign** (branch `claude/maze-redesign`, not merged yet): a
+  review found doors that blocked nothing, bullets through walls at a
+  cell a frame, teleports that rebuilt the level, instant silent deaths
+  and badly placed items; all fixed, plus a harness
+  (test/mazeflux_harness.cpp: layout, doors, bullets, death, teleport,
+  complete, buffer, wayfinding, a bot to level 15+, quit, idle). The bot
+  also found design flaws, fixed: type A traps couldn't be walked
+  against, type B's switch was out of reach from the far end, pads on a
+  way through couldn't be passed. Then the owner's redesign: 16px cells,
+  4px textured walls with a theme a level, a sprite explorer, smooth
+  movement with a remembered push, an easing camera with look-ahead,
+  mazes growing from 10x12 to 24x30, loops, breadcrumbs and a compass.
+  README.md's Maze Flux paragraph has the rules. Needs the board: frame
+  rate (host cost doubled with the textured walls, 22 to ~50us), feel,
+  the clock's tuning, the themes' colours. Then, after the owner played
+  it: cells passed with the stick held weren't marked or their items
+  collected (fixed: PlayerMaze::arrivedX/Y), and the rest of the list:
+  a map on B (seen cells only; you stand still, the rest goes on), a
+  square per key in the HUD, the stage select (B held with A on the
+  title), optional maze_door/maze_switch/maze_teleport.wav, and the
+  attract demo (the harness's bot, moved into the game as autopilot()).
+- **Maze now has an attract demo**, at the owner's request (it had been
+  left out as dull to watch; at the new scale it isn't).
 - Flash is the tight limit (huge_app, ~3MB). Before adding assets or a new
   game, ask the owner for `pio run`'s size line; a cloud session can't
   build for the board.

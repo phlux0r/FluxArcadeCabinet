@@ -48,7 +48,6 @@ so far has:
 - an attract cycle: title, how-to-play, its high-score table, then a
   silent autopilot demo (`audio.setSilenced(true)`; nothing from a demo is
   scored or saved), A starting a real game from any of them;
-  (Maze is the exception and stays one: no demo, by the owner's choice);
 - a 3-letter name entry at game over via `hiscore::ScoreBoard`, `record()`
   on a mid-game quit, and its best on the title;
 - quitting is main.cpp's (hold Back, GPIO 18, for 1s): the game implements
