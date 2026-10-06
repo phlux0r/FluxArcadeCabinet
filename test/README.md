@@ -193,7 +193,11 @@ being freed on exit to the launcher).
   Asteroid's Fire power-up (`fire`: A shoots nothing without it; with
   it a bolt breaks an asteroid ahead, scoring and counting as passing it
   would; the HUD line is orange for the time left and green again after
-  20s, when A stops shooting; Fire is never rolled below 500 points), and
+  20s, when A stops shooting), its power-ups (`powerups`: the mix drawn
+  at 300, 550 and 700 points, Fire only from 500 and the extra life only
+  when due, repeats only from the one redraw, 12-25s apart, and over 30000
+  frames of a full demo field with one always on its way, under 0.1% of
+  its on-screen frames over an asteroid), and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

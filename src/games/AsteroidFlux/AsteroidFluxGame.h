@@ -221,7 +221,7 @@ private:
         _asteroidsPassed = 0;
         _nextTargetScore = ArcadeConfig::SCORE_TO_SPAWN;
         _ship.reset();
-        _powerUps.resetTimeline();
+        _powerUps.newGame();
         _particles.clearAll();
         _bolts.clearAll();
         _fireBarShown = false;
