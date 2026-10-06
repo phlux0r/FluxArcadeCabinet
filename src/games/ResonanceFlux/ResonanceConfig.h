@@ -44,12 +44,16 @@ constexpr unsigned long FIRE_COOLDOWN_MS = 400;   // after a misfire
 
 // ---- Signals and waves ----
 constexpr int   MAX_SIGNALS = 6;
+// The screen's too small for speed to make later waves harder (a signal
+// starts 40-70px out), so the ramp is gentle and capped: later waves are
+// harder through more ratios, more signals and more at once instead.
 constexpr int   ON_SCOPE_FIRST = 2;      // signals on the scope at once: 2, one more every
-constexpr int   ON_SCOPE_EVERY = 3;      //   third wave, up to MAX_SIGNALS
+constexpr int   ON_SCOPE_EVERY = 4;      //   fourth wave, up to ON_SCOPE_MAX
+constexpr int   ON_SCOPE_MAX = 4;
 constexpr float DRIFT_START = 4.0f;      // px/s on wave 1
-constexpr float DRIFT_GROWTH = 1.05f;    // per wave
-constexpr float DRIFT_MAX   = 14.0f;
-constexpr unsigned long SPAWN_FIRST_MS = 4000, SPAWN_MIN_MS = 1500, SPAWN_STEP_MS = 150;
+constexpr float DRIFT_GROWTH = 1.03f;    // per wave
+constexpr float DRIFT_MAX   = 7.0f;      // reached about wave 20
+constexpr unsigned long SPAWN_FIRST_MS = 4000, SPAWN_MIN_MS = 2500, SPAWN_STEP_MS = 150;
 // Signals start on the left and right edges, or the top and bottom within
 // this of a corner: anywhere else on those is under 40px from your figure.
 constexpr float SPAWN_CORNER = 22.0f;

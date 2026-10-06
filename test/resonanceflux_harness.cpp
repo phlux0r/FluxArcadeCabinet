@@ -292,6 +292,38 @@ static bool scenarioMatch() {
     g._round = ResonanceFluxGame::ROUND_PLAY;
     g._spawnAt = g_fakeMillis + 1000000;
 
+    // The ratio hint: the nearest signal's stop lit amber on the dial,
+    // wherever you are.
+    place(g, r23, 1.0f, 20, 30);
+    g._stop = 0;
+    step(g, audio, canvas);
+    const uint16_t *px = canvas.getBuffer();
+    const int hx = g.dialX(g._stopOf[r23]), mine = g.dialX(g._stop);
+    check("the nearest signal's stop is lit amber on the dial (and not yours)",
+          px[(STRIP_Y + 8) * W + hx] == ArcadeConfig::COLOR_AMBER &&
+          px[(STRIP_Y + 8) * W + mine] != ArcadeConfig::COLOR_AMBER, ok);
+
+    // The pace through wave 20: capped speed, never more than four on the
+    // scope, arrivals at least 2.5s apart, and even the nearest start
+    // (40px) takes over 5s to reach you.
+    bool paced = true;
+    float slowest = 1e9f;
+    for (int w = 1; w <= 20; ++w) {
+        g._wave = w;
+        const long gapMs = (long)SPAWN_FIRST_MS - (long)SPAWN_STEP_MS * (w - 1);
+        const float secs = 40.0f / g.driftSpeed();
+        slowest = fminf(slowest, secs);
+        paced &= g.driftSpeed() <= DRIFT_MAX && g.maxOnScope() <= 4 &&
+                 (gapMs > (long)SPAWN_MIN_MS ? gapMs : (long)SPAWN_MIN_MS) >= 2500 && secs > 5.0f;
+    }
+    g._wave = 20;
+    snprintf(what, sizeof(what), "pace to wave 20: %.1fpx/s, %d at once, 40px in %.1fs at the least",
+             g.driftSpeed(), g.maxOnScope(), slowest);
+    check(what, paced, ok);
+    g.startWave(5);
+    g._round = ResonanceFluxGame::ROUND_PLAY;
+    g._spawnAt = g_fakeMillis + 1000000;
+
     // Overload.
     s = place(g, 2, 0.5f, CORE_X + CORE_R + SIG_R, CORE_Y);
     s.speed = 20;

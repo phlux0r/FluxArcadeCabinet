@@ -200,17 +200,28 @@ inline void ResonanceFluxGame::drawHud(GFXcanvas16 &cv) {
     }
 }
 
+// Where a stop sits on the tuning strip.
+inline int ResonanceFluxGame::dialX(int stop) const {
+    const int x0 = 34, x1 = W - 4;
+    const int span = _stopCount > 1 ? _stopCount - 1 : 1;
+    return x0 + stop * (x1 - x0) / span;
+}
+
 // The tuning strip: the dial with a tick at each stop (the ratios this
 // game has reached, evenly spaced), your needle, and the ratio you're on.
+// The stop of the signal nearest the core is lit amber, with a mark under
+// it, so you can step straight there before working out its shape.
 inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
     cv.fillRect(0, STRIP_Y, W, H - STRIP_Y, ArcadeConfig::COLOR_BLACK);
-    const int x0 = 34, x1 = W - 4;
-    const float span = _stopCount > 1 ? (float)(_stopCount - 1) : 1.0f;
-    auto dialX = [&](float u) { return x0 + (int)lrintf(u / span * (x1 - x0)); };
     const int base = STRIP_Y + 7;
-    cv.drawFastHLine(x0, base, x1 - x0 + 1, 0x2104);
-    for (int i = 0; i < _stopCount; ++i) cv.drawFastVLine(dialX((float)i), base - 3, 3, ArcadeConfig::COLOR_GREEN);
-    cv.drawFastVLine(dialX((float)_stop), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
+    cv.drawFastHLine(dialX(0), base, dialX(_stopCount - 1) - dialX(0) + 1, 0x2104);
+    for (int i = 0; i < _stopCount; ++i) cv.drawFastVLine(dialX(i), base - 3, 3, ArcadeConfig::COLOR_GREEN);
+    if (inPlay() && _threat >= 0) {
+        const int x = dialX(_stopOf[_signals[_threat].ratio]);
+        cv.drawFastVLine(x, base - 5, 5, ArcadeConfig::COLOR_AMBER);
+        cv.fillRect(x - 1, base + 1, 3, 2, ArcadeConfig::COLOR_AMBER);
+    }
+    cv.drawFastVLine(dialX(_stop), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
 
     const Ratio &r = yourRatio();
     char buf[24];

@@ -168,13 +168,15 @@ the dial at the bottom, a stop at a time, and up/down turns its phase.
 The dial has a stop for each ratio the game has reached (just 1:2 and 1:1
 on wave 1) and goes round: right from the last stop is the first.
 Signals, amber figures of their own, weave in from the sides and corners.
-On a signal's ratio, turn to its exact shape and both glow white: A
-shatters it, worth more the further out it is. You hear your ratio's note
+The nearest signal's stop is lit amber on the dial, so you can step
+straight to it. On a signal's ratio, turn to its exact shape and both
+glow white: A shatters it, worth more the further out it is. You hear your ratio's note
 and the nearest signal's: the same note when you're on its ratio. A
 signal that reaches you adds static (noise on the scope, hiss, and a
 wander in your phase); so does firing out of tune. At 100 static it's
 over. B dampens: everything slows for 4s, twice a wave. Waves bring more
-and faster signals and more ratios, each a new stop on the dial (1:2 and
+signals, a little faster (capped by about wave 20, as the screen is
+small), up to four at once, and more ratios, each a new stop on the dial (1:2 and
 1:1, then 1:3 and 2:3 on wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A
 line in the scope's bottom corner shows the phase gap to the signal on
 your stop, for tuning the tolerance (`DEBUG_LINE` in `ResonanceConfig.h`).

@@ -383,6 +383,23 @@ So:
 - Drifters (rolling signals matched by sitting between stops) were
   offered and turned down: hard enough already.
 
+### After the third play
+
+Higher waves were too fast: the figures are complicated, switching to
+the incoming one takes time, and the screen is too small to give it.
+Speed can't be the difficulty here, so:
+
+- **A gentle, capped ramp**: +3% a wave (was 5%) to at most 7px/s (was
+  14), reached about wave 20; arrivals at least 2.5s apart (was 1.5s).
+  Even the nearest start, 40px out, is over 5s away.
+- **Four on the scope at most** (was six), one more every fourth wave.
+- **A ratio hint**: the stop of the signal nearest the core is lit amber
+  on the dial, with a mark under it, so you can step straight there; the
+  phase is still yours to read.
+
+Later waves are harder through more ratios, more signals and more at
+once, not speed.
+
 ## Needs the board
 
 Everything that makes or breaks it: whether the figures read clearly at

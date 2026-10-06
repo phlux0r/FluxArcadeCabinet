@@ -118,6 +118,7 @@ private:
     void renderGameOver(GFXcanvas16 &cv);
     void drawHud(GFXcanvas16 &cv);
     void drawStrip(GFXcanvas16 &cv);
+    int  dialX(int stop) const;
     void drawOverlays(GFXcanvas16 &cv);
 
     // ---- The harness's player (ResonanceAutopilot.h) ----
@@ -470,7 +471,7 @@ inline int ResonanceFluxGame::aliveCount() const {
 
 inline int ResonanceFluxGame::maxOnScope() const {
     const int m = ON_SCOPE_FIRST + (_wave - 1) / ON_SCOPE_EVERY;
-    return m < MAX_SIGNALS ? m : MAX_SIGNALS;
+    return m < ON_SCOPE_MAX ? m : ON_SCOPE_MAX;
 }
 
 inline float ResonanceFluxGame::driftSpeed() const {
