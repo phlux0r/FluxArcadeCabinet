@@ -223,12 +223,12 @@ public:
                     score += ArcadeConfig::COMET_BONUS_SCORE;
                     audio.playSound(1200, 100); 
                     // Explode bright Magenta fragments on Comet pass!
-                    particles.spawnExplosion(0, _pool[i].y, ST7735_MAGENTA, 12);
+                    particles.spawnExplosion(0, _pool[i].y, ST7735_MAGENTA, 12, 600, 4);
                 } else {
                     score += _pool[i].sizeClass;
                     audio.playSound(800, 30);
                     // Spawns smaller sparks matching the exact color of the asteroid size destroyed
-                    particles.spawnExplosion(0, _pool[i].y, _pool[i].color, 6);
+                    particles.spawnExplosion(0, _pool[i].y, _pool[i].color, 6, 600, 4);
                 }
                 
                 asteroidsPassed++;
@@ -260,7 +260,7 @@ public:
                     // We use the asteroid's current coordinates and match the density to its size
                     float burstX = _pool[i].x;
                     float burstY = _pool[i].y;
-                    particles.spawnExplosion(burstX, burstY, ST7735_CYAN, 20);
+                    particles.spawnExplosion(burstX, burstY, ST7735_CYAN, 20, 600, 4);
                     // decativate shield and play sound
                     ship.deactivateShield();
                     audio.playSound(300, 200);

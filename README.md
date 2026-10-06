@@ -484,7 +484,7 @@ FluxArcadeCabinet/
 │   ├── AudioEngineLegacy.h # the old one-sound engine (-DAUDIO_LEGACY)
 │   ├── audio/AudioMixer.h  # software mixer: voices, streams, synth (host-tested)
 │   ├── audio/AudioLoader.h # WAV parsing, effect cache, music streaming (host-tested)
-    │   ├── ParticleManager.h   # Shared 2D particle system (explosions, trails)
+    │   ├── ParticleManager.h   # Shared 2D particle system (explosions, fire, optional fading trails)
     │   ├── HighScores.h        # Top-5 tables with names, the name entry screen
     │   └── PowerManager.h      # Power button, checked from the menu only
     │

@@ -49,19 +49,17 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lack). Read each game before proposing: a quick grep suggested none of
   the four checks for WAVs with `exists()`, but they may get sound another
   way.
-- **Particle trails (next up).** The owner likes Resonance's shard
-  streaks and wants them in Asteroid and Lander first, then perhaps the
-  other games on the shared `ParticleManager` (Maze, Runner, Brick). The
-  streaks aren't in the shards themselves: they're single dots plotted
-  into the scope's afterglow (ResonanceScope.h), a ~34kB intensity buffer
-  that fades every frame, so each moving dot leaves a fading tail. The
-  older games draw straight to the screen with no such buffer. The plan
-  agreed on: give `ParticleManager` optional trails (each particle keeps
-  its last few positions, drawn dimmer behind it), switched on per
-  effect, rather than a full-screen afterglow per game. Read
-  ParticleManager.h and each game's use of it, then propose before
-  writing; check the look with `DUMP_AT` frames, and the frame rate on
-  the board.
+- **Particle trails** (branch `claude/particle-trails`, not merged yet):
+  `ParticleManager`'s spawn calls take an optional trail length (0-4);
+  a particle with one keeps its last positions and render() draws lines
+  back through them at 1/2, 1/4, 1/8 brightness, a step dimmer in the last
+  third of its life. On in Asteroid (every burst, plus a new engine
+  exhaust off the ship each frame) and Lander (crash and fuel-pickup
+  sparks 4, the thrust plume 2). Lander's particles were updated twice a
+  frame while the ship broke up, so the debris flew at double speed; now
+  once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
+  the look, feel and frame rate need the board. Then perhaps Maze,
+  Runner and Brick, the other games on `ParticleManager`.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.

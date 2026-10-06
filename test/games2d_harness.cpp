@@ -50,6 +50,17 @@ static int highScoreOf(PlatformFluxGame &g) { return g._highScore; }
 static int highScoreOf(AsteroidFluxGame &g) { return g._highScore; }
 static int highScoreOf(LanderFluxGame &g)   { return g._engine._highScore; }
 
+// DUMP_AT=500,4000: write those idle frames as <game>_<frame>.ppm.
+static bool dumpAt(long f) {
+    const char* at = getenv("DUMP_AT");
+    for (const char* p = at; p && *p; ) {
+        if (atol(p) == f) return true;
+        p = strchr(p, ',');
+        if (p) ++p;
+    }
+    return false;
+}
+
 template <typename Game, typename InDemo, typename Report>
 static bool idle(const char* name, Game &g, long frames, InDemo inDemo, Report report) {
     AudioEngine audio;
@@ -63,6 +74,11 @@ static bool idle(const char* name, Game &g, long frames, InDemo inDemo, Report r
     for (long f = 0; f < frames; ++f) {
         InputState none{};
         g.update(canvas, none, audio);
+        if (dumpAt(f)) {
+            char file[48];
+            snprintf(file, sizeof(file), "%s_%05ld.ppm", name, f);
+            writePPM(file, canvas);
+        }
         leftSilenced |= audio._silenced;
         const bool now = inDemo(g);
         if (now) { ++demoFrames; report(g, false); }
@@ -180,6 +196,57 @@ int main(int argc, char** argv) {
         printf("lander demoexit: title %d level %d score %d lives %d -> %s\n",
                (int)e._isTitleScreen, e._level, e._score, e._lander.lives, pass ? "PASS" : "FAIL");
         ok &= pass;
+
+        // Crash debris moves one step a frame, like everything else (it
+        // was updated twice a frame while the ship broke up).
+        e._particles.clearAll();
+        e._lander.kill(e._particles);
+        int k = 0;
+        while (k < 120 && !e._particles._pool[k].active) ++k;
+        const float x0 = e._particles._pool[k].x, vx = e._particles._pool[k].vx;
+        g_fakeMillis += 20;
+        InputState n{};
+        h.update(canvas, n, audio);
+        const float moved = e._particles._pool[k].x - x0;
+        pass = fabsf(moved - vx) < 0.001f;
+        printf("lander debris: moved %.3f in a frame at vx %.3f -> %s\n", moved, vx, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "trails")) {
+        // A spark with a trail leaves dimmer pixels behind it, in a line
+        // back along its path; one without leaves just the spark.
+        auto lit = [](GFXcanvas16 &c, int &dim) {
+            int n = 0; dim = 0;
+            const uint16_t* b = c.getBuffer();
+            for (int i = 0; i < c.width() * c.height(); ++i)
+                if (b[i]) { ++n; dim += b[i] != ArcadeConfig::COLOR_WHITE; }
+            return n;
+        };
+        bool pass = true;
+        for (int trail : { 0, 4 }) {
+            static ParticleManager pm;
+            pm.clearAll();
+            pm.spawnFire(40, 60, 2.0f, 0.0f, ArcadeConfig::COLOR_WHITE, trail);
+            for (int f = 0; f < 5; ++f) { pm.update(); g_fakeMillis += STEP_MS; }
+            canvas.fillScreen(0);
+            pm.render(canvas);
+            int dim, n = lit(canvas, dim);
+            const bool good = trail ? n >= 6 && dim == n - 1 : n == 1;
+            printf("trails %d: %d pixels lit, %d dimmed -> %s\n", trail, n, dim, good ? "PASS" : "FAIL");
+            pass &= good;
+        }
+        // Clipped by the HUD line like the sparks themselves.
+        static ParticleManager pm;
+        pm.clearAll();
+        pm.spawnFire(40, 5, 0.0f, 2.0f, ArcadeConfig::COLOR_WHITE, 4);   // comes down through it
+        for (int f = 0; f < 4; ++f) { pm.update(); g_fakeMillis += STEP_MS; }
+        canvas.fillScreen(0);
+        pm.render(canvas, 11);
+        int above = 0;
+        for (int y = 0; y < 11; ++y) for (int x = 0; x < canvas.width(); ++x) above += canvas.getBuffer()[y * canvas.width() + x] != 0;
+        printf("trails clip: %d pixels above the HUD line -> %s\n", above, above == 0 ? "PASS" : "FAIL");
+        ok &= pass && above == 0;
     }
     return ok ? 0 : 1;
 }
