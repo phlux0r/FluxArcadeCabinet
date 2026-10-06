@@ -97,7 +97,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lane and steer away from any about to cross them (AsteroidManager::
   dodge(), 14 frames ahead; boxed in or at the top or bottom, forwards or
   back). Feel and balance need the board.
-- **Maze redesign** (branch `claude/maze-redesign`, not merged yet): a
+- **Maze redesign** (merged): a
   review found doors that blocked nothing, bullets through walls at a
   cell a frame, teleports that rebuilt the level, instant silent deaths
   and badly placed items; all fixed, plus a harness
