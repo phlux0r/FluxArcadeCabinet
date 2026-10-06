@@ -276,6 +276,11 @@ there's often more than one way round. You glide cell to cell; a push
 between steps is remembered and taken at the next cell. Cells you've
 walked are tinted (breadcrumbs), and an arrow at the screen's edge points
 to the next key (in its colour), then the exit, while it's off screen.
+Hold B for the map: the whole maze, but only what's been on screen, with
+the cells you've walked, keys, shut doors and the exit where seen; you
+stand still while it's up and everything else goes on, the clock
+included. The HUD shows the level, the clock, a square per key (filled
+once collected), the score and lives.
 Every level has a key that opens the exit; from level 4 one door (two
 from 8, three from 12) stands across the way to it, each opened by its
 own key, which is always somewhere before it. Bombs (from level 3) light
@@ -288,12 +293,15 @@ come in pairs in dead ends. Pickups: a speed boost (5s) and +15s. A life
 lost (or the clock running out) is a 1s pause, then the start, safe for
 1.5s; running out of time restarts the level's clock. The clock is 30s
 plus 0.3s a cell. Points: 25 a key, 10 a pickup, and at the exit 2 a
-second left plus 50 times the level.
+second left plus 50 times the level. Stage select (to try a level): on the
+title, how-to or scores, hold B and press A; the stick steps the level
+(left and right by one, up and down by five, 1-30), its maze shown whole,
+A starts a test run (an orange T before the score, nothing put on the
+table; A at its game over starts the same level again), B goes back.
 
-**Attract demos.** Left alone, every game except Maze does the same: title,
+**Attract demos.** Left alone, every game does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
-an autopilot, and back to the title (Maze cycles title, how-to-play and
-table). A starts a real game straight from a demo; nothing from a demo
+an autopilot, and back to the title. A starts a real game straight from a demo; nothing from a demo
 (score, high score) is kept.
 
 | Game | The demo |
@@ -303,6 +311,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
+| Maze | a random level 2-8; walks the shortest way to each key, then the exit, waits at a trap's line of fire for a gap or uses its switch, steps round teleport pads; goes on to the next level, and ends the demo rather than lose its last life |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
 | Resonance | a random wave 1-8 (5 a Chord, with bosses on); takes the signal nearest the core, pauses a moment as a person would, steps the dial the shorter way round to its ratio, turns the phase to match and fires; dampens when one's about to get through |
@@ -683,7 +692,7 @@ fetches the real files into an existing clone.
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 | `pickup.wav` (gem); optional sounds below | Roll Flux |
-| optional, else a tone: `pickup.wav` (key), `powerup.wav` (boost, +15s); `death.wav` (a life lost), `explosion.wav` (a bomb) | Maze Flux |
+| optional, else a tone: `pickup.wav` (key), `powerup.wav` (boost, +15s), `maze_door.wav` (a key that unlocks a door), `maze_switch.wav` (a trap's switch), `maze_teleport.wav` (a pad); `death.wav` (a life lost), `explosion.wav` (a bomb) | Maze Flux |
 | `explosion.wav` (a shattered signal, if no `res_shatter.wav`); optional sounds below | Resonance Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what

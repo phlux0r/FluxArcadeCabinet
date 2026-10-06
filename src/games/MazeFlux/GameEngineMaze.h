@@ -58,10 +58,12 @@ private:
     uint16_t _dist[MAX_CELLS];
     uint8_t  _region[MAX_CELLS];
     uint8_t  _visited[MAX_CELLS];       // breadcrumbs: cells walked through
+    uint8_t  _seen[MAX_CELLS];          // cells that have been on screen (the map shows these)
     bool     _onPath[MAX_CELLS];        // the way to the exit, before the loops
 
     // NAME: entering a name for the high-score table, after the last life.
-    enum GameState { STATE_TITLE, STATE_PLAYING, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
+    // PICK: the stage select.
+    enum GameState { STATE_TITLE, STATE_PLAYING, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE, STATE_PICK };
     GameState _state = STATE_TITLE;
 
     int  _level     = 1;
@@ -97,13 +99,37 @@ private:
 
     // Which optional sounds are on the card (checked once, in init()).
     bool _pickupOnCard = false, _powerupOnCard = false;
-    static constexpr const char* PICKUP_WAV  = "/audio/pickup.wav";
-    static constexpr const char* POWERUP_WAV = "/audio/powerup.wav";
+    bool _doorOnCard = false, _switchOnCard = false, _teleportOnCard = false;
+    static constexpr const char* PICKUP_WAV   = "/audio/pickup.wav";
+    static constexpr const char* POWERUP_WAV  = "/audio/powerup.wav";
+    static constexpr const char* DOOR_WAV     = "/audio/maze_door.wav";
+    static constexpr const char* SWITCH_WAV   = "/audio/maze_switch.wav";
+    static constexpr const char* TELEPORT_WAV = "/audio/maze_teleport.wav";
+
+    // The attract demo: the autopilot plays a random level, silently, for
+    // DEMO_MIN_MS to DEMO_MAX_MS (or until its lives run low).
+    bool _demo = false;
+    unsigned long _demoUntil = 0;
+    bool _apA = false;                     // the autopilot's A, toggled to make presses
+    static const unsigned long DEMO_MIN_MS = 30000, DEMO_MAX_MS = 40000;
+    static const int DEMO_MIN_LEVEL = 2, DEMO_MAX_LEVEL = 8;
+
+    // The stage select (B held with A on the title): a test run from any
+    // level, which puts nothing on the table.
+    bool _test = false;
+    int  _testFrom = 1;
+    int  _pick = 1, _pickDir = 0;
+    unsigned long _pickRepeatAt = 0, _pickAt = 0;
+    static const int PICK_LEVELS = 30;
+    static const unsigned long PICK_TIMEOUT_MS = 20000, PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
+
+    // The map: B held in play. Everything stops but the clock.
+    bool _mapOpen = false;
 
     // Out of lives: a name for the table first, if the score made it.
     void endGame(AudioEngine &audio) {
         _scores.forget();
-        _state      = _scores.offer(_score) ? STATE_NAME : STATE_GAMEOVER;
+        _state      = !_test && _scores.offer(_score) ? STATE_NAME : STATE_GAMEOVER;
         _gameOverMs = millis();
         _endInputArmed = false;
         audio.stopLoop();
@@ -249,7 +275,9 @@ private:
                        min(mazeHeightFor(_level), (int)MazeGenerator::MAX_H));
         const int w = _maze.width, h = _maze.height;
         memset(_visited, 0, sizeof(_visited));
+        memset(_seen, 0, sizeof(_seen));
         _visited[0] = 1;
+        _mapOpen = false;
 
         _player.reset(0, 0);
         _particles.clearAll();
@@ -466,6 +494,18 @@ private:
         if (_pickupOnCard) audio.playWAV(PICKUP_WAV);
         else audio.playPowerUpExtraLife();
     }
+    void sfxDoor(AudioEngine &audio) {
+        if (_doorOnCard) audio.playWAV(DOOR_WAV);
+        else audio.playTone(262, 160);
+    }
+    void sfxSwitch(AudioEngine &audio) {
+        if (_switchOnCard) audio.playWAV(SWITCH_WAV);
+        else audio.playTone(523, 80);
+    }
+    void sfxTeleport(AudioEngine &audio) {
+        if (_teleportOnCard) audio.playWAV(TELEPORT_WAV);
+        else audio.playTone(440, 150);
+    }
     void sfxPowerup(AudioEngine &audio, int freq) {
         if (_powerupOnCard) audio.playWAV(POWERUP_WAV);
         else audio.playTone(freq, 100);
@@ -485,6 +525,7 @@ private:
 
     void finishDying(AudioEngine &audio) {
         _dyingUntil = 0;
+        if (_demo && _player.lives <= 1) { endDemo(); return; }   // a demo never reaches game over
         if (--_player.lives <= 0) { endGame(audio); return; }
         _player.reset(0, 0);
         updateCamera(0, true);
@@ -497,6 +538,7 @@ private:
 
     void completeLevel(AudioEngine &audio) {
         using namespace mazecfg;
+        if (_demo) { _level++; initLevel(); return; }       // a demo just goes on to the next
         _score += _timeLeft * PTS_PER_SECOND + _level * PTS_LEVEL;
         _level++;
         _state = STATE_LEVEL_COMPLETE;
@@ -513,8 +555,11 @@ private:
             if (k.collected || k.x != x || k.y != y) continue;
             k.collected = true;
             _score += PTS_KEY;
-            sfxPickup(audio);
-            for (int d = 0; d < _activeDoors; d++) if (_doors[d].colourId == k.colourId) _doors[d].open = true;
+            bool opened = false;
+            for (int d = 0; d < _activeDoors; d++)
+                if (_doors[d].colourId == k.colourId && !_doors[d].open) { _doors[d].open = true; opened = true; }
+            if (opened) sfxDoor(audio);      // the key, and its door unlocking somewhere
+            else sfxPickup(audio);
             bool all = true;
             for (int j = 0; j < _activeKeys; j++) all &= _keys[j].collected;
             _exit.unlocked = all;
@@ -537,7 +582,7 @@ private:
             if (_pads[i].x != x || _pads[i].y != y) continue;
             const Teleport &to = _pads[_pads[i].partner];
             _player.reset(to.x, to.y);       // standing on the partner: no hop back till you step off and on
-            audio.playTone(440, 150);
+            sfxTeleport(audio);
             break;
         }
         if (_exit.unlocked && x == _exit.x && y == _exit.y) completeLevel(audio);
@@ -560,6 +605,8 @@ private:
             if (--_timeLeft <= 0) { _timeLeft = 0; die(DEATH_TIME, audio); return; }
         }
 
+        // With the map up, you stand where you are (the rest goes on).
+        if (_mapOpen) up = down = left = right = false;
         _player.update(up, down, left, right,
                        [this](int x, int y, uint8_t dir) { return canPass(x, y, dir); });
         // The cell just reached, not where the player's already heading
@@ -578,7 +625,7 @@ private:
                 if (t.type != TrapEmitter::TYPE_B) continue;
                 if (t.switchReach(_player.nearX(), _player.nearY())) {
                     t.activateSwitch();
-                    audio.playTone(523, 80);
+                    sfxSwitch(audio);
                 }
             }
         }
@@ -620,6 +667,119 @@ private:
     // Maze pixels to the screen.
     int sx(float mx) const { return (int)mx - _camX; }
     int sy(float my) const { return (int)my - _camY + mazecfg::HUD_H; }
+
+    // -------------------------------------------------------------------------
+    // Autopilot (the attract demo, and the harness's bot): the shortest open
+    // way to the next key (lowest colour first), then the exit, never
+    // through a teleport pad it isn't heading for. At a trap's line of
+    // fire it waits for a gap (type A: no bullet in the air and time to
+    // walk the lane before the next) or uses the switch (type B). Returns
+    // its stick as screen directions in `dir` (a WALL_ bit, 0 to stand),
+    // and whether to press A.
+    // -------------------------------------------------------------------------
+    void autopilot(uint8_t &dir, bool &pressA) {
+        using namespace mazecfg;
+        dir = 0; pressA = false;
+        const int W = _maze.width, H = _maze.height;
+        int tx = _exit.x, ty = _exit.y;
+        for (int k = 0; k < _activeKeys; k++) if (!_keys[k].collected) { tx = _keys[k].x; ty = _keys[k].y; break; }
+        static int16_t prev[MAX_CELLS], q[MAX_CELLS];
+        for (int i = 0; i < W * H; i++) prev[i] = -2;
+        const int start = cellIndex(_player.x, _player.y), goal = cellIndex(tx, ty);
+        if (start == goal) return;
+        int head = 0, tail = 0;
+        q[tail++] = (int16_t)start; prev[start] = -1;
+        while (head < tail && prev[goal] == -2) {
+            const int c = q[head++], x = c % W, y = c / W;
+            for (uint8_t d : MazeGenerator::DIRS) {
+                if (!canPass(x, y, d)) continue;
+                const int nc = cellIndex(x + MazeGenerator::dx(d), y + MazeGenerator::dy(d));
+                if (prev[nc] != -2) continue;
+                bool pad = false;
+                for (int i = 0; i < _activePads; i++) pad |= cellIndex(_pads[i].x, _pads[i].y) == nc;
+                if (pad && nc != goal) continue;
+                prev[nc] = (int16_t)c;
+                q[tail++] = (int16_t)nc;
+            }
+        }
+        (void)H;
+        if (prev[goal] == -2) return;
+        int c = goal;
+        while (prev[c] != start) c = prev[c];
+        const int nx = c % W, ny = c / W;
+        // Into a trap's lane only when it's safe (mid-step too: the held
+        // stick would carry it on).
+        for (int i = 0; i < _activeTraps; i++) {
+            const TrapEmitter &t = _traps[i];
+            if (!t.active || !t.inLane(nx, ny) || t.inLane(_player.x, _player.y)) continue;
+            const bool wait = t.type == TrapEmitter::TYPE_B
+                ? !t.paused()
+                : t.bulletsInFlight() || t.msToNextShot() < (unsigned long)(t.laneLen + 2) * MOVE_MS;
+            if (!wait) continue;
+            if (t.type == TrapEmitter::TYPE_B && t.switchReach(_player.x, _player.y)) {
+                _apA = !_apA;
+                pressA = _apA;
+            }
+            return;
+        }
+        dir = nx > _player.x ? WALL_E : nx < _player.x ? WALL_W : ny > _player.y ? WALL_S : WALL_N;
+    }
+
+    // Cells in view are seen: the map shows them.
+    void markSeen() {
+        using namespace mazecfg;
+        const int x0 = max(0, _camX / CELL), y0 = max(0, _camY / CELL);
+        const int x1 = min(_maze.width - 1, (_camX + VIEW_W - 1) / CELL), y1 = min(_maze.height - 1, (_camY + VIEW_H - 1) / CELL);
+        for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++) _seen[cellIndex(x, y)] = 1;
+    }
+
+    // The map: the whole maze, as much of it as has been seen, scaled to
+    // the screen under the HUD (up to 8px a cell); walked cells tinted,
+    // keys, shut doors and the exit where seen, you blinking.
+    void renderMap(GFXcanvas16 &canvas, bool everything = false) {
+        using namespace mazecfg;
+        const MazeTheme &theme = MazeRenderer::themeFor(_level);
+        const int s = max(3, min(8, min((VIEW_W - 4) / _maze.width, (VIEW_H - 4) / _maze.height)));
+        const int ox = (VIEW_W - s * _maze.width) / 2, oy = HUD_H + (VIEW_H - s * _maze.height) / 2;
+        canvas.fillRect(0, HUD_H, VIEW_W, VIEW_H, ArcadeConfig::COLOR_BLACK);
+        const uint16_t crumb = MazeRenderer::mix(theme.floor, theme.wall, 72);
+        auto seen = [&](int x, int y) { return everything || _seen[cellIndex(x, y)]; };
+        for (int y = 0; y < _maze.height; y++)
+            for (int x = 0; x < _maze.width; x++) {
+                if (!seen(x, y)) continue;
+                const int px = ox + x * s, py = oy + y * s;
+                canvas.fillRect(px, py, s, s, _visited[cellIndex(x, y)] ? crumb : theme.floor);
+            }
+        for (int y = 0; y < _maze.height; y++)
+            for (int x = 0; x < _maze.width; x++) {
+                if (!seen(x, y)) continue;
+                const int px = ox + x * s, py = oy + y * s;
+                if (_maze.hasWall(x, y, WALL_N)) canvas.drawFastHLine(px, py, s + 1, theme.light);
+                if (_maze.hasWall(x, y, WALL_W)) canvas.drawFastVLine(px, py, s + 1, theme.light);
+                if (_maze.hasWall(x, y, WALL_S)) canvas.drawFastHLine(px, py + s, s + 1, theme.light);
+                if (_maze.hasWall(x, y, WALL_E)) canvas.drawFastVLine(px + s, py, s + 1, theme.light);
+            }
+        for (int i = 0; i < _activeDoors; i++) {
+            const Door &d = _doors[i];
+            if (d.open || !seen(d.x, d.y)) continue;
+            const int px = ox + d.x * s, py = oy + d.y * s;
+            const uint16_t col = keyColour(d.colourId);
+            if (d.dir == WALL_E)      canvas.drawFastVLine(px + s, py, s + 1, col);
+            else if (d.dir == WALL_W) canvas.drawFastVLine(px, py, s + 1, col);
+            else if (d.dir == WALL_S) canvas.drawFastHLine(px, py + s, s + 1, col);
+            else                      canvas.drawFastHLine(px, py, s + 1, col);
+        }
+        const int dot = max(1, s / 2), in = (s - dot + 1) / 2;
+        for (int i = 0; i < _activeKeys; i++)
+            if (!_keys[i].collected && seen(_keys[i].x, _keys[i].y))
+                canvas.fillRect(ox + _keys[i].x * s + in, oy + _keys[i].y * s + in, dot, dot, keyColour(_keys[i].colourId));
+        if (seen(_exit.x, _exit.y))
+            canvas.fillRect(ox + _exit.x * s + in, oy + _exit.y * s + in, dot, dot,
+                            _exit.unlocked ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_GREY);
+        if (millis() % 400 < 250)
+            canvas.fillRect(ox + _player.nearX() * s + in, oy + _player.nearY() * s + in, dot, dot, ArcadeConfig::COLOR_WHITE);
+    }
 
     // The compass: the next thing to fetch (the lowest key not yet
     // collected, else the exit) and, if it's off screen, where the arrow
@@ -810,16 +970,63 @@ private:
             canvas.drawTriangle(tipX, tipY, bx + pxo, by + pyo, bx - pxo, by - pyo, ArcadeConfig::COLOR_BLACK);
         }
 
-        // HUD
+        if (_mapOpen) renderMap(canvas);
+        if (_demo) drawDemoOverlay(canvas);
+        drawHud(canvas);
+    }
+
+    // The HUD: level, clock, a square per key (filled once collected),
+    // score (an orange T before it on a test run), lives.
+    void drawHud(GFXcanvas16 &canvas) {
+        using namespace mazecfg;
+        const unsigned long now = millis();
         canvas.fillRect(0, 0, ArcadeConfig::PORTRAIT_WIDTH, HUD_H, ArcadeConfig::COLOR_BLACK);
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(1, 1);   canvas.print("L:"); canvas.print(_level);
+        canvas.setCursor(1, 1);   canvas.print("L"); canvas.print(_level);
         canvas.setTextColor(_timeLeft <= 15 && now % 500 < 250 ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(32, 1);  canvas.print("T:"); canvas.print(_timeLeft);
+        canvas.setCursor(22, 1);  canvas.print("T"); canvas.print(_timeLeft);
+        for (int k = 0; k < _activeKeys; k++) {
+            const int x = 50 + k * 6;
+            const uint16_t col = keyColour(_keys[k].colourId);
+            if (_keys[k].collected) canvas.fillRect(x, 2, 5, 5, col);
+            else                    canvas.drawRect(x, 2, 5, 5, col);
+        }
+        int x = 76;
+        if (_test) {
+            canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+            canvas.setCursor(x, 1); canvas.print("T");
+            x += 6;
+        }
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(68, 1);  canvas.print(_score);
-        canvas.setCursor(110, 1); canvas.print("x"); canvas.print(_player.lives);
+        canvas.setCursor(x, 1);   canvas.print(_score);
+        canvas.setCursor(116, 1); canvas.print("x"); canvas.print(_player.lives);
+    }
+
+    void drawDemoOverlay(GFXcanvas16 &canvas) {
+        canvas.setTextSize(1);
+        canvas.fillRect(0, ArcadeConfig::PORTRAIT_HEIGHT - 11, ArcadeConfig::PORTRAIT_WIDTH, 11, ArcadeConfig::COLOR_BLACK);
+        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+        canvas.setCursor(3, ArcadeConfig::PORTRAIT_HEIGHT - 9);
+        canvas.print("DEMO");
+        if (millis() % 1000 < 600) {
+            canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
+            canvas.setCursor(ArcadeConfig::PORTRAIT_WIDTH - 63, ArcadeConfig::PORTRAIT_HEIGHT - 9);
+            canvas.print("A TO START");
+        }
+    }
+
+    // The stage select: the level's maze, whole, behind its number.
+    void renderPicker(GFXcanvas16 &canvas) {
+        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
+        renderMap(canvas, true);
+        canvas.fillRect(14, 62, 100, 36, ArcadeConfig::COLOR_BLACK);
+        canvas.drawRect(14, 62, 100, 36, ArcadeConfig::COLOR_ORANGE);
+        char buf[16];
+        snprintf(buf, sizeof(buf), "LEVEL %d", _pick);
+        hiscore::printCentred(canvas, buf, 68, ArcadeConfig::COLOR_WHITE, 2);
+        hiscore::printCentred(canvas, "A: TEST RUN  B: BACK", 88, ArcadeConfig::COLOR_ORANGE);
+        hiscore::printCentred(canvas, "STAGE SELECT", 1, ArcadeConfig::COLOR_ORANGE);
     }
 
     void renderTitle(GFXcanvas16 &canvas) {
@@ -854,12 +1061,13 @@ private:
         canvas.setTextWrap(true);
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(1, 34); canvas.print("> JOYSTICK TO MOVE");
-        canvas.setCursor(1, 46); canvas.print("> KEYS OPEN DOORS");
-        canvas.setCursor(1, 58); canvas.print("> LAST KEY: THE EXIT");
-        canvas.setCursor(1, 70); canvas.print("> [A] TRAP SWITCH");
-        canvas.setCursor(1, 82); canvas.print("> AVOID BOMBS+BULLETS");
-        canvas.setCursor(1, 94); canvas.print("> BEAT THE CLOCK");
+        canvas.setCursor(1, 32); canvas.print("> JOYSTICK TO MOVE");
+        canvas.setCursor(1, 43); canvas.print("> KEYS OPEN DOORS");
+        canvas.setCursor(1, 54); canvas.print("> LAST KEY: THE EXIT");
+        canvas.setCursor(1, 65); canvas.print("> [A] TRAP SWITCH");
+        canvas.setCursor(1, 76); canvas.print("> HOLD [B]: MAP");
+        canvas.setCursor(1, 87); canvas.print("> AVOID BOMBS+BULLETS");
+        canvas.setCursor(1, 98); canvas.print("> BEAT THE CLOCK");
 
         // High score box — same outline treatment as Lander Flux's info screen
         char scoreStr[32];
@@ -926,8 +1134,10 @@ private:
             ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
     }
 
-    void startGame(AudioEngine &audio) {
-        _score = 0; _level = 1;
+    // A game from level `from`; a test run (the stage select) if test.
+    void startGame(AudioEngine &audio, int from = 1, bool test = false) {
+        _score = 0; _level = from;
+        _test = test; _testFrom = from;
         _player.lives = 3;
         initLevel();
         _state = STATE_PLAYING;
@@ -935,6 +1145,46 @@ private:
         // screens), not on the title screen; it stops at game over.
         audio.loopWAV("/audio/flux-maze.wav");
     }
+
+    // The demo: a random level, three lives, nothing kept.
+    void startDemo() {
+        _demo = true;
+        _test = false;
+        _score = 0;
+        _level = (int)random(DEMO_MIN_LEVEL, DEMO_MAX_LEVEL + 1);
+        _player.lives = 3;
+        initLevel();
+        _state = STATE_PLAYING;
+        _demoUntil = millis() + (unsigned long)random((long)DEMO_MIN_MS, (long)DEMO_MAX_MS + 1);
+    }
+
+    // Back to the title, leaving nothing of the demo behind.
+    void endDemo() {
+        _demo = false;
+        _score = 0;
+        _level = 1;
+        _dyingUntil = 0;
+        _state = STATE_TITLE;
+        _attractPage = 0;
+        _attractTimer = millis();
+        _particles.clearAll();
+    }
+
+    void enterPicker() {
+        _state = STATE_PICK;
+        _pick = 1; _pickDir = 0;
+        _pickAt = millis();
+        _level = _pick;
+        initLevel();
+    }
+
+    // While a demo runs, new sounds are dropped (lifted again however
+    // update() returns).
+    struct Silence {
+        AudioEngine &a; bool on;
+        Silence(AudioEngine &a_, bool on_) : a(a_), on(on_) { if (on) a.setSilenced(true); }
+        ~Silence() { if (on) a.setSilenced(false); }
+    };
 
 public:
     GameEngineMaze() {}
@@ -948,17 +1198,22 @@ public:
         _state        = STATE_TITLE;
         _attractTimer = millis();
         _btnAWasHeld  = true;
-        _pickupOnCard  = audio.exists(PICKUP_WAV);
-        _powerupOnCard = audio.exists(POWERUP_WAV);
-        if (_pickupOnCard)  audio.preload(PICKUP_WAV);
-        if (_powerupOnCard) audio.preload(POWERUP_WAV);
+        _demo = _test = false;
+        struct { const char* path; bool* on; } sounds[] = {
+            { PICKUP_WAV, &_pickupOnCard }, { POWERUP_WAV, &_powerupOnCard }, { DOOR_WAV, &_doorOnCard },
+            { SWITCH_WAV, &_switchOnCard }, { TELEPORT_WAV, &_teleportOnCard } };
+        for (auto &snd : sounds) {
+            *snd.on = audio.exists(snd.path);
+            if (*snd.on) audio.preload(snd.path);
+        }
     }
 
     // Quitting (the Back button): a game in progress still goes on the
-    // table, under the last name entered; a name being entered is kept.
+    // table, under the last name entered; a name being entered is kept. A
+    // demo or a test run puts nothing there.
     void onQuit(AudioEngine &audio) {
         if (_state == STATE_NAME) _scores.finishNow();
-        else if (_state == STATE_PLAYING || _state == STATE_LEVEL_COMPLETE) _scores.record(_score);
+        else if (!_demo && !_test && (_state == STATE_PLAYING || _state == STATE_LEVEL_COMPLETE)) _scores.record(_score);
         audio.mute();
     }
 
@@ -966,6 +1221,12 @@ public:
         const bool btnA = input.btnA;
         const bool aPressed = btnA && !_prevBtnA;
         _prevBtnA = btnA;
+
+        // ---- DEMO: A plays for real; time up ends it ----
+        if (_demo) {
+            if (aPressed) { endDemo(); startGame(audio); flush(canvas); return true; }
+            if (millis() >= _demoUntil && !_dyingUntil) { endDemo(); renderTitle(canvas); flush(canvas); return true; }
+        }
 
         // ---- NAME ENTRY: then the game-over screen ----
         if (_state == STATE_NAME) {
@@ -981,23 +1242,64 @@ public:
             return true;
         }
 
-        // ---- TITLE: title, how to play, high scores ----
+        // ---- TITLE: title, how to play, high scores, then the demo ----
         if (_state == STATE_TITLE) {
             if (millis() - _attractTimer > ATTRACT_INTERVAL_MS) {
-                _attractPage  = (_attractPage + 1) % 3;
                 _attractTimer = millis();
+                if (_attractPage == 2) { startDemo(); }
+                else _attractPage++;
             }
-            if (_attractPage == 0)      renderTitle(canvas);
-            else if (_attractPage == 1) renderInstructions(canvas);
-            else                        renderScores(canvas);
+            if (_state == STATE_TITLE) {
+                if (_attractPage == 0)      renderTitle(canvas);
+                else if (_attractPage == 1) renderInstructions(canvas);
+                else                        renderScores(canvas);
+                // A must be let go first, so a press held from the
+                // game-over screen doesn't start a run straight away. With
+                // B held, A opens the stage select.
+                if (_btnAWasHeld) {
+                    if (!btnA) _btnAWasHeld = false;
+                } else if (btnA && input.btnB) {
+                    enterPicker();
+                    renderPicker(canvas);
+                } else if (btnA) {
+                    startGame(audio);
+                }
+                flush(canvas);
+                return true;
+            }
+        }
 
-            // A must be let go first, so a press held from the game-over
-            // screen doesn't start a run straight away.
-            if (_btnAWasHeld) {
-                if (!btnA) _btnAWasHeld = false;
-            } else if (btnA) {
-                startGame(audio);
+        // ---- STAGE SELECT: the stick steps the level (left and right by
+        // one, up and down by five), A starts a test run, B or leaving it
+        // alone goes back ----
+        if (_state == STATE_PICK) {
+            if (aPressed) { startGame(audio, _pick, true); flush(canvas); return true; }
+            if (input.btnBPressed || millis() - _pickAt > PICK_TIMEOUT_MS) {
+                _state = STATE_TITLE; _attractPage = 0; _attractTimer = millis(); _btnAWasHeld = true;
+                renderTitle(canvas); flush(canvas);
+                return true;
             }
+            bool up, down, left, right;
+            hiscore::screenDirs(input, 2, up, down, left, right);
+            const int dir = right ? 1 : left ? -1 : up ? 5 : down ? -5 : 0;
+            bool step = false;
+            const unsigned long now = millis();
+            if (dir != _pickDir) {
+                _pickDir = dir;
+                _pickRepeatAt = now + PICK_REPEAT_DELAY_MS;
+                step = dir != 0;
+            } else if (dir != 0 && (long)(now - _pickRepeatAt) >= 0) {
+                _pickRepeatAt = now + PICK_REPEAT_MS;
+                step = true;
+            }
+            if (step) {
+                _pick = (_pick - 1 + dir + PICK_LEVELS) % PICK_LEVELS + 1;
+                _pickAt = now;
+                _level = _pick;
+                initLevel();
+                audio.playTone(1200, 15);
+            }
+            renderPicker(canvas);
             flush(canvas);
             return true;
         }
@@ -1009,10 +1311,15 @@ public:
                 _endInputArmed = true;
             if (over) renderGameOver(canvas); else renderLevelComplete(canvas);
             flush(canvas);
-            if (over && ((_endInputArmed && btnA) || millis() - _gameOverMs > GAMEOVER_TIMEOUT_MS)) {
+            if (over && _test && _endInputArmed && btnA) {
+                startGame(audio, _testFrom, true);      // a test run: from its level again
+                _prevBtnA = true;
+            } else if (over && ((_endInputArmed && btnA) || millis() - _gameOverMs > GAMEOVER_TIMEOUT_MS)) {
                 _state         = STATE_TITLE;
+                _attractPage   = 0;
                 _attractTimer  = millis();
                 _btnAWasHeld   = true;
+                _test          = false;
             } else if (!over && _endInputArmed && btnA) {
                 initLevel();
                 _state = STATE_PLAYING;
@@ -1021,14 +1328,25 @@ public:
             return true;
         }
 
-        // ---- PLAYING ----
+        // ---- PLAYING (or the demo) ----
         // Quitting is the cabinet's Back button (main.cpp, then onQuit()).
-        bool up, down, left, right;
-        hiscore::screenDirs(input, 2, up, down, left, right);
-        updatePlaying(up, down, left, right, aPressed, audio);
+        Silence silence(audio, _demo);
+        bool up, down, left, right, pressA = aPressed;
+        if (_demo) {
+            uint8_t dir; bool a;
+            autopilot(dir, a);
+            up = dir == WALL_N; down = dir == WALL_S; left = dir == WALL_W; right = dir == WALL_E;
+            pressA = a;
+            _mapOpen = false;
+        } else {
+            hiscore::screenDirs(input, 2, up, down, left, right);
+            _mapOpen = input.btnB;
+        }
+        updatePlaying(up, down, left, right, pressA, audio);
         if (_state == STATE_PLAYING) {
             _particles.update();
             updateCamera(_frameMs);
+            markSeen();
             renderPlaying(canvas);
             flush(canvas);
         }

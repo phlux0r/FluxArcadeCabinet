@@ -148,7 +148,7 @@ else
     # shellcheck disable=SC2086
     ./resonanceflux_harness $s | tail -1
   done
-  for s in layout doors bullets death teleport complete buffer passing wayfinding "play 60000" quit idle; do
+  for s in layout doors bullets death teleport complete buffer passing wayfinding "play 60000" quit idle demoexit pick map; do
     echo "=== maze $s"
     # shellcheck disable=SC2086
     ./mazeflux_harness $s | tail -1

@@ -30,7 +30,11 @@
 //               lives pinned: over N frames (default 60000) it must reach
 //               level 15 losing at most 5 lives; the score never drops
 //   quit        Back mid-game puts the score on the table
-//   idle        the attract cycle (title, how-to, scores) and A to start
+//   idle        the attract cycle (title, how-to, scores, the demo) and
+//               back, silent, the table untouched
+//   demoexit    A mid-demo starts a clean real game
+//   pick        the stage select and its test runs
+//   map         B held shows the seen part of the maze; you stand still
 //   all         everything (the default)
 //
 // DUMP_AT=frame,frame writes those frames of `play` as maze_<frame>.ppm.
@@ -470,46 +474,6 @@ static bool wayfinding() {
     return crumbs && compass;
 }
 
-// The bot: the way to the next key (lowest first) or the exit, through open
-// ways; A when beside a paused-able trap whose lane it's about to enter.
-static int botDir(GameEngineMaze &e) {
-    const int W = e._maze.width, H = e._maze.height;
-    int tx = e._exit.x, ty = e._exit.y;
-    for (int k = 0; k < e._activeKeys; k++) if (!e._keys[k].collected) { tx = e._keys[k].x; ty = e._keys[k].y; break; }
-    static int16_t prev[MazeGenerator::MAX_W * MazeGenerator::MAX_H];
-    static int16_t q[MazeGenerator::MAX_W * MazeGenerator::MAX_H];
-    for (int i = 0; i < W * H; i++) prev[i] = -2;
-    const int start = e._player.y * W + e._player.x, goal = ty * W + tx;
-    int head = 0, tail = 0;
-    q[tail++] = start; prev[start] = -1;
-    while (head < tail && prev[goal] == -2) {
-        const int c = q[head++], x = c % W, y = c / W;
-        for (uint8_t d : MazeGenerator::DIRS) {
-            if (!e.canPass(x, y, d)) continue;
-            const int nc = (y + MazeGenerator::dy(d)) * W + x + MazeGenerator::dx(d);
-            bool pad = false;
-            for (int i = 0; i < e._activePads; i++) pad |= e._pads[i].y * W + e._pads[i].x == nc;
-            if (pad && nc != goal) continue;
-            if (prev[nc] == -2) { prev[nc] = c; q[tail++] = nc; }
-        }
-    }
-    if (prev[goal] == -2 || goal == start) return 0;
-    int c = goal;
-    while (prev[c] != start) c = prev[c];
-    const int nx = c % W, ny = c / W;
-    // Into a type A trap's lane only just after a bullet's gone, with time
-    // to cross it; into type B's only while paused. (Mid-step too: the
-    // held stick would carry it on.)
-    for (int i = 0; i < e._activeTraps; i++) {
-        const TrapEmitter &t = e._traps[i];
-        if (!t.active || !t.inLane(nx, ny) || t.inLane(e._player.x, e._player.y)) continue;
-        if (t.type == TrapEmitter::TYPE_B ? !t.paused()
-                                          : t.bulletsInFlight() || t.msToNextShot() < (t.laneLen + 2) * MOVE_MS)
-            return -1;
-    }
-    return nx > e._player.x ? WALL_E : nx < e._player.x ? WALL_W : ny > e._player.y ? WALL_S : WALL_N;
-}
-
 static bool play(long frames) {
     static MazeFluxGame g;
     GameEngineMaze &e = startAt(g, 1);
@@ -521,14 +485,9 @@ static bool play(long frames) {
         e._player.lives = 3;
         InputState in{};
         if (e._state == GameEngineMaze::STATE_PLAYING) {
-            const int dir = botDir(e);
-            in = stick(dir > 0 ? dir : 0);
-            // Waiting at a type B trap's lane: its switch.
-            if (dir < 0)
-                for (int i = 0; i < e._activeTraps; i++)
-                    if (e._traps[i].type == TrapEmitter::TYPE_B && !e._traps[i].paused() &&
-                        e._traps[i].switchReach(e._player.x, e._player.y))
-                        in.btnA = (f & 1);
+            uint8_t dir; bool a;
+            e.autopilot(dir, a);          // the demo's own autopilot
+            in = stick(dir, a);
         } else if (e._state == GameEngineMaze::STATE_LEVEL_COMPLETE) {
             in.btnA = (f / 10) & 1;
         }
@@ -575,21 +534,131 @@ static bool quit() {
     return ok;
 }
 
+// The attract cycle: title, how-to, scores, then the demo (silent, the
+// table untouched), back to the title; A held from the menu doesn't start.
 static bool idle() {
     static MazeFluxGame g;
     g.init(g_audio);
     GameEngineMaze &e = g._engine;
-    int pages = 0, last = -1;
-    for (int f = 0; f < (int)(3 * 8200 / STEP_MS); f++) {
-        frame(g, stick(0, f < 5));                 // A held from the menu at first: no start
-        if (e._attractPage != last) { pages++; last = e._attractPage; }
+    const long best0 = e._scores.best();
+    int pages = 0, last = -1, demos = 0, ended = 0, levels = 0;
+    bool wasDemo = false, heldStarted = false;
+    long demoFrames = 0;
+    for (int f = 0; f < (int)(120000 / STEP_MS); f++) {
+        frame(g, stick(0, f < 5));
+        if (f < 5) heldStarted |= e._state == GameEngineMaze::STATE_PLAYING;
+        if (!e._demo && e._state == GameEngineMaze::STATE_TITLE && e._attractPage != last) { pages++; last = e._attractPage; }
+        if (e._demo && !wasDemo) { demos++; levels = e._level; }
+        if (!e._demo && wasDemo) { ended++; last = -1; }
+        if (e._demo) demoFrames++;
+        wasDemo = e._demo;
     }
-    const bool stayed = e._state == GameEngineMaze::STATE_TITLE;
-    frame(g, InputState{});
+    const bool ok = pages >= 3 && demos >= 2 && ended >= 1 && !heldStarted && e._scores.best() == best0 &&
+                    !g_audio._silenced && levels >= 2 && levels <= 8;
+    printf("idle: %d attract pages, %d demos (%.0fs each), %d ended back at the title, held A ignored %d, table untouched %d -> %s\n",
+           pages, demos, demos ? demoFrames * STEP_MS / 1000.0 / demos : 0.0, ended, !heldStarted, e._scores.best() == best0,
+           ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// A mid-demo: a real game, from level 1, clean, sound back on.
+static bool demoexit() {
+    static MazeFluxGame g;
+    g.init(g_audio);
+    GameEngineMaze &e = g._engine;
+    for (int f = 0; f < 100000 && !e._demo; f++) frame(g, InputState{});
+    for (int f = 0; f < 300; f++) frame(g, InputState{});
+    const bool wasDemo = e._demo;
     frame(g, stick(0, true));
-    const bool started = e._state == GameEngineMaze::STATE_PLAYING && e._level == 1 && e._player.lives == 3;
-    const bool ok = pages >= 3 && stayed && started;
-    printf("idle: %d attract pages, held A ignored %d, A starts %d -> %s\n", pages, stayed, started, ok ? "PASS" : "FAIL");
+    const bool ok = wasDemo && !e._demo && e._state == GameEngineMaze::STATE_PLAYING && e._level == 1 && e._score == 0 &&
+                    e._player.lives == 3 && !e._test && !g_audio._silenced && e._player.x == 0 && e._player.y == 0;
+    printf("demoexit: in a demo %d, A starts level %d, score %d, lives %d -> %s\n", wasDemo, e._level, e._score, e._player.lives,
+           ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// The stage select: B held with A on the title; the stick steps the level
+// (by one and five, wrapping); A starts a test run there, whose game over
+// skips the name entry and whose A starts the same level again; its quit
+// saves nothing; B goes back; plain A still starts level 1.
+static bool pick() {
+    static MazeFluxGame g;
+    g.init(g_audio);
+    GameEngineMaze &e = g._engine;
+    for (int f = 0; f < 3; f++) frame(g, InputState{});
+    InputState ab{}; ab.btnA = ab.btnB = true;
+    frame(g, ab);
+    bool ok = e._state == GameEngineMaze::STATE_PICK && e._pick == 1;
+    auto push = [&](int dir) { frame(g, stick(dir)); frame(g, InputState{}); };
+    push(WALL_E); push(WALL_E);                   // 3
+    push(WALL_N);                                 // 8
+    push(WALL_W); push(WALL_W); push(WALL_W); push(WALL_W); push(WALL_W); push(WALL_W); push(WALL_W); push(WALL_W);   // 30
+    const int wrapped = e._pick;
+    push(WALL_E);                                 // 1
+    push(WALL_S);                                 // 26
+    const int down = e._pick;
+    ok &= wrapped == 30 && down == 26 && e._maze.width == min(mazeWidthFor(26), 24);
+    frame(g, stick(0, true));
+    ok &= e._state == GameEngineMaze::STATE_PLAYING && e._level == 26 && e._test;
+    // Its game over: no name entry; A again starts level 26.
+    e._score = 99999;
+    e._player.lives = 1;
+    e.die(GameEngineMaze::DEATH_BULLET, g_audio);
+    for (int f = 0; f < 60; f++) frame(g, InputState{});
+    const bool overNoName = e._state == GameEngineMaze::STATE_GAMEOVER && e._scores.best() != 99999;
+    for (int f = 0; f < 60; f++) frame(g, InputState{});
+    frame(g, stick(0, true));
+    const bool again = e._state == GameEngineMaze::STATE_PLAYING && e._level == 26 && e._test;
+    e._score = 88888;
+    g.onQuit(g_audio);
+    const bool quitNothing = e._scores.best() != 88888;
+    // B goes back; plain A starts level 1.
+    static MazeFluxGame h;
+    h.init(g_audio);
+    GameEngineMaze &k = h._engine;
+    for (int f = 0; f < 3; f++) frame(h, InputState{});
+    frame(h, ab);
+    InputState b{}; b.btnB = true; b.btnBPressed = true;
+    frame(h, InputState{});
+    frame(h, b);
+    const bool back = k._state == GameEngineMaze::STATE_TITLE;
+    for (int f = 0; f < 3; f++) frame(h, InputState{});
+    frame(h, stick(0, true));
+    const bool plain = k._state == GameEngineMaze::STATE_PLAYING && k._level == 1 && !k._test;
+    ok &= overNoName && again && quitNothing && back && plain;
+    printf("pick: opens 1, steps to 30 and back to 26 (%d, %d), test run %d, game over without a name %d, again %d, quit saves nothing %d, B back %d, plain A level 1 %d -> %s\n",
+           wrapped, down, e._test, overNoName, again, quitNothing, back, plain, ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+// The map: B held shows it; you don't move while it's up (the clock goes
+// on); it shows only cells that have been on screen.
+static bool mapView() {
+    static MazeFluxGame g;
+    GameEngineMaze &e = startAt(g, 14);
+    e._safeUntil = millis() + 10000000;
+    for (int f = 0; f < 5; f++) frame(g, InputState{});
+    InputState in = stick(WALL_S);
+    in.btnB = true;
+    const int x0 = e._player.x, y0 = e._player.y, t0 = e._timeLeft;
+    for (int f = 0; f < 70; f++) frame(g, in);
+    const bool open = e._mapOpen, stayed = e._player.x == x0 && e._player.y == y0 && !e._player.moving, clock = e._timeLeft < t0;
+    // Seen: what's been in view only. Far corner not yet.
+    int seen = 0;
+    for (int i = 0; i < e._maze.width * e._maze.height; i++) seen += e._seen[i] != 0;
+    const bool partial = seen > 20 && seen < e._maze.width * e._maze.height && !e._seen[e.cellIndex(e._exit.x, e._exit.y)];
+    // The far corner's map square is black, the start's lit.
+    const int s = max(3, min(8, min((VIEW_W - 4) / e._maze.width, (VIEW_H - 4) / e._maze.height)));
+    const int ox = (VIEW_W - s * e._maze.width) / 2, oy = HUD_H + (VIEW_H - s * e._maze.height) / 2;
+    const uint16_t* px = g_canvas.getBuffer();
+    const int fx = ox + (e._maze.width - 1) * s + s / 2, fy = oy + (e._maze.height - 1) * s + s / 2;
+    const bool darkFar = px[fy * 128 + fx] == 0 && px[(oy + 1) * 128 + ox + 1] != 0;
+    frame(g, InputState{});
+    for (int f = 0; f < 10; f++) frame(g, stick(WALL_S));
+    const bool closed = !e._mapOpen;
+    const bool ok = open && stayed && clock && partial && darkFar && closed;
+    printf("map: up with B %d, you stay put %d, clock goes on %d, %d cells seen of %d %d, unseen dark %d, closes %d -> %s\n",
+           open, stayed, clock, seen, e._maze.width * e._maze.height, partial, darkFar, closed, ok ? "PASS" : "FAIL");
     return ok;
 }
 
@@ -610,5 +679,8 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "play"))     ok &= play(frames);
     if (all || !strcmp(which, "quit"))     ok &= quit();
     if (all || !strcmp(which, "idle"))     ok &= idle();
+    if (all || !strcmp(which, "demoexit")) ok &= demoexit();
+    if (all || !strcmp(which, "pick"))     ok &= pick();
+    if (all || !strcmp(which, "map"))      ok &= mapView();
     return ok ? 0 : 1;
 }

@@ -111,11 +111,15 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   mazes growing from 10x12 to 24x30, loops, breadcrumbs and a compass.
   README.md's Maze Flux paragraph has the rules. Needs the board: frame
   rate (host cost doubled with the textured walls, 22 to ~50us), feel,
-  the clock's tuning, the themes' colours. Not done: a map on B (the
-  owner may want it if big mazes are still too hard), stage select.
-- **Maze has no attract demo, and that stays.** The owner doesn't want
-  one: it isn't an exciting game to watch. Maze's attract cycle is title,
-  how-to-play and the table.
+  the clock's tuning, the themes' colours. Then, after the owner played
+  it: cells passed with the stick held weren't marked or their items
+  collected (fixed: PlayerMaze::arrivedX/Y), and the rest of the list:
+  a map on B (seen cells only; you stand still, the rest goes on), a
+  square per key in the HUD, the stage select (B held with A on the
+  title), optional maze_door/maze_switch/maze_teleport.wav, and the
+  attract demo (the harness's bot, moved into the game as autopilot()).
+- **Maze now has an attract demo**, at the owner's request (it had been
+  left out as dull to watch; at the new scale it isn't).
 - Flash is the tight limit (huge_app, ~3MB). Before adding assets or a new
   game, ask the owner for `pio run`'s size line; a cloud session can't
   build for the board.
