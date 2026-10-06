@@ -10,10 +10,16 @@
 
 namespace mazecfg {
 
-constexpr int CELL  = 8;      // px a maze cell
-constexpr int HUD_H = 10;     // px of HUD at the top
+constexpr int CELL   = 16;    // px a maze cell
+constexpr int WALL_T = 4;     // px thick, a wall between two cells
+constexpr int HUD_H  = 10;    // px of HUD at the top
 constexpr int VIEW_W = 128;   // px of maze in view
 constexpr int VIEW_H = 160 - HUD_H;
+
+// The camera follows the player, LOOK_AHEAD px ahead of it while it moves,
+// easing there with a time constant of CAMERA_EASE_MS.
+constexpr float LOOK_AHEAD     = 16.0f;
+constexpr float CAMERA_EASE_MS = 140.0f;
 
 // Moving: a cell every MOVE_MS (MOVE_BOOST_MS with the speed boost on).
 constexpr unsigned long MOVE_MS       = 200;

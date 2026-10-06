@@ -15,6 +15,7 @@
 #include "PlayerMaze.h"
 #include "Obstacles.h"
 #include "Collectibles.h"
+#include "PlayerSprite.h"
 #include "assets/TitleScreen.h"
 
 // =============================================================================
@@ -69,6 +70,7 @@ private:
 
     unsigned long _lastSecondMs = 0;
     unsigned long _lastUpdateMs = 0;
+    unsigned long _frameMs      = 0;     // the last frame's length
     unsigned long _attractTimer = 0;
     unsigned long _gameOverMs   = 0;
 
@@ -88,7 +90,8 @@ private:
     bool _endInputArmed = false;
     int  _attractPage   = 0;           // title, how to play, high scores
 
-    int _camX = 0, _camY = 0;          // the view's top left, maze pixels
+    int   _camX = 0, _camY = 0;        // the view's top left, maze pixels
+    float _camFX = 0, _camFY = 0;      // the same, easing
 
     // Which optional sounds are on the card (checked once, in init()).
     bool _pickupOnCard = false, _powerupOnCard = false;
@@ -266,7 +269,7 @@ private:
         _levelTime    = (int)(TIME_BASE_S + TIME_PER_CELL_S * w * h);
         _timeLeft     = _levelTime;
         _lastSecondMs = _lastUpdateMs = millis();
-        updateCamera();
+        updateCamera(0, true);
     }
 
     // Doors across the way from the start to the exit, spaced along it,
@@ -404,13 +407,25 @@ private:
     }
 
     // -------------------------------------------------------------------------
-    // Camera: the player centred, within the maze.
+    // Camera: the player centred (a little ahead while moving), within the
+    // maze and its outer wall, easing there. snap: straight there.
     // -------------------------------------------------------------------------
-    void updateCamera() {
+    void updateCamera(unsigned long dtMs, bool snap = false) {
         using namespace mazecfg;
-        const int mw = _maze.width * CELL + 1, mh = _maze.height * CELL + 1;
-        _camX = mw <= VIEW_W ? (mw - VIEW_W) / 2 : constrain((int)_player.px() - VIEW_W / 2, 0, mw - VIEW_W);
-        _camY = mh <= VIEW_H ? (mh - VIEW_H) / 2 : constrain((int)_player.py() - VIEW_H / 2, 0, mh - VIEW_H);
+        const int edge = WALL_T / 2;
+        const int mw = _maze.width * CELL + 2 * edge, mh = _maze.height * CELL + 2 * edge;
+        float tx = _player.px() - VIEW_W / 2.0f, ty = _player.py() - VIEW_H / 2.0f;
+        if (_player.moving) {
+            tx += (_player.x - _player.fromX) * LOOK_AHEAD;
+            ty += (_player.y - _player.fromY) * LOOK_AHEAD;
+        }
+        tx = mw <= VIEW_W ? (mw - VIEW_W) / 2.0f - edge : constrain(tx, (float)-edge, (float)(mw - VIEW_W - edge));
+        ty = mh <= VIEW_H ? (mh - VIEW_H) / 2.0f - edge : constrain(ty, (float)-edge, (float)(mh - VIEW_H - edge));
+        const float k = snap ? 1.0f : min(1.0f, dtMs / CAMERA_EASE_MS);
+        _camFX += (tx - _camFX) * k;
+        _camFY += (ty - _camFY) * k;
+        _camX = (int)lroundf(_camFX);
+        _camY = (int)lroundf(_camFY);
     }
 
     // -------------------------------------------------------------------------
@@ -443,6 +458,7 @@ private:
         _dyingUntil = 0;
         if (--_player.lives <= 0) { endGame(audio); return; }
         _player.reset(0, 0);
+        updateCamera(0, true);
         _safeUntil = millis() + mazecfg::RESPAWN_SAFE_MS;
         for (int i = 0; i < _activeTraps; i++) _traps[i].clearBullets();
         for (int i = 0; i < _activeBombs; i++) _bombs[i].disarm();
@@ -503,6 +519,7 @@ private:
         const unsigned long now = millis();
         const unsigned long dt = min(now - _lastUpdateMs, 100UL);
         _lastUpdateMs = now;
+        _frameMs = dt;
 
         if (_dyingUntil) {
             if (now >= _dyingUntil) finishDying(audio);
@@ -569,73 +586,148 @@ private:
     int sx(float mx) const { return (int)mx - _camX; }
     int sy(float my) const { return (int)my - _camY + mazecfg::HUD_H; }
 
+    // Centre of a cell on screen.
+    int cx(int cellX) const { return sx(cellX * mazecfg::CELL + mazecfg::CELL / 2); }
+    int cy(int cellY) const { return sy(cellY * mazecfg::CELL + mazecfg::CELL / 2); }
+    bool onScreen(int x, int y, int margin = mazecfg::CELL) const {
+        return x > -margin && x < ArcadeConfig::PORTRAIT_WIDTH + margin && y > mazecfg::HUD_H - margin &&
+               y < ArcadeConfig::PORTRAIT_HEIGHT + margin;
+    }
+
+    static void drawKey(GFXcanvas16 &c, int x, int y, uint16_t col) {
+        c.fillCircle(x - 3, y, 3, col);
+        c.drawPixel(x - 3, y, ArcadeConfig::COLOR_BLACK);
+        c.drawFastHLine(x, y, 6, col);
+        c.drawFastHLine(x, y + 1, 6, col);
+        c.drawFastVLine(x + 3, y + 2, 2, col);
+        c.drawFastVLine(x + 5, y + 2, 3, col);
+    }
+
     void renderPlaying(GFXcanvas16 &canvas) {
         using namespace mazecfg;
-        _renderer.draw(canvas, _maze, _camX, _camY);
-        const int C = CELL;
+        const unsigned long now = millis();
+        _renderer.draw(canvas, _maze, _camX, _camY, MazeRenderer::themeFor(_level));
+        const int C = CELL, H = WALL_T / 2;
 
-        // Doors: a bar across the way, in their key's colour.
+        // Doors: a barred gate across the way, in their key's colour, a
+        // lock in the middle.
         for (int i = 0; i < _activeDoors; i++) {
             const Door &d = _doors[i];
             if (d.open) continue;
-            const int x = sx(d.x * C), y = sy(d.y * C);
             const uint16_t col = keyColour(d.colourId);
-            if (d.dir == WALL_E)      canvas.fillRect(x + C - 1, y + 1, 3, C - 1, col);
-            else if (d.dir == WALL_W) canvas.fillRect(x - 1, y + 1, 3, C - 1, col);
-            else if (d.dir == WALL_S) canvas.fillRect(x + 1, y + C - 1, C - 1, 3, col);
-            else                      canvas.fillRect(x + 1, y - 1, C - 1, 3, col);
+            const int bx = sx(d.x * C), by = sy(d.y * C);
+            int x, y, w, h;
+            if (d.dir == WALL_E || d.dir == WALL_W) {
+                x = (d.dir == WALL_E ? bx + C : bx) - H; y = by + H; w = 2 * H; h = C - 2 * H;
+            } else {
+                x = bx + H; y = (d.dir == WALL_S ? by + C : by) - H; w = C - 2 * H; h = 2 * H;
+            }
+            if (!onScreen(x, y)) continue;
+            canvas.fillRect(x, y, w, h, col);
+            if (w > h) for (int k = 2; k < w; k += 3) canvas.drawFastVLine(x + k, y, h, ArcadeConfig::COLOR_BLACK);
+            else       for (int k = 2; k < h; k += 3) canvas.drawFastHLine(x, y + k, w, ArcadeConfig::COLOR_BLACK);
+            canvas.fillRect(x + w / 2 - 2, y + h / 2 - 2, 4, 4, ArcadeConfig::COLOR_WHITE);
+            canvas.drawPixel(x + w / 2 - 1, y + h / 2, ArcadeConfig::COLOR_BLACK);
         }
 
+        // Keys, bobbing.
         for (int i = 0; i < _activeKeys; i++) {
             if (_keys[i].collected) continue;
-            canvas.fillRect(sx(_keys[i].x * C) + 2, sy(_keys[i].y * C) + 2, 4, 4, keyColour(_keys[i].colourId));
+            const int x = cx(_keys[i].x), y = cy(_keys[i].y) - 1 + ((now / 300 + i) & 1);
+            if (onScreen(x, y)) drawKey(canvas, x, y, keyColour(_keys[i].colourId));
         }
 
+        // The exit: a shut hatch, or a pulsing portal once open.
         {
-            const uint16_t col = _exit.unlocked ? (millis() % 500 < 250 ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_BLACK)
-                                                : ArcadeConfig::COLOR_WHITE;
-            canvas.drawRect(sx(_exit.x * C) + 1, sy(_exit.y * C) + 1, 6, 6, col);
+            const int x = sx(_exit.x * C) + H + 1, y = sy(_exit.y * C) + H + 1, w = C - 2 * H - 2;
+            if (onScreen(x, y)) {
+                if (_exit.unlocked) {
+                    static const uint16_t P[3] = { ArcadeConfig::COLOR_GREEN, 0x03E0, ArcadeConfig::COLOR_WHITE };
+                    for (int k = 0; k < 3; k++)
+                        canvas.drawRect(x + k * 2, y + k * 2, w - k * 4, w - k * 4, P[(k + now / 150) % 3]);
+                } else {
+                    canvas.fillRect(x, y, w, w, ArcadeConfig::COLOR_GREY);
+                    canvas.drawRect(x, y, w, w, ArcadeConfig::COLOR_WHITE);
+                    canvas.drawLine(x + 2, y + 2, x + w - 3, y + w - 3, 0x4208);
+                    canvas.drawLine(x + w - 3, y + 2, x + 2, y + w - 3, 0x4208);
+                }
+            }
         }
 
+        // Bombs: a dark ball with a fizzing fuse; red, counting, once lit.
         for (int i = 0; i < _activeBombs; i++) {
             const ProximityBomb &b = _bombs[i];
             if (!b.active) continue;
-            const uint16_t col = b.fuseActive ? (millis() % 200 < 100 ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_YELLOW)
-                                              : ArcadeConfig::COLOR_AMBER;
-            canvas.fillCircle(sx(b.x * C) + 4, sy(b.y * C) + 4, 3, col);
+            const int x = cx(b.x), y = cy(b.y) + 1;
+            if (!onScreen(x, y)) continue;
+            const uint16_t body = b.fuseActive && now % 200 < 100 ? ArcadeConfig::COLOR_RED : 0x2945;
+            canvas.fillCircle(x, y, 5, body);
+            canvas.drawPixel(x - 2, y - 2, ArcadeConfig::COLOR_WHITE);
+            canvas.drawLine(x + 3, y - 4, x + 5, y - 6, ArcadeConfig::COLOR_AMBER);
+            canvas.drawPixel(x + 5 + (now / 90) % 2, y - 7, now % 160 < 80 ? ArcadeConfig::COLOR_YELLOW : ArcadeConfig::COLOR_RED);
+            if (b.fuseActive && b.fuseCount > 0) {
+                canvas.setTextSize(1);
+                canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
+                canvas.setCursor(x - 2, y - 3);
+                canvas.print(b.fuseCount);
+            }
         }
 
+        // Traps: a block with a barrel the way it fires; bullets with a tail.
         for (int i = 0; i < _activeTraps; i++) {
             const TrapEmitter &t = _traps[i];
             uint16_t col = t.type == TrapEmitter::TYPE_A ? ArcadeConfig::COLOR_AMBER : ArcadeConfig::COLOR_MAGENTA;
-            if (t.paused() && millis() % 300 < 150) col = ArcadeConfig::COLOR_GREY;
-            canvas.fillRect(sx(t.x * C) + 2, sy(t.y * C) + 2, 4, 4, col);
-            for (const auto &b : t.bullets)
-                if (b.active) canvas.fillRect(sx(b.x) - 1, sy(b.y) - 1, 2, 2, ArcadeConfig::COLOR_WHITE);
-        }
-
-        for (int i = 0; i < _activePads; i++) {
-            const uint16_t col = millis() % 600 < 300 ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_ION_BLUE;
-            canvas.drawCircle(sx(_pads[i].x * C) + 4, sy(_pads[i].y * C) + 4, 3, col);
-        }
-
-        for (const auto &b : _boosts)
-            if (b.active) canvas.drawTriangle(sx(b.x * C) + 4, sy(b.y * C) + 1, sx(b.x * C) + 1, sy(b.y * C) + 7,
-                                              sx(b.x * C) + 7, sy(b.y * C) + 7, ArcadeConfig::COLOR_CYAN);
-        for (const auto &b : _bonuses)
-            if (b.active) canvas.drawRect(sx(b.x * C) + 2, sy(b.y * C) + 1, 4, 6, ArcadeConfig::COLOR_GREEN);
-
-        // The player, unless just lost; flashing while safe.
-        if (!_dyingUntil && !(safe() && millis() % 200 < 100)) {
-            const int x = sx(_player.px()) - 4, y = sy(_player.py()) - 4;
-            canvas.fillRect(x + 2, y + 2, 4, 4, ArcadeConfig::COLOR_WHITE);
-            switch (_player.facing) {
-                case PlayerMaze::FACE_UP:    canvas.drawFastHLine(x + 3, y + 1, 2, ArcadeConfig::COLOR_CYAN); break;
-                case PlayerMaze::FACE_DOWN:  canvas.drawFastHLine(x + 3, y + 6, 2, ArcadeConfig::COLOR_CYAN); break;
-                case PlayerMaze::FACE_LEFT:  canvas.drawFastVLine(x + 1, y + 3, 2, ArcadeConfig::COLOR_CYAN); break;
-                case PlayerMaze::FACE_RIGHT: canvas.drawFastVLine(x + 6, y + 3, 2, ArcadeConfig::COLOR_CYAN); break;
+            if (t.paused() && now % 300 < 150) col = ArcadeConfig::COLOR_GREY;
+            const int x = cx(t.x), y = cy(t.y);
+            if (onScreen(x, y)) {
+                canvas.fillRect(x - 4, y - 4, 9, 9, col);
+                canvas.fillRect(x - 2, y - 2, 5, 5, 0x2104);
+                canvas.fillRect(x + t.dirX * 4 - 1, y + t.dirY * 4 - 1, 3, 3, col);
+                canvas.fillRect(x + t.dirX * 6 - 1, y + t.dirY * 6 - 1, 3, 3, col);
+            }
+            for (const auto &b : t.bullets) {
+                if (!b.active) continue;
+                const int bx = sx(b.x), by = sy(b.y);
+                if (!onScreen(bx, by)) continue;
+                canvas.drawLine(bx - t.dirX * 5, by - t.dirY * 5, bx, by, col);
+                canvas.fillRect(bx - 1, by - 1, 3, 3, ArcadeConfig::COLOR_WHITE);
             }
         }
+
+        // Teleport pads: rings turning colour.
+        for (int i = 0; i < _activePads; i++) {
+            const int x = cx(_pads[i].x), y = cy(_pads[i].y);
+            if (!onScreen(x, y)) continue;
+            const bool ph = (now / 200 + i) & 1;
+            canvas.drawCircle(x, y, 5, ph ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_ION_BLUE);
+            canvas.drawCircle(x, y, 3, ph ? ArcadeConfig::COLOR_ION_BLUE : ArcadeConfig::COLOR_CYAN);
+            canvas.drawPixel(x, y, ArcadeConfig::COLOR_WHITE);
+        }
+
+        // Speed boosts: a bolt; time bonuses: a clock.
+        for (const auto &b : _boosts) {
+            if (!b.active) continue;
+            const int x = cx(b.x), y = cy(b.y);
+            if (!onScreen(x, y)) continue;
+            for (int k = 0; k < 2; k++) {
+                canvas.drawLine(x + 2 + k, y - 5, x - 2 + k, y, ArcadeConfig::COLOR_CYAN);
+                canvas.drawLine(x - 2 + k, y, x + 2 + k, y, ArcadeConfig::COLOR_CYAN);
+                canvas.drawLine(x + 2 + k, y, x - 2 + k, y + 5, ArcadeConfig::COLOR_CYAN);
+            }
+        }
+        for (const auto &b : _bonuses) {
+            if (!b.active) continue;
+            const int x = cx(b.x), y = cy(b.y);
+            if (!onScreen(x, y)) continue;
+            canvas.fillCircle(x, y, 5, 0x0320);
+            canvas.drawCircle(x, y, 5, ArcadeConfig::COLOR_GREEN);
+            canvas.drawLine(x, y, x, y - 3, ArcadeConfig::COLOR_WHITE);
+            canvas.drawLine(x, y, x + 2, y + 1, ArcadeConfig::COLOR_WHITE);
+        }
+
+        // The player, unless just lost; flashing while safe.
+        if (!_dyingUntil && !(safe() && now % 200 < 100))
+            mazesprite::draw(canvas, sx(_player.px()), sy(_player.py()), _player.facing, _player.walkFrame, HUD_H);
 
         _particles.render(canvas, HUD_H, _camX, _camY - HUD_H);
 
@@ -644,7 +736,7 @@ private:
         canvas.setTextSize(1);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.setCursor(1, 1);   canvas.print("L:"); canvas.print(_level);
-        canvas.setTextColor(_timeLeft <= 15 && millis() % 500 < 250 ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_WHITE);
+        canvas.setTextColor(_timeLeft <= 15 && now % 500 < 250 ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_WHITE);
         canvas.setCursor(32, 1);  canvas.print("T:"); canvas.print(_timeLeft);
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
         canvas.setCursor(68, 1);  canvas.print(_score);
@@ -857,7 +949,7 @@ public:
         updatePlaying(up, down, left, right, aPressed, audio);
         if (_state == STATE_PLAYING) {
             _particles.update();
-            updateCamera();
+            updateCamera(_frameMs);
             renderPlaying(canvas);
             flush(canvas);
         }

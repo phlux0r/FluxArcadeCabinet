@@ -30,6 +30,7 @@
 
 #include <Adafruit_ST7735.h>
 #include "harness_common.h"
+#include <chrono>
 
 #define private public
 #include "games/MazeFlux/MazeFluxGame.h"
@@ -399,6 +400,7 @@ static bool play(long frames) {
     GameEngineMaze &e = startAt(g, 1);
     FrameDumper dump("maze");
     int deaths = 0, best = 1, lastScore = 0;
+    double usTotal = 0; long usFrames = 0;
     bool ok = true, wasDying = false;
     for (long f = 0; f < frames; f++) {
         e._player.lives = 3;
@@ -415,7 +417,12 @@ static bool play(long frames) {
         } else if (e._state == GameEngineMaze::STATE_LEVEL_COMPLETE) {
             in.btnA = (f / 10) & 1;
         }
+        const auto t0 = std::chrono::steady_clock::now();
         frame(g, in);
+        if (e._state == GameEngineMaze::STATE_PLAYING) {
+            usTotal += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+            usFrames++;
+        }
         dump.maybeDump(f, g_canvas);
         if (e._dyingUntil && !wasDying) {
             deaths++;
@@ -438,7 +445,8 @@ static bool play(long frames) {
         best = max(best, e._level);
     }
     ok &= best >= 15 && deaths <= 5;   // it waits out traps and walks past bombs: no level is unfair
-    printf("play: %ld frames, reached level %d, %d lives lost -> %s\n", frames, best, deaths, ok ? "PASS" : "FAIL");
+    printf("play: %ld frames, reached level %d, %d lives lost, host %.0fus a frame in play -> %s\n", frames, best, deaths,
+           usFrames ? usTotal / usFrames : 0.0, ok ? "PASS" : "FAIL");
     return ok;
 }
 
