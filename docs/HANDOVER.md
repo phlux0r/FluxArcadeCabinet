@@ -63,6 +63,11 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
   the look, feel and frame rate need the board. Then perhaps Maze,
   Runner and Brick, the other games on `ParticleManager`.
+- **Lander gravity** (branch `claude/lander-gravity`): the owner found it
+  too strong from the start. Now 0.012 a physics step on level 1 (was
+  0.025), +0.0025 every level to level 20 (0.0595), where it stays; the
+  HUD's G is the level up to 20. Fuel tanks still from level 7. Feel needs
+  the board.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.

@@ -211,6 +211,22 @@ int main(int argc, char** argv) {
         pass = fabsf(moved - vx) < 0.001f;
         printf("lander debris: moved %.3f in a frame at vx %.3f -> %s\n", moved, vx, pass ? "PASS" : "FAIL");
         ok &= pass;
+
+        // Gravity: gentle on level 1 (about half the old 0.025), rising a
+        // little every level, the old start by level 6, no more after level 20.
+        float gv[31] = {};
+        bool rising = true;
+        for (int lv = 1; lv <= 30; ++lv) {
+            e._level = lv;
+            e.initLevel();
+            gv[lv] = e._currentGravity;
+            if (lv > 1 && lv <= 20) rising &= gv[lv] > gv[lv - 1];
+        }
+        pass = fabsf(gv[1] - 0.012f) < 1e-4f && fabsf(gv[6] - 0.0245f) < 1e-4f && rising &&
+               fabsf(gv[20] - 0.0595f) < 1e-4f && gv[30] == gv[20];
+        printf("lander gravity: L1 %.4f L6 %.4f L10 %.4f L20 %.4f L30 %.4f, rising each level %d -> %s\n",
+               gv[1], gv[6], gv[10], gv[20], gv[30], (int)rising, pass ? "PASS" : "FAIL");
+        ok &= pass;
     }
 
     if (!strcmp(which, "all") || !strcmp(which, "trails")) {

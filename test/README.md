@@ -189,7 +189,8 @@ being freed on exit to the launcher).
   the Runner, Asteroid and Lander attract demos are covered
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay; besides those it
-  checks Lander's crash debris moves one step a frame (`lander`), and
+  checks Lander's crash debris moves one step a frame and its gravity by
+  level (gentle on level 1, rising every level to 20) (`lander`), and
   `ParticleManager`'s trails (`trails`: a spark with one leaves a line
   behind it, dimmer back along it, one without doesn't, and neither
   crosses the HUD line; a trailed spark dims out instead of flashing white

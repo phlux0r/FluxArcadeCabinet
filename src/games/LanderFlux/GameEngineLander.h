@@ -41,6 +41,10 @@ private:
 
     const float THRUST_POWER       = 0.09f;
     const float SAFE_LANDING_SPEED = 1.1f;
+    // Gravity per physics step, by level (initLevel()).
+    const float GRAVITY_START      = 0.012f;
+    const float GRAVITY_STEP       = 0.0025f;
+    const int   GRAVITY_TOP_LEVEL  = 20;
 
     int   _score         = 0;
     int   _level         = 1;
@@ -107,14 +111,15 @@ private:
         _lander.spawn();
         _padX = random(15, ArcadeConfig::PORTRAIT_WIDTH - 15 - _padWidth);
 
-        int gravityIncrements = (_level - 1) / 3;
-        _currentGravity = 0.025f + (gravityIncrements * 0.005f);
-        if (_currentGravity > 0.10f) _currentGravity = 0.10f;
+        // Gentle to begin with (about half what level 1 used to have), a
+        // little stronger every level: the old start by level 6, and no
+        // stronger after level 20.
+        _currentGravity = GRAVITY_START + GRAVITY_STEP * (min(_level, GRAVITY_TOP_LEVEL) - 1);
 
         _obstacles.generateNewMap(_level, _padX, _padWidth);
 
-        // Safe-spawn fuel tank — original 50-attempt collision check
-        if (gravityIncrements >= 2) {
+        // Safe-spawn fuel tank from level 7 — original 50-attempt collision check
+        if (_level >= 7) {
             _fuelTankActive = true;
             bool safeSpawnFound = false;
             int attempts = 0;
@@ -731,7 +736,7 @@ public:
         _lander.render(canvas, btnA, SAFE_LANDING_SPEED);
 
         // HUD
-        int gravityTier = ((_level - 1) / 3) + 1;
+        int gravityTier = min(_level, GRAVITY_TOP_LEVEL);   // it rises every level to 20
         int fuelPercent = constrain((int)_lander.fuel, 0, 100);
 
         canvas.setTextSize(1);
