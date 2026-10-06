@@ -401,6 +401,18 @@ Speed can't be the difficulty here, so:
 Later waves are harder through more ratios, more signals and more at
 once, not speed.
 
+### Options
+
+After a first long play (to wave 14): options on the attract screens (B
+pressed and let go; B with A stays the wave select), saved on the
+cabinet. RATIO HINT and NOTES switch the two kinds of help, PACE is
+calm, normal or fast (drift and arrivals x0.75 or x1.25), BOSSES waits
+greyed for the Chords, and DEBUG LINE replaces the old compile-time
+switch. Less help scores more: x1.25 for each help off, x1.5 fast, x0.75
+calm, multiplied, shown on the HUD. One high-score table for all of
+them. Also fixed: the how-to slides didn't clear the bands above and
+below the scope, so the title's lines showed under theirs.
+
 ## Needs the board
 
 Everything that makes or breaks it: whether the figures read clearly at

@@ -23,8 +23,8 @@ constexpr float CORE_Y  = SCOPE_Y + SCOPE_H / 2.0f;
 constexpr float CORE_R  = 18.0f;         // your figure's size, and the ring signals burst on
 constexpr float SIG_R   = 10.0f;         // a signal's figure (complex ratios blur smaller)
 
-// Show the match gaps and the beat on the tuning strip, for tuning the
-// tolerances on the board.
+// The phase gap to the signal on your stop, in the scope's corner, for
+// tuning on the board: this is its default; the options switch it.
 constexpr bool DEBUG_LINE = true;
 
 // ---- The dial ----
@@ -80,6 +80,10 @@ constexpr float DAMPEN_SLOW = 0.3f;
 constexpr long  PTS_TONE = 100;          // up to double far out at the scope's edge
 constexpr long  PTS_STATIC_LEFT = 50;    // wave clear: per point of static below 100
 constexpr long  PTS_DAMPEN_LEFT = 500;
+// The options' score multipliers: each help switched off, and the pace.
+constexpr float MULT_NO_HINT = 1.25f, MULT_NO_NOTES = 1.25f, MULT_FAST = 1.5f, MULT_CALM = 0.75f;
+// The pace option: drift speed (and how often signals come) at CALM and FAST.
+constexpr float PACE_CALM_SPEED = 0.75f, PACE_FAST_SPEED = 1.25f;
 
 // ---- Look ----
 constexpr float GLOW_HALF_MS = 90.0f;    // the afterglow's half-life

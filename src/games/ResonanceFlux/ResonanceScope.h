@@ -180,6 +180,13 @@ inline void ResonanceFluxGame::drawHud(GFXcanvas16 &cv) {
     cv.print(buf);
     snprintf(buf, sizeof(buf), "W%d", _wave);
     hiscore::printCentred(cv, buf, 1, ArcadeConfig::COLOR_GREEN);
+    const float mult = scoreMult();
+    if (fabsf(mult - 1.0f) > 0.001f) {       // the options' multiplier, when it isn't 1
+        snprintf(buf, sizeof(buf), "x%.2f", mult);
+        cv.setTextColor(ArcadeConfig::COLOR_YELLOW);
+        cv.setCursor(104, 1);
+        cv.print(buf);
+    }
     for (int i = 0; i < _dampens; ++i) cv.fillRect(W - 6 - i * 6, 2, 4, 5, ArcadeConfig::COLOR_CYAN);
     if (_now < _dampUntil) cv.drawRect(W - 6 - DAMPEN_PER_WAVE * 6, 1, DAMPEN_PER_WAVE * 6 + 2, 7, ArcadeConfig::COLOR_CYAN);
 
@@ -216,7 +223,7 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
     const int base = STRIP_Y + 7;
     cv.drawFastHLine(dialX(0), base, dialX(_stopCount - 1) - dialX(0) + 1, 0x2104);
     for (int i = 0; i < _stopCount; ++i) cv.drawFastVLine(dialX(i), base - 3, 3, ArcadeConfig::COLOR_GREEN);
-    if (inPlay() && _threat >= 0) {
+    if (_opt.hint && inPlay() && _threat >= 0) {
         const int x = dialX(_stopOf[_signals[_threat].ratio]);
         cv.drawFastVLine(x, base - 5, 5, ArcadeConfig::COLOR_AMBER);
         cv.fillRect(x - 1, base + 1, 3, 2, ArcadeConfig::COLOR_AMBER);
@@ -234,7 +241,7 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
 
     // Tuning aid for the board, in the scope's bottom corner: the phase gap
     // to the signal on your stop.
-    if (DEBUG_LINE && _focus >= 0 && _phaseState == PHASE_PLAYING && !_demo) {
+    if (_opt.debug && _focus >= 0 && _phaseState == PHASE_PLAYING && !_demo) {
         snprintf(buf, sizeof(buf), "phase %.2f / %.2f", _focusPhaseGap, PHASE_TOL);
         cv.setTextColor(0x8410);
         cv.setCursor(1, SCOPE_Y + SCOPE_H - 8);
@@ -262,7 +269,8 @@ inline void ResonanceFluxGame::renderTitle(GFXcanvas16 &cv) {
     char buf[24];
     hiscore::printCentred(cv, _scores.bestLine(buf, sizeof(buf)), 2, ArcadeConfig::COLOR_AMBER);
     hiscore::printCentred(cv, "STICK TUNE  A FIRE  B DAMP", STRIP_Y - 2, ArcadeConfig::COLOR_GREY);
-    if ((_now / 500) % 2) hiscore::printCentred(cv, "PRESS A", 104, ArcadeConfig::COLOR_WHITE);
+    hiscore::printCentred(cv, (_now / 1500) % 2 ? "B: OPTIONS" : "PRESS A", 104,
+                          (_now / 1500) % 2 ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_WHITE);
 }
 
 // A figure into the planes: green (yours) or amber (a signal's), or both
@@ -279,6 +287,10 @@ inline void ResonanceFluxGame::figureFor(const Ratio &r, float phase, float cx, 
 // 1 matching (a signal and your figure turning into resonance), 2 static
 // (a signal reaching you, the scope filling with noise).
 inline void ResonanceFluxGame::renderInfo(GFXcanvas16 &cv, int page) {
+    // The scope is redrawn whole; the bands above and below it must be
+    // cleared too, or the last screen's lines show under these.
+    cv.fillRect(0, 0, W, SCOPE_Y, ArcadeConfig::COLOR_BLACK);
+    cv.fillRect(0, STRIP_Y, W, H - STRIP_Y, ArcadeConfig::COLOR_BLACK);
     fadeGlow();
     const unsigned long t = _now - _slideAt;
     char line[32];
@@ -370,6 +382,40 @@ inline void ResonanceFluxGame::renderPicker(GFXcanvas16 &cv) {
     hiscore::printCentred(cv, line, 84, ArcadeConfig::COLOR_WHITE);
     hiscore::printCentred(cv, "<> WAVE  ^v BY 5", 100, ArcadeConfig::COLOR_WHITE);
     hiscore::printCentred(cv, "A: TEST  B: BACK", 112, ArcadeConfig::COLOR_YELLOW);
+}
+
+// The options screen: one line each, the chosen one marked; bosses greyed
+// until there are bosses; the score multiplier the settings give.
+inline void ResonanceFluxGame::renderOptions(GFXcanvas16 &cv) {
+    cv.fillScreen(ArcadeConfig::COLOR_BLACK);
+    hiscore::printCentred(cv, "OPTIONS", 4, ArcadeConfig::COLOR_ORANGE, 2);
+    static const char *const names[OPT_COUNT] = { "RATIO HINT", "NOTES", "PACE", "BOSSES", "DEBUG LINE" };
+    static const char *const paces[] = { "CALM", "NORMAL", "FAST" };
+    cv.setFont();
+    cv.setTextSize(1);
+    for (int i = 0; i < OPT_COUNT; ++i) {
+        const int y = 28 + i * 13;
+        const char *value = i == OPT_HINT ? (_opt.hint ? "ON" : "OFF")
+                          : i == OPT_NOTES ? (_opt.notes ? "ON" : "OFF")
+                          : i == OPT_PACE ? paces[_opt.pace]
+                          : i == OPT_BOSSES ? "(SOON)"
+                          : (_opt.debug ? "ON" : "OFF");
+        const bool grey = i == OPT_BOSSES;
+        const uint16_t c = grey ? ArcadeConfig::COLOR_GREY : i == _optRow ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_GREEN;
+        cv.setTextColor(i == _optRow ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_BLACK);
+        cv.setCursor(8, y);
+        cv.print(">");
+        cv.setTextColor(c);
+        cv.setCursor(18, y);
+        cv.print(names[i]);
+        cv.setCursor(W - 8 - 6 * (int)strlen(value), y);
+        cv.print(value);
+    }
+    char line[24];
+    snprintf(line, sizeof(line), "SCORE x%.2f", scoreMult());
+    hiscore::printCentred(cv, line, 96, ArcadeConfig::COLOR_YELLOW);
+    hiscore::printCentred(cv, "^v PICK  <> CHANGE", 108, ArcadeConfig::COLOR_WHITE);
+    hiscore::printCentred(cv, "B: BACK", 118, ArcadeConfig::COLOR_GREY);
 }
 
 inline void ResonanceFluxGame::drawDemoOverlay(GFXcanvas16 &cv) {

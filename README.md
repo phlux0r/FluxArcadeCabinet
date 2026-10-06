@@ -179,7 +179,15 @@ signals, a little faster (capped by about wave 20, as the screen is
 small), up to four at once, and more ratios, each a new stop on the dial (1:2 and
 1:1, then 1:3 and 2:3 on wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A
 line in the scope's bottom corner shows the phase gap to the signal on
-your stop, for tuning the tolerance (`DEBUG_LINE` in `ResonanceConfig.h`).
+your stop, for tuning the tolerance.
+
+Its options (B on the title, how-to or scores screens, saved on the
+cabinet): **RATIO HINT** (the amber stop) and **NOTES** (the two notes;
+the hiss stays) on or off, **PACE** calm, normal or fast (drift speed and
+how often signals come, x0.75 or x1.25), **BOSSES** (greyed: none yet)
+and **DEBUG LINE**. Points are worth more with less help: x1.25 for each
+help off, x1.5 fast, x0.75 calm, multiplied together (the HUD shows the
+multiplier when it isn't 1).
 
 **Roll Flux** (`docs/design/RollFlux.md`): the stick tilts the course and
 the ball rolls that way (camera-relative: up rolls it away from you), to
@@ -383,8 +391,10 @@ back.
 Resonance Flux: left/right steps the dial (the frequency ratio) a stop at
 a time, round from end to end; held, it repeats. Up/down turns the phase
 at a rate that follows how far you push, so letting go keeps it. A fires,
-B dampens. Wave select, for testing: on the title, how-to or scores
-screens, hold B and press A; the stick picks the wave (left/right by one,
+B dampens. B pressed and let go on the title, how-to or scores screens
+opens the options: up/down picks a line, left/right or A changes it, B
+goes back. Wave select, for testing: on the same screens, hold B and
+press A; the stick picks the wave (left/right by one,
 up/down by five, from 1 to 20, each shown with its ratios, how many
 signals and how fast), A starts a test run there (a T before the score;
 nothing goes on the high-score table), B goes back.

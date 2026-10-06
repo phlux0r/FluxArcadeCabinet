@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <esp_heap_caps.h>
+#include <Preferences.h>
 #include "../../games/IGame.h"
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/AudioEngine.h"
@@ -26,7 +27,9 @@
 // no cascades, chains or Chords. docs/design/ResonanceFlux.md has the
 // full design. Left alone, the title cycles through three how-to slides,
 // the high scores and a silent demo; B held with A on them opens the wave
-// select, for test runs that put nothing on the table. No music: the two
+// select, for test runs that put nothing on the table, and B on its own
+// the options (the ratio hint, the notes, the pace, bosses, the debug
+// line), which set a score multiplier. No music: the two
 // notes are the soundtrack, and music would hide them.
 //
 // Files: ResonanceFluxGame.h (phases and play), ResonanceScope.h (the
@@ -48,7 +51,15 @@ public:
 
 private:
     // PICK: the wave select, choosing a wave to start a test run on.
-    enum Phase : uint8_t { PHASE_ATTRACT, PHASE_PICK, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    // OPTIONS: the options screen.
+    enum Phase : uint8_t { PHASE_ATTRACT, PHASE_PICK, PHASE_OPTIONS, PHASE_PLAYING, PHASE_NAME, PHASE_GAMEOVER };
+    // The options, saved on the cabinet (namespace "res_opts").
+    enum Pace : uint8_t { PACE_CALM, PACE_NORMAL, PACE_FAST };
+    enum OptRow : uint8_t { OPT_HINT, OPT_NOTES, OPT_PACE, OPT_BOSSES, OPT_DEBUG, OPT_COUNT };
+    struct Options {
+        bool hint = true, notes = true, bosses = true, debug = DEBUG_LINE;
+        uint8_t pace = PACE_NORMAL;
+    };
     enum Slide : uint8_t { SLIDE_TITLE, SLIDE_TUNE, SLIDE_MATCH, SLIDE_STATIC, SLIDE_SCORES, SLIDE_DEMO };
     // Within a game: the wave's number showing, play, and the wave's tally.
     enum Round : uint8_t { ROUND_INTRO, ROUND_PLAY, ROUND_CLEAR };
@@ -71,6 +82,13 @@ private:
     bool updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void startDemo();
     void endDemo();
+    void enterOptions();
+    bool updateOptions(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
+    void toggleOption(int row, int dir);
+    void loadOptions();
+    void saveOptions() const;
+    float scoreMult() const;
+    float paceSpeed() const { return _opt.pace == PACE_CALM ? PACE_CALM_SPEED : _opt.pace == PACE_FAST ? PACE_FAST_SPEED : 1.0f; }
     void enterPicker();
     bool updatePicker(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio);
     void resetRun(int wave);
@@ -117,6 +135,7 @@ private:
     void renderInfo(GFXcanvas16 &cv, int page);
     void renderScores(GFXcanvas16 &cv);
     void renderPicker(GFXcanvas16 &cv);
+    void renderOptions(GFXcanvas16 &cv);
     void drawDemoOverlay(GFXcanvas16 &cv);
     void figureFor(const Ratio &r, float phase, float cx, float cy, float rad, bool amber, bool white);
     void renderGameOver(GFXcanvas16 &cv);
@@ -181,6 +200,15 @@ private:
     int  _testFrom = 1;                  // its wave (A at its game over starts it again)
     int  _pick = 1, _pickDir = 0;        // the picker's wave; the stick's last step
     unsigned long _pickRepeatAt = 0, _pickAt = 0;
+
+    // The options, and the screen's row, the stick's last move and when
+    // it was last touched. B on the attract screens opens it on the
+    // release, so B held with A (the wave select) doesn't.
+    Options _opt;
+    int  _optRow = 0, _optDir = 0;
+    unsigned long _optAt = 0;
+    bool _bAlone = false;                // B down, and A not pressed with it yet
+    float _youLevel = 0, _targetLevel = 0;   // the hum's levels last set, for the harness
 
     // The demo.
     bool _demo = false;
@@ -263,6 +291,7 @@ inline void ResonanceFluxGame::init(AudioEngine &audio) {
     allocGlow();
     buildLut();
     findSounds(audio);
+    loadOptions();
     _lastFrameMs = millis();
     _demo = _test = false;
     resetRun(1);
@@ -291,6 +320,7 @@ inline bool ResonanceFluxGame::update(GFXcanvas16 &canvas, const InputState &inp
     switch (_phaseState) {
         case PHASE_ATTRACT: return updateAttract(canvas, input, audio);
         case PHASE_PICK:    return updatePicker(canvas, input, audio);
+        case PHASE_OPTIONS: return updateOptions(canvas, input, audio);
         case PHASE_NAME:
             updateShards();
             renderPlay(canvas);
@@ -335,13 +365,23 @@ inline void ResonanceFluxGame::enterAttract() {
 
 // Title, three how-to slides and the high scores (ATTRACT_SLIDE_MS each),
 // then the demo, round and round. A starts a game from any of them; B held
-// with A (not in the demo) opens the wave select.
+// with A (not in the demo) opens the wave select, and B pressed and let go
+// on its own the options.
 inline bool ResonanceFluxGame::updateAttract(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    if (input.btnBPressed) _bAlone = true;
     if (input.btnAPressed && input.btnB && _slide != SLIDE_DEMO) {
+        _bAlone = false;
         enterPicker();
         renderPicker(canvas);
         return true;
     }
+    if (input.btnBReleased && _bAlone && _slide != SLIDE_DEMO) {
+        _bAlone = false;
+        enterOptions();
+        renderOptions(canvas);
+        return true;
+    }
+    if (!input.btnB) _bAlone = false;
     if (input.btnAPressed) {
         if (_demo) endDemo();
         startGame(audio);
@@ -400,6 +440,83 @@ inline void ResonanceFluxGame::endDemo() {
 // The wave select, for trying any wave without playing up to it: left and
 // right step one wave, up and down five, each shown with its dial; A
 // starts a test run there, B goes back to the title, as does leaving it.
+// The options screen: up/down picks a line, left/right or A changes it
+// (bosses is greyed until there are bosses), B goes back, as does leaving
+// it alone. Each change is saved at once.
+inline void ResonanceFluxGame::enterOptions() {
+    _phaseState = PHASE_OPTIONS;
+    if (_glow) memset(_glow, 0, 2 * W * SCOPE_H);
+    _optRow = 0;
+    _optDir = 0;
+    _optAt = _now;
+}
+
+inline bool ResonanceFluxGame::updateOptions(GFXcanvas16 &canvas, const InputState &input, AudioEngine &audio) {
+    audio.stopHum();
+    if (input.btnBPressed || _now - _optAt > PICK_TIMEOUT_MS) {
+        enterAttract();
+        renderTitle(canvas);
+        return true;
+    }
+    bool up, down, left, right;
+    hiscore::screenDirs(input, getRotation(), up, down, left, right);
+    const int dir = up ? -1 : down ? 1 : left ? -2 : right ? 2 : 0;   // +-1 rows, +-2 change
+    if (dir != _optDir) {
+        _optDir = dir;
+        if (dir == 1 || dir == -1) _optRow = (_optRow + dir + OPT_COUNT) % OPT_COUNT;
+        else if (dir) toggleOption(_optRow, dir / 2);
+        if (dir) { _optAt = _now; audio.playTone(1200, 15); }
+    }
+    if (input.btnAPressed) { toggleOption(_optRow, 1); _optAt = _now; audio.playTone(1200, 15); }
+    renderOptions(canvas);
+    return true;
+}
+
+inline void ResonanceFluxGame::toggleOption(int row, int dir) {
+    switch (row) {
+        case OPT_HINT:  _opt.hint = !_opt.hint; break;
+        case OPT_NOTES: _opt.notes = !_opt.notes; break;
+        case OPT_PACE:  _opt.pace = (uint8_t)((_opt.pace + (dir < 0 ? 2 : 1)) % 3); break;
+        case OPT_DEBUG: _opt.debug = !_opt.debug; break;
+        default: return;                     // bosses: none yet
+    }
+    saveOptions();
+}
+
+inline void ResonanceFluxGame::loadOptions() {
+    Preferences p;
+    p.begin("res_opts", true);
+    _opt.hint = p.getBool("hint", true);
+    _opt.notes = p.getBool("notes", true);
+    _opt.bosses = p.getBool("bosses", true);
+    _opt.debug = p.getBool("debug", DEBUG_LINE);
+    const int pace = p.getInt("pace", PACE_NORMAL);
+    _opt.pace = (uint8_t)(pace >= PACE_CALM && pace <= PACE_FAST ? pace : PACE_NORMAL);
+    p.end();
+}
+
+inline void ResonanceFluxGame::saveOptions() const {
+    Preferences p;
+    p.begin("res_opts", false);
+    p.putBool("hint", _opt.hint);
+    p.putBool("notes", _opt.notes);
+    p.putBool("bosses", _opt.bosses);
+    p.putBool("debug", _opt.debug);
+    p.putInt("pace", _opt.pace);
+    p.end();
+}
+
+// Points are worth more played with less help: x1.25 for each help off
+// (the hint, the notes), x1.5 at the fast pace, x0.75 at the calm one.
+inline float ResonanceFluxGame::scoreMult() const {
+    float m = 1.0f;
+    if (!_opt.hint) m *= MULT_NO_HINT;
+    if (!_opt.notes) m *= MULT_NO_NOTES;
+    if (_opt.pace == PACE_FAST) m *= MULT_FAST;
+    if (_opt.pace == PACE_CALM) m *= MULT_CALM;
+    return m;
+}
+
 inline void ResonanceFluxGame::enterPicker() {
     _phaseState = PHASE_PICK;
     if (_glow) memset(_glow, 0, 2 * W * SCOPE_H);   // no title left glowing behind it
@@ -526,7 +643,7 @@ inline int ResonanceFluxGame::maxOnScope() const {
 
 inline float ResonanceFluxGame::driftSpeed() const {
     const float s = DRIFT_START * powf(DRIFT_GROWTH, (float)(_wave - 1));
-    return s < DRIFT_MAX ? s : DRIFT_MAX;
+    return (s < DRIFT_MAX ? s : DRIFT_MAX) * paceSpeed();
 }
 
 inline void ResonanceFluxGame::addStatic(float s) {
@@ -553,7 +670,8 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
     if (_toSpawn > 0 && aliveCount() < maxOnScope() && (long)(_now - _spawnAt) >= 0) {
         spawnSignal();
         const long step = (long)SPAWN_FIRST_MS - (long)SPAWN_STEP_MS * (_wave - 1);
-        _spawnAt = _now + (unsigned long)(step > (long)SPAWN_MIN_MS ? step : (long)SPAWN_MIN_MS);
+        const long gap = step > (long)SPAWN_MIN_MS ? step : (long)SPAWN_MIN_MS;
+        _spawnAt = _now + (unsigned long)(gap / paceSpeed());   // arrivals closer together at a faster pace
     }
     moveSignals();
     findMatch();
@@ -567,7 +685,7 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
         sfx(SFX_DAMP);
     }
     if (_toSpawn == 0 && aliveCount() == 0) {
-        _clearBonus = PTS_STATIC_LEFT * (long)(100.0f - _static) + PTS_DAMPEN_LEFT * _dampens;
+        _clearBonus = (long)((PTS_STATIC_LEFT * (long)(100.0f - _static) + PTS_DAMPEN_LEFT * _dampens) * scoreMult());
         _score += _clearBonus;
         addStatic(STATIC_CLEAR);
         ++_statWaves;
@@ -697,7 +815,7 @@ inline void ResonanceFluxGame::shatter(int i) {
     const float dx = s.x - CORE_X, dy = s.y - CORE_Y;
     float far = (sqrtf(dx * dx + dy * dy) - CORE_R) / (70.0f - CORE_R);
     far = far < 0 ? 0 : far > 1 ? 1 : far;
-    _score += (long)(PTS_TONE * (1.0f + far));
+    _score += (long)(PTS_TONE * (1.0f + far) * scoreMult());
     addStatic(STATIC_SHATTER);
     ++_statShatters;
     _beamX = s.x;
@@ -760,10 +878,13 @@ inline void ResonanceFluxGame::updateShards() {
 // different note, so you can hear you're on the wrong ratio). Hiss with
 // the static.
 inline void ResonanceFluxGame::updateHum(AudioEngine &audio) {
-    audio.setHum(0, pitchOf(_stops[_stop]), HUM_YOU_LEVEL);
+    // With the notes off (an option), only the hiss.
+    _youLevel = _opt.notes ? HUM_YOU_LEVEL : 0;
+    audio.setHum(0, pitchOf(_stops[_stop]), _youLevel);
     const int who = _focus >= 0 ? _focus : _threat;
     if (who >= 0) _targetHz = pitchOf(_signals[who].ratio);
-    audio.setHum(1, _targetHz, who >= 0 ? HUM_TARGET_LEVEL : 0);   // fading out at the pitch it had
+    _targetLevel = _opt.notes && who >= 0 ? HUM_TARGET_LEVEL : 0;
+    audio.setHum(1, _targetHz, _targetLevel);   // fading out at the pitch it had
     audio.setHiss(_static / 100.0f * HISS_LEVEL);
 }
 

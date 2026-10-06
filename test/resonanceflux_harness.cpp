@@ -23,6 +23,9 @@
 //               on the table; plain A still starts wave 1
 //   sounds      the optional WAVs: each event's file if it's on the card,
 //               else its fallback file, else its tone, melody or nothing
+//   options     B on the title opens the options (B with A still the wave
+//               select); each is saved and does what it says; the score
+//               multiplier; the how-to slides clear the bands round the scope
 //   all         everything (the default)
 //
 // DUMP_AT=frame,frame writes those frames of `play` as resonance_<frame>.ppm,
@@ -600,6 +603,118 @@ static bool scenarioSounds() {
     return ok;
 }
 
+// The options: B pressed and let go on the title opens them (B held with A
+// is still the wave select); the stick picks and changes; each is saved
+// and comes back after init; and each does what it says. And the how-to
+// slides clear the bands above and below the scope.
+static bool scenarioOptions() {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    bool ok = true;
+    printf("options:\n");
+    using G = ResonanceFluxGame;
+    auto frame = [&](InputState in = InputState{}) { step(g, audio, canvas, in); };
+    // Landscape: screen up is joyLeft, down joyRight, left joyUp, right joyDown.
+    auto push = [&](bool up, bool down, bool left, bool right) {
+        InputState in{};
+        in.joyLeft = up; in.joyRight = down; in.joyUp = left; in.joyDown = right;
+        frame(in);
+        frame();
+    };
+    InputState bDown{}; bDown.btnB = bDown.btnBPressed = true;
+    InputState bHeld{}; bHeld.btnB = true;
+    InputState bUp{}; bUp.btnBReleased = true;
+    InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+
+    // The slides' bands: a white screen, then each slide; the bands black.
+    g.init(audio);
+    bool bands = true;
+    for (int page = 0; page < 3; ++page) {
+        canvas.fillScreen(ArcadeConfig::COLOR_WHITE);
+        g.renderInfo(canvas, page);
+        const uint16_t *px = canvas.getBuffer();
+        for (int y = 0; y < H; ++y) {
+            if (!(y < METER_Y || y >= STRIP_Y)) continue;
+            for (int x = 0; x < W; ++x) bands &= px[y * W + x] != ArcadeConfig::COLOR_WHITE;
+        }
+    }
+    check("the how-to slides clear the bands above and below the scope", bands, ok);
+
+    frame();
+    frame(bDown); frame(bHeld); frame(bUp);
+    check("B pressed and let go on the title: the options", g._phaseState == G::PHASE_OPTIONS, ok);
+    frame(bDown);
+    check("B there: back to the title", g._phaseState == G::PHASE_ATTRACT, ok);
+    frame(bUp);
+    check("  and letting it go doesn't open them again", g._phaseState == G::PHASE_ATTRACT, ok);
+    frame(bDown); frame(ba);
+    check("B held with A: still the wave select", g._phaseState == G::PHASE_PICK, ok);
+    frame(bUp);
+    check("  and letting B go there doesn't open the options", g._phaseState == G::PHASE_PICK, ok);
+    InputState b{}; b.btnB = b.btnBPressed = true;
+    frame(b); frame(bUp);
+
+    frame(bDown); frame(bUp);
+    push(false, false, false, true);
+    check("right on RATIO HINT: off", !g._opt.hint && g._optRow == G::OPT_HINT, ok);
+    push(false, true, false, false);
+    push(false, false, false, true);
+    check("down, right: NOTES off", !g._opt.notes && g._optRow == G::OPT_NOTES, ok);
+    push(false, true, false, false);
+    push(false, false, false, true);
+    check("down, right: PACE fast", g._opt.pace == G::PACE_FAST, ok);
+    push(false, false, false, true);
+    push(false, false, true, false);
+    check("right then left round: calm, then back to fast", g._opt.pace == G::PACE_FAST, ok);
+    push(false, true, false, false);
+    push(false, false, false, true);
+    check("BOSSES: greyed, won't change", g._opt.bosses && g._optRow == G::OPT_BOSSES, ok);
+    push(false, true, false, false);
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    frame(a); frame();
+    check("A on DEBUG LINE: off", !g._opt.debug, ok);
+    char what[96];
+    snprintf(what, sizeof(what), "hint and notes off, fast: score x%.4f", g.scoreMult());
+    check(what, fabsf(g.scoreMult() - MULT_NO_HINT * MULT_NO_NOTES * MULT_FAST) < 1e-4f, ok);
+    g.init(audio);
+    check("saved: after init, still off, off, fast, off",
+          !g._opt.hint && !g._opt.notes && g._opt.pace == G::PACE_FAST && !g._opt.debug, ok);
+
+    // What each does, in play.
+    startPlaying(g, audio, canvas);
+    const int r12 = 2;
+    place(g, r12, 1.0f, 20, 30);
+    g._stop = 0;
+    step(g, audio, canvas);
+    const uint16_t *px = canvas.getBuffer();
+    check("hint off: no amber on the dial", px[(STRIP_Y + 8) * W + g.dialX(g._stopOf[r12])] != ArcadeConfig::COLOR_AMBER, ok);
+    check("notes off: neither note sounds", g._youLevel == 0 && g._targetLevel == 0, ok);
+    g._wave = 1;
+    check("fast: wave 1 drifts 1.25x", fabsf(g.driftSpeed() - DRIFT_START * PACE_FAST_SPEED) < 1e-4f, ok);
+    // A shatter just off the core's ring: 100, its small distance bonus,
+    // then the multiplier.
+    auto &sg = place(g, r12, 1.0f, CORE_X + CORE_R + SIG_R, CORE_Y);
+    g._stop = g._stopOf[r12]; g._phase = 1.0f;
+    g._score = 0;
+    step(g, audio, canvas);
+    g._phase = 1.0f;
+    step(g, audio, canvas, a);
+    const float far = (CORE_R + SIG_R - CORE_R) / (70.0f - CORE_R);
+    const long want = (long)(PTS_TONE * (1.0f + far) * g.scoreMult());
+    snprintf(what, sizeof(what), "a shatter scores %ld (100 x %.2f x %.4f = %ld)", g._score, 1 + far, g.scoreMult(), want);
+    check(what, !sg.alive && labs(g._score - want) <= 1, ok);
+
+    // Back to the defaults, for whatever runs next.
+    g._opt = G::Options{};
+    g.saveOptions();
+    g.loadOptions();
+    check("defaults back: hint, notes, normal, x1", g._opt.hint && g._opt.notes && g._opt.pace == G::PACE_NORMAL &&
+          fabsf(g.scoreMult() - 1) < 1e-6f, ok);
+    printf("options -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 int main(int argc, char** argv) {
     const char* which = argc > 1 ? argv[1] : "all";
     const long frames = argc > 2 ? atol(argv[2]) : 0;
@@ -613,5 +728,6 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "demoexit")) ok &= scenarioDemoExit();
     if (all || !strcmp(which, "pick"))     ok &= scenarioPick();
     if (all || !strcmp(which, "sounds"))   ok &= scenarioSounds();
+    if (all || !strcmp(which, "options"))  ok &= scenarioOptions();
     return ok ? 0 : 1;
 }
