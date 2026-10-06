@@ -49,6 +49,19 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   lack). Read each game before proposing: a quick grep suggested none of
   the four checks for WAVs with `exists()`, but they may get sound another
   way.
+- **Particle trails (next up).** The owner likes Resonance's shard
+  streaks and wants them in Asteroid and Lander first, then perhaps the
+  other games on the shared `ParticleManager` (Maze, Runner, Brick). The
+  streaks aren't in the shards themselves: they're single dots plotted
+  into the scope's afterglow (ResonanceScope.h), a ~34kB intensity buffer
+  that fades every frame, so each moving dot leaves a fading tail. The
+  older games draw straight to the screen with no such buffer. The plan
+  agreed on: give `ParticleManager` optional trails (each particle keeps
+  its last few positions, drawn dimmer behind it), switched on per
+  effect, rather than a full-screen afterglow per game. Read
+  ParticleManager.h and each game's use of it, then propose before
+  writing; check the look with `DUMP_AT` frames, and the frame rate on
+  the board.
 - **Maze has no attract demo, and that stays.** The owner doesn't want
   one: it isn't an exciting game to watch. Maze's attract cycle is title,
   how-to-play and the table.
@@ -58,10 +71,11 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
 
 ## Learnt the hard way
 
-- **Run the suite before every push**, the whole of it
-  (`JET_SRC=/path/to/Jet/src test/build.sh`, exit 0). A cloud session
-  needs Jet cloned and checked out at the commit pinned in platformio.ini.
-  It takes a while (ASan builds); run it in the background.
+- **Run the harnesses a change touches before every push** (CLAUDE.md
+  lists which); the whole suite (`JET_SRC=/path/to/Jet/src
+  test/build.sh`, exit 0) only when the owner asks. A cloud session needs
+  Jet cloned and checked out at the commit pinned in platformio.ini. The
+  ASan builds take a while; run them in the background.
 - For quick iteration, build one harness at -O2 without ASan (the suite's
   own flags are in test/build.sh), and run a single scenario. Something
   that passes at -O2 can still fail under the suite, so the suite has the
