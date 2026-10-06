@@ -21,6 +21,17 @@ constexpr int VIEW_H = 160 - HUD_H;
 constexpr float LOOK_AHEAD     = 16.0f;
 constexpr float CAMERA_EASE_MS = 140.0f;
 
+// The maze, by level: SIZE_W0 x SIZE_H0 cells on level 1 (about one and a
+// half screens), a column and one and a half rows more each level, up to
+// MazeGenerator's 24 x 30 (about ten screens).
+constexpr int SIZE_W0 = 10, SIZE_H0 = 12;
+inline int mazeWidthFor(int level)  { return SIZE_W0 + (level - 1); }
+inline int mazeHeightFor(int level) { return SIZE_H0 + (level - 1) * 3 / 2; }
+
+// Loops: this share of dead ends get a wall taken out, so there's more than
+// one way round (never across a door's stretch).
+constexpr int BRAID_PERCENT = 30;
+
 // Moving: a cell every MOVE_MS (MOVE_BOOST_MS with the speed boost on).
 constexpr unsigned long MOVE_MS       = 200;
 constexpr unsigned long MOVE_BOOST_MS = 100;

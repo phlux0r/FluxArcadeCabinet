@@ -8,7 +8,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer) and a nebula backdrop |
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
-| Maze Flux | Maze | Portrait | Generated mazes, collectibles and roaming obstacles |
+| Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
 | Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
 | Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
@@ -264,6 +264,31 @@ stage 0 measured that at ~55fps on the board against ~25 through Jet. The
 attract cycle orbits course 1 under the title (drawn live, not an image),
 three how-to-play slides and the scores; the title runs along the top,
 over the course.
+
+**Maze Flux** (tuning in `MazeFlux/MazeConfig.h`): find the keys and reach
+the exit (bottom right) before the clock runs out. Cells are 16px with
+4px walls, so the view shows about 8 by 9 cells and scrolls, the camera
+easing after you and looking ahead the way you move; each level has its
+own wall colours and texture. The maze grows from 10 by 12 cells on
+level 1 by a column and one and a half rows a level, up to 24 by 30 (about
+ten screens); about a third of its dead ends are knocked through, so
+there's often more than one way round. You glide cell to cell; a push
+between steps is remembered and taken at the next cell. Cells you've
+walked are tinted (breadcrumbs), and an arrow at the screen's edge points
+to the next key (in its colour), then the exit, while it's off screen.
+Every level has a key that opens the exit; from level 4 one door (two
+from 8, three from 12) stands across the way to it, each opened by its
+own key, which is always somewhere before it. Bombs (from level 3) light
+when you're within two steps and go off after 2.4s if you're still
+there; traps (from 5) fire down straight corridors, stopping at walls:
+amber ones leave room to walk the corridor between shots, magenta ones
+(from 9) need their switch, A pressed in or beside the line of fire,
+which clears the bullets and pauses them for 3s. Teleport pads (from 6)
+come in pairs in dead ends. Pickups: a speed boost (5s) and +15s. A life
+lost (or the clock running out) is a 1s pause, then the start, safe for
+1.5s; running out of time restarts the level's clock. The clock is 30s
+plus 0.3s a cell. Points: 25 a key, 10 a pickup, and at the exit 2 a
+second left plus 50 times the level.
 
 **Attract demos.** Left alone, every game except Maze does the same: title,
 how-to-play, its high-score table, then a silent 30-40 second demo played by
@@ -658,6 +683,7 @@ fetches the real files into an existing clone.
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
 | `powerup.wav` (capsule), `pickup.wav` (spark), `death.wav` (life lost), `tube_shot.wav` (lasers), `explosion.wav` (smash, if no `brick_smash.wav`); optional sounds below | Brick Flux |
 | `pickup.wav` (gem); optional sounds below | Roll Flux |
+| optional, else a tone: `pickup.wav` (key), `powerup.wav` (boost, +15s); `death.wav` (a life lost), `explosion.wav` (a bomb) | Maze Flux |
 | `explosion.wav` (a shattered signal, if no `res_shatter.wav`); optional sounds below | Resonance Flux |
 
 Star Flux's optional sounds: each is used if it's on the card, else what

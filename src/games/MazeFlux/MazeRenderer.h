@@ -12,7 +12,9 @@
 // thick: each cell draws a WALL_T / 2 band along each side it has a wall
 // on, its neighbour the other half, with a post at every corner. Wall
 // faces towards the floor are shaded as if lit from above (light on top,
-// dark beneath). Each level has a theme: colours and a texture.
+// dark beneath). Each level has a theme: colours and a texture. Cells
+// already walked through (breadcrumbs) have a floor tinted towards the
+// wall colour.
 // Written straight into the canvas's buffer (portrait, unrotated).
 // =============================================================================
 
@@ -46,7 +48,17 @@ public:
         return THEMES[(level - 1) % n];
     }
 
-    void draw(GFXcanvas16 &canvas, const MazeGenerator &maze, int camX, int camY, const MazeTheme &theme) {
+    // a towards b by t/256, channel by channel.
+    static uint16_t mix(uint16_t a, uint16_t b, int t) {
+        const int r = ((a >> 11) * (256 - t) + (b >> 11) * t) >> 8;
+        const int g = (((a >> 5) & 63) * (256 - t) + ((b >> 5) & 63) * t) >> 8;
+        const int bl = ((a & 31) * (256 - t) + (b & 31) * t) >> 8;
+        return (uint16_t)((r << 11) | (g << 5) | bl);
+    }
+
+    // visited: a byte a cell, non-zero for a breadcrumb (or null).
+    void draw(GFXcanvas16 &canvas, const MazeGenerator &maze, int camX, int camY, const MazeTheme &theme,
+              const uint8_t* visited = nullptr) {
         using namespace mazecfg;
         canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
         _buf = canvas.getBuffer();
@@ -64,6 +76,14 @@ public:
         const int H = WALL_T / 2;
         const int x0 = max(0, camX / CELL - 1), y0 = max(0, camY / CELL - 1);
         const int x1 = min(maze.width - 1, (camX + VIEW_W) / CELL), y1 = min(maze.height - 1, (camY + VIEW_H) / CELL);
+        if (visited) {
+            const uint16_t crumb = mix(theme.floor, theme.wall, 44);
+            for (int my = y0; my <= y1; my++)
+                for (int mx = x0; mx <= x1; mx++)
+                    if (visited[my * maze.width + mx])
+                        canvas.fillRect(mx * CELL - camX, max((int)HUD_H, my * CELL - _camY),
+                                        CELL, min(CELL, my * CELL - _camY + CELL - HUD_H), crumb);
+        }
         for (int my = y0; my <= y1; my++) {
             for (int mx = x0; mx <= x1; mx++) {
                 const int wx = mx * CELL, wy = my * CELL;

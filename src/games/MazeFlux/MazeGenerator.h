@@ -11,16 +11,17 @@
 
 class MazeGenerator {
 public:
-    static const int MAX_W = 50;
-    static const int MAX_H = 50;
+    static const int MAX_W = 24;
+    static const int MAX_H = 30;
 
     uint8_t grid[MAX_W * MAX_H];
-    int width  = 16;
-    int height = 20;
+    int width  = 10;
+    int height = 12;
 
+    // A perfect maze: exactly one way between any two cells.
     void generate(int w, int h) {
-        width  = constrain(w, 16, MAX_W);
-        height = constrain(h, 20, MAX_H);
+        width  = constrain(w, 4, MAX_W);
+        height = constrain(h, 4, MAX_H);
         memset(grid, WALL_N | WALL_S | WALL_E | WALL_W, sizeof(grid));
 
         // Iterative backtracker using explicit stack
@@ -85,6 +86,12 @@ public:
 
     bool hasWall(int x, int y, uint8_t dir) const {
         return grid[y * width + x] & dir;
+    }
+
+    // Takes the wall between (x, y) and its neighbour towards dir down.
+    void open(int x, int y, uint8_t dir) {
+        grid[y * width + x] &= ~dir;
+        grid[(y + dy(dir)) * width + x + dx(dir)] &= ~opposite(dir);
     }
 
     bool inside(int x, int y) const { return x >= 0 && x < width && y >= 0 && y < height; }

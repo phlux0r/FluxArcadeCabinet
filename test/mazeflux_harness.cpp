@@ -1,7 +1,8 @@
 // Host harness for Maze Flux: the real game against a fake clock and seeded
 // RNG, like the other harnesses. Scenarios:
 //
-//   layout      levels 1-20, a few mazes each: every key in its stretch and
+//   layout      levels 1-20, a few mazes each: the size for the level, loops
+//               (more ways than a tree), every key in its stretch and
 //               reachable in order, doors really needed (closed, the exit
 //               can't be reached), nothing stacked, outside the maze or by
 //               the start, no trap firing through the start, teleport pairs
@@ -18,6 +19,9 @@
 //   teleport    walking onto a pad puts you on its partner, and not back
 //   complete    the level-complete screen waits for A to be let go
 //   buffer      a push between steps is taken at the next cell
+//   wayfinding  cells walked are marked (breadcrumbs); the compass aims at
+//               the next key, then the exit, with an arrow on the screen's
+//               edge pointing its way while it's off screen
 //   play [N]    a bot that walks to each key and the exit, waiting at a
 //               trap's line of fire for a gap (or using a type B's switch),
 //               lives pinned: over N frames (default 60000) it must reach
@@ -89,7 +93,7 @@ static int reachable(const GameEngineMaze &e, int sx, int sy, bool* seen) {
 static bool layout() {
     bool ok = true;
     static bool seen[MazeGenerator::MAX_W * MazeGenerator::MAX_H];
-    int doorsSeen = 0, trapsSeen = 0, padsSeen = 0, bombsSeen = 0;
+    int doorsSeen = 0, trapsSeen = 0, padsSeen = 0, bombsSeen = 0, loops = 0;
     for (int level = 1; level <= 20; level++) {
         for (int rep = 0; rep < 4; rep++) {
             static MazeFluxGame g;
@@ -145,11 +149,19 @@ static bool layout() {
                 else if (e.exits(a.x, a.y) != 1) why = "pad on a way through";
             }
             if (!why && e._levelTime != (int)(TIME_BASE_S + TIME_PER_CELL_S * W * e._maze.height)) why = "clock not sized to the maze";
+            if (!why && (W != min(mazeWidthFor(level), 24) || e._maze.height != min(mazeHeightFor(level), 30))) why = "maze size";
+            // Loops: more open ways than a tree's cells - 1.
+            int ways = 0;
+            for (int y = 0; y < e._maze.height; y++)
+                for (int x = 0; x < W; x++) ways += !e._maze.hasWall(x, y, WALL_E) + !e._maze.hasWall(x, y, WALL_S);
+            loops += ways - (W * e._maze.height - 1);
+            if (!why && ways < W * e._maze.height - 1) why = "maze not connected";
             if (why) { printf("  level %d maze %d: %s\n", level, rep, why); ok = false; }
         }
     }
-    printf("layout: 80 mazes, %d doors, %d bombs, %d traps, %d pads -> %s\n",
-           doorsSeen, bombsSeen, trapsSeen, padsSeen, ok ? "PASS" : "FAIL");
+    ok &= loops > 80 * 5;
+    printf("layout: 80 mazes, %d doors, %d bombs, %d traps, %d pads, %d loops -> %s\n",
+           doorsSeen, bombsSeen, trapsSeen, padsSeen, loops, ok ? "PASS" : "FAIL");
     return ok;
 }
 
@@ -355,6 +367,59 @@ static bool buffer() {
     return false;
 }
 
+// Breadcrumbs and the compass.
+static bool wayfinding() {
+    static MazeFluxGame g;
+    GameEngineMaze &e = startAt(g, 8);
+    e._safeUntil = millis() + 10000000;
+    for (int i = 0; i < e._activeTraps; i++) e._traps[i].active = false;
+    for (int i = 0; i < e._activeBombs; i++) e._bombs[i].active = false;
+    // Walk a few cells: each marked, nothing else.
+    int walked = 1;
+    for (int f = 0; f < 60; f++) {
+        uint8_t d = 0;
+        for (uint8_t k : MazeGenerator::DIRS) if (e.canPass(e._player.x, e._player.y, k)) { d = k; break; }
+        frame(g, stick(d));
+        if (e._player.arrived) walked++;
+    }
+    int marked = 0;
+    for (int i = 0; i < e._maze.width * e._maze.height; i++) marked += e._visited[i] != 0;
+    const bool here = e._visited[e._player.y * e._maze.width + e._player.x] != 0;
+    const bool crumbs = here && marked >= 2 && marked <= walked;
+
+    // The compass: towards the lowest key not collected; off screen an
+    // arrow on the edge, pointing its way; none once it's in view.
+    int tx, ty; uint16_t col;
+    e.compassTarget(tx, ty, col);
+    bool aims = tx == e._keys[0].x && ty == e._keys[0].y && col == GameEngineMaze::keyColour(0);
+    e._keys[0].collected = true;
+    e.compassTarget(tx, ty, col);
+    aims &= e._activeKeys < 2 || (tx == e._keys[1].x && ty == e._keys[1].y);
+    e._keys[0].collected = false;
+    int checked = 0, wrong = 0;
+    for (int y = 0; y < e._maze.height; y += 3)
+        for (int x = 0; x < e._maze.width; x += 3) {
+            e._player.reset(x, y);
+            e.updateCamera(0, true);
+            int ax, ay; float dx, dy;
+            const bool arrow = e.compassArrow(ax, ay, dx, dy, col);
+            const int qx = e.cx(e._keys[0].x), qy = e.cy(e._keys[0].y);
+            const bool inView = qx >= 0 && qx < 128 && qy >= HUD_H && qy < 160;
+            if (inView == arrow) { wrong++; continue; }
+            if (!arrow) continue;
+            checked++;
+            const bool onEdge = ax <= GameEngineMaze::COMPASS_INSET + 1 || ax >= 127 - GameEngineMaze::COMPASS_INSET - 1 ||
+                                ay <= HUD_H + GameEngineMaze::COMPASS_INSET + 1 || ay >= 159 - GameEngineMaze::COMPASS_INSET - 1;
+            const float px = e.sx(e._player.px()), py = e.sy(e._player.py());
+            const float dot = (qx - px) * (ax - px) + (qy - py) * (ay - py);
+            if (!onEdge || dot <= 0) wrong++;
+        }
+    const bool compass = aims && checked > 5 && wrong == 0;
+    printf("wayfinding: %d cells walked, %d crumbs, here %d; compass aims at the next key %d, %d arrows on the edge its way, %d wrong -> %s\n",
+           walked, marked, here, aims, checked, wrong, crumbs && compass ? "PASS" : "FAIL");
+    return crumbs && compass;
+}
+
 // The bot: the way to the next key (lowest first) or the exit, through open
 // ways; A when beside a paused-able trap whose lane it's about to enter.
 static int botDir(GameEngineMaze &e) {
@@ -490,6 +555,7 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "teleport")) ok &= teleport();
     if (all || !strcmp(which, "complete")) ok &= complete();
     if (all || !strcmp(which, "buffer"))   ok &= buffer();
+    if (all || !strcmp(which, "wayfinding")) ok &= wayfinding();
     if (all || !strcmp(which, "play"))     ok &= play(frames);
     if (all || !strcmp(which, "quit"))     ok &= quit();
     if (all || !strcmp(which, "idle"))     ok &= idle();

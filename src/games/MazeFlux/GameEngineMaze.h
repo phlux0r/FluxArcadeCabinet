@@ -57,6 +57,8 @@ private:
     static const int MAX_CELLS = MazeGenerator::MAX_W * MazeGenerator::MAX_H;
     uint16_t _dist[MAX_CELLS];
     uint8_t  _region[MAX_CELLS];
+    uint8_t  _visited[MAX_CELLS];       // breadcrumbs: cells walked through
+    bool     _onPath[MAX_CELLS];        // the way to the exit, before the loops
 
     // NAME: entering a name for the high-score table, after the last life.
     enum GameState { STATE_TITLE, STATE_PLAYING, STATE_NAME, STATE_GAMEOVER, STATE_LEVEL_COMPLETE };
@@ -243,12 +245,11 @@ private:
 
     void initLevel() {
         using namespace mazecfg;
-        int w = 16, h = 20;
-        if (_level >= 11) {
-            w = constrain(16 + (_level - 11) * 4, 16, MazeGenerator::MAX_W);
-            h = constrain(20 + (_level - 11) * 4, 20, MazeGenerator::MAX_H);
-        }
-        _maze.generate(w, h);
+        _maze.generate(min(mazeWidthFor(_level), (int)MazeGenerator::MAX_W),
+                       min(mazeHeightFor(_level), (int)MazeGenerator::MAX_H));
+        const int w = _maze.width, h = _maze.height;
+        memset(_visited, 0, sizeof(_visited));
+        _visited[0] = 1;
 
         _player.reset(0, 0);
         _particles.clearAll();
@@ -260,7 +261,10 @@ private:
         _safeUntil  = 0;
 
         measureFromStart();
-        placeDoorsAndKeys();
+        placeDoors();
+        braid();
+        measureFromStart();
+        placeKeys();
         placeBombs();
         placeTraps();
         placePads();
@@ -272,11 +276,10 @@ private:
         updateCamera(0, true);
     }
 
-    // Doors across the way from the start to the exit, spaced along it,
-    // and a key for each in the stretch before it; the last key, beyond
-    // the last door, opens the exit. Keys go off the way where they can,
-    // so fetching one is a detour.
-    void placeDoorsAndKeys() {
+    // Doors across the way from the start to the exit (the maze is still
+    // perfect: one way), spaced along it; each stretch between them is
+    // measured. Marks the way in _onPath.
+    void placeDoors() {
         using namespace mazecfg;
         // The way, from the exit back to the start (the maze is a tree).
         static int16_t path[MAX_CELLS];
@@ -292,9 +295,8 @@ private:
             }
             path[len++] = (int16_t)cellIndex(x, y);
         }
-        static bool onPath[MAX_CELLS];
-        memset(onPath, 0, sizeof(onPath));
-        for (int i = 0; i < len; i++) onPath[path[i]] = true;
+        memset(_onPath, 0, sizeof(_onPath));
+        for (int i = 0; i < len; i++) _onPath[path[i]] = true;
 
         // Doors at even spacing from the start (path is exit-first), never
         // inside the start's surroundings.
@@ -309,14 +311,41 @@ private:
             _doors[_activeDoors++] = { nx, ny, dir, (uint8_t)i, false };
         }
         measureRegions();
+    }
 
-        // A key per stretch: off the way if possible.
+    // Loops: take a wall out of BRAID_PERCENT of the dead ends, into a
+    // neighbour in the same stretch (so every door is still the only way
+    // on), a dead-end neighbour first.
+    void braid() {
+        using namespace mazecfg;
+        for (int y = 0; y < _maze.height; y++) {
+            for (int x = 0; x < _maze.width; x++) {
+                if (exits(x, y) != 1 || random(0, 100) >= BRAID_PERCENT) continue;
+                const int r = _region[cellIndex(x, y)];
+                uint8_t pick = 0;
+                for (int k = 0, start = random(0, 4); k < 4; k++) {
+                    const uint8_t dir = MazeGenerator::DIRS[(start + k) & 3];
+                    if (!_maze.hasWall(x, y, dir)) continue;
+                    const int nx = x + MazeGenerator::dx(dir), ny = y + MazeGenerator::dy(dir);
+                    if (!_maze.inside(nx, ny) || _region[cellIndex(nx, ny)] != r) continue;
+                    if (!pick || exits(nx, ny) == 1) pick = dir;
+                    if (exits(nx, ny) == 1) break;
+                }
+                if (pick) _maze.open(x, y, pick);
+            }
+        }
+    }
+
+    // A key per stretch, off the way to the exit if possible (fetching one
+    // is a detour); the last, beyond the last door, opens the exit.
+    void placeKeys() {
+        using namespace mazecfg;
         for (int k = 0; k <= _activeDoors; k++) {
             int kx = 0, ky = 0;
             bool found = false;
             for (int attempt = 0; attempt < 300 && !found; attempt++) {
                 if (!randomFree(kx, ky, k, START_CLEAR)) break;
-                found = !onPath[cellIndex(kx, ky)] || attempt > 150;
+                found = !_onPath[cellIndex(kx, ky)] || attempt > 150;
             }
             if (!found) { found = randomFree(kx, ky, k, 1); }
             if (!found) { kx = _exit.x; ky = _exit.y; }   // never: a stretch is a few cells at least
@@ -533,7 +562,11 @@ private:
 
         _player.update(up, down, left, right,
                        [this](int x, int y, uint8_t dir) { return canPass(x, y, dir); });
-        if (_player.arrived) arriveAt(_player.x, _player.y, audio);
+        if (_player.arrived) {
+            _visited[cellIndex(_player.x, _player.y)] = 1;
+            arriveAt(_player.x, _player.y, audio);
+            _visited[cellIndex(_player.x, _player.y)] = 1;   // and where a pad put you
+        }
         if (_state != STATE_PLAYING) return;
 
         // A in or beside a type B trap's line of fire: its switch.
@@ -586,6 +619,39 @@ private:
     int sx(float mx) const { return (int)mx - _camX; }
     int sy(float my) const { return (int)my - _camY + mazecfg::HUD_H; }
 
+    // The compass: the next thing to fetch (the lowest key not yet
+    // collected, else the exit) and, if it's off screen, where the arrow
+    // goes: on the view's edge, inset COMPASS_INSET, the way to it from
+    // the player (as the crow flies). False while it's in view.
+    void compassTarget(int &tx, int &ty, uint16_t &col) const {
+        for (int k = 0; k < _activeKeys; k++)
+            if (!_keys[k].collected) { tx = _keys[k].x; ty = _keys[k].y; col = keyColour(_keys[k].colourId); return; }
+        tx = _exit.x; ty = _exit.y; col = ArcadeConfig::COLOR_GREEN;
+    }
+    static constexpr int COMPASS_INSET = 7;
+    bool compassArrow(int &ax, int &ay, float &dx, float &dy, uint16_t &col) const {
+        using namespace mazecfg;
+        int tx, ty;
+        compassTarget(tx, ty, col);
+        const float px = sx(_player.px()), py = sy(_player.py());
+        const float qx = cx(tx), qy = cy(ty);
+        const float L = COMPASS_INSET, R = ArcadeConfig::PORTRAIT_WIDTH - 1 - COMPASS_INSET;
+        const float T = HUD_H + COMPASS_INSET, B = ArcadeConfig::PORTRAIT_HEIGHT - 1 - COMPASS_INSET;
+        if (qx >= L - CELL / 2 && qx <= R + CELL / 2 && qy >= T - CELL / 2 && qy <= B + CELL / 2) return false;
+        dx = qx - px; dy = qy - py;
+        const float len = sqrtf(dx * dx + dy * dy);
+        if (len < 1.0f) return false;
+        dx /= len; dy /= len;
+        float t = 1e9f;
+        if (dx > 0.001f)  t = min(t, (R - px) / dx);
+        if (dx < -0.001f) t = min(t, (L - px) / dx);
+        if (dy > 0.001f)  t = min(t, (B - py) / dy);
+        if (dy < -0.001f) t = min(t, (T - py) / dy);
+        ax = (int)lroundf(px + dx * t);
+        ay = (int)lroundf(py + dy * t);
+        return true;
+    }
+
     // Centre of a cell on screen.
     int cx(int cellX) const { return sx(cellX * mazecfg::CELL + mazecfg::CELL / 2); }
     int cy(int cellY) const { return sy(cellY * mazecfg::CELL + mazecfg::CELL / 2); }
@@ -606,7 +672,7 @@ private:
     void renderPlaying(GFXcanvas16 &canvas) {
         using namespace mazecfg;
         const unsigned long now = millis();
-        _renderer.draw(canvas, _maze, _camX, _camY, MazeRenderer::themeFor(_level));
+        _renderer.draw(canvas, _maze, _camX, _camY, MazeRenderer::themeFor(_level), _visited);
         const int C = CELL, H = WALL_T / 2;
 
         // Doors: a barred gate across the way, in their key's colour, a
@@ -730,6 +796,17 @@ private:
             mazesprite::draw(canvas, sx(_player.px()), sy(_player.py()), _player.facing, _player.walkFrame, HUD_H);
 
         _particles.render(canvas, HUD_H, _camX, _camY - HUD_H);
+
+        // The compass: an arrow at the edge, in the colour of what it
+        // points to.
+        int ax, ay; float dx, dy; uint16_t col;
+        if (!_dyingUntil && compassArrow(ax, ay, dx, dy, col)) {
+            const int tipX = ax + (int)lroundf(dx * 5), tipY = ay + (int)lroundf(dy * 5);
+            const int bx = ax - (int)lroundf(dx * 3), by = ay - (int)lroundf(dy * 3);
+            const int pxo = (int)lroundf(-dy * 4), pyo = (int)lroundf(dx * 4);
+            canvas.fillTriangle(tipX, tipY, bx + pxo, by + pyo, bx - pxo, by - pyo, col);
+            canvas.drawTriangle(tipX, tipY, bx + pxo, by + pyo, bx - pxo, by - pyo, ArcadeConfig::COLOR_BLACK);
+        }
 
         // HUD
         canvas.fillRect(0, 0, ArcadeConfig::PORTRAIT_WIDTH, HUD_H, ArcadeConfig::COLOR_BLACK);
