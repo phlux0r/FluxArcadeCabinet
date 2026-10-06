@@ -163,8 +163,9 @@ inline void ResonanceFluxGame::drawOverlays(GFXcanvas16 &cv) {
         for (int x = 0; x < W; x += 4) dim(x, y, grid);
     for (int x = cx % 16; x < W; x += 16)
         for (int y = SCOPE_Y; y < SCOPE_Y + SCOPE_H; y += 4) dim(x, y, grid);
-    // The core's ring, red for a moment when a signal hits it.
-    const uint16_t ringC = _now < _hitFlashUntil ? ArcadeConfig::COLOR_RED : ring;
+    // The core's ring: red for a moment when a signal hits it, cyan while
+    // dampen has things slowed.
+    const uint16_t ringC = _now < _hitFlashUntil ? ArcadeConfig::COLOR_RED : _now < _dampUntil ? 0x0410 : ring;
     for (int i = 0; i < 64; ++i) {
         const float a = TWO_PI_F * i / 64;
         dim(cx + (int)lrintf(cosf(a) * (CORE_R + SIG_R * 0.5f)), cy + (int)lrintf(sinf(a) * (CORE_R + SIG_R * 0.5f)), ringC);
@@ -229,8 +230,13 @@ inline void ResonanceFluxGame::drawHud(GFXcanvas16 &cv) {
         cv.setCursor(104, 1);
         cv.print(buf);
     }
+    // Dampen: a block for each charge left; the one just spent drains away
+    // while its slowdown lasts.
     for (int i = 0; i < _dampens; ++i) cv.fillRect(W - 6 - i * 6, 2, 4, 5, ArcadeConfig::COLOR_CYAN);
-    if (_now < _dampUntil) cv.drawRect(W - 6 - DAMPEN_PER_WAVE * 6, 1, DAMPEN_PER_WAVE * 6 + 2, 7, ArcadeConfig::COLOR_CYAN);
+    if (_now < _dampUntil) {
+        const int h = (int)((_dampUntil - _now) * 5 + DAMPEN_MS - 1) / (int)DAMPEN_MS;   // 5..1, rounded up
+        cv.fillRect(W - 6 - _dampens * 6, 7 - h, 4, h, ArcadeConfig::COLOR_CYAN);
+    }
 
     const int len = (int)(_static * W / 100.0f);
     const uint16_t c = _static < 50 ? ArcadeConfig::COLOR_GREEN : _static < 80 ? ArcadeConfig::COLOR_AMBER

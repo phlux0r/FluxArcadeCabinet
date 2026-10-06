@@ -174,7 +174,9 @@ glow white: A shatters it, worth more the further out it is. You hear your ratio
 and the nearest signal's: the same note when you're on its ratio. A
 signal that reaches you adds static (noise on the scope, hiss, and a
 wander in your phase); so does firing out of tune. At 100 static it's
-over. B dampens: everything slows for 4s, twice a wave. Waves bring more
+over. B dampens: everything slows for 4s, twice a wave (a cyan block top
+right for each charge left; the one spent drains while it lasts, and
+your figure's ring turns cyan). Waves bring more
 signals, a little faster (capped by about wave 20, as the screen is
 small), up to four at once, and more ratios, each a new stop on the dial (1:2 and
 1:1, then 1:3 and 2:3 on wave 3, 2:5 and 3:4 on 5, 3:5 and 4:5 on 8). A

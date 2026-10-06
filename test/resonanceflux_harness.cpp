@@ -244,6 +244,43 @@ static bool scenarioMatch() {
     for (int i = 0; i < 20 && g._signals[0].alive; ++i) step(g, audio, canvas);
     check("a signal reaching the core adds its static", !g._signals[0].alive && g._static > STATIC_HIT - 1, ok);
 
+    // Dampen on the HUD: a block per charge; the one spent drains over the
+    // slowdown and is gone after; the core's ring cyan meanwhile.
+    {
+        for (auto &sg : g._signals) sg.alive = false;
+        g._spawnAt = g_fakeMillis + 1000000;   // nothing arriving (a hit turns the ring red)
+        g._hitFlashUntil = 0;
+        g._dampens = DAMPEN_PER_WAVE;
+        g._dampUntil = 0;
+        auto cyanIn = [&](int slot) {
+            int n = 0;
+            const uint16_t *px = canvas.getBuffer();
+            for (int y = 0; y < SCOPE_Y; ++y)
+                for (int x = W - 6 - slot * 6; x < W - 2 - slot * 6; ++x) n += px[y * W + x] == ArcadeConfig::COLOR_CYAN;
+            return n;
+        };
+        InputState bb{}; bb.btnB = bb.btnBPressed = true;
+        step(g, audio, canvas, bb);
+        const int start = cyanIn(1);
+        // The ring is drawn only where nothing else is lit: count it round.
+        int ringCyanPx = 0;
+        for (int i = 0; i < 64; ++i) {
+            const float an = TWO_PI_F * i / 64;
+            const int x = (int)CORE_X + (int)lrintf(cosf(an) * (CORE_R + SIG_R * 0.5f));
+            const int y = (int)CORE_Y + (int)lrintf(sinf(an) * (CORE_R + SIG_R * 0.5f));
+            ringCyanPx += canvas.getBuffer()[y * W + x] == 0x0410;
+        }
+        const bool ringCyan = ringCyanPx > 32;
+        for (unsigned long t = 0; t < DAMPEN_MS / 2; t += STEP_MS) step(g, audio, canvas);
+        const int half = cyanIn(1);
+        for (unsigned long t = 0; t < DAMPEN_MS / 2 + 2 * STEP_MS; t += STEP_MS) step(g, audio, canvas);
+        const int after = cyanIn(1);
+        snprintf(what, sizeof(what), "dampen: the spent charge drains (%d, %d, %d px), the other stays (%d)",
+                 start, half, after, cyanIn(0));
+        check(what, start == 20 && half > 0 && half < start && after == 0 && cyanIn(0) == 20 && g._dampens == 1, ok);
+        check("  and the core's ring is cyan meanwhile", ringCyan, ok);
+    }
+
     // Static's wander on your phase.
     g._static = 90;
     float most = 0;
