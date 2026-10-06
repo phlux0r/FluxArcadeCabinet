@@ -413,6 +413,21 @@ calm, multiplied, shown on the HUD. One high-score table for all of
 them. Also fixed: the how-to slides didn't clear the bands above and
 below the scope, so the title's lines showed under theirs.
 
+### The Chords
+
+Built after the options, on the stepped dial: every fifth wave with
+BOSSES on, one figure of three ratios at the left or right edge (the top
+and bottom are too near the core), its brightest layer full and the
+others faint (56 and 28 out of 255: at 120 the three blurred into one
+tangle). Strip the brightest (its stop marked red above the dial when
+the hint is on); it jumps sides. A dimmer layer in resonance shows green
+rather than white, and firing at it brings the stripped layers back with
+a misfire's static. Escorts every 5s, two at most. From wave 10 the
+layers drift (up to 0.12 rad/s, the tolerance's width a second); from
+wave 15 the middle layer swaps ratio every 3s. 300 a layer, 5,000 down
+plus 1,000 a second under 45, times the options' multiplier. Sounds
+`res_chord_warn/hit/down.wav`. The wave select labels Chord waves.
+
 ## Needs the board
 
 Everything that makes or breaks it: whether the figures read clearly at

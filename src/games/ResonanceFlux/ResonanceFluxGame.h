@@ -65,7 +65,8 @@ private:
     enum Round : uint8_t { ROUND_INTRO, ROUND_PLAY, ROUND_CLEAR };
     // The optional sounds (RES_SFX below has their files and fallbacks).
     enum Sfx : uint8_t { SFX_TITLE, SFX_START, SFX_WAVE, SFX_LOCK, SFX_SHATTER, SFX_MISS, SFX_HIT,
-                         SFX_DAMP, SFX_CLEAR, SFX_OVER, SFX_COUNT };
+                         SFX_DAMP, SFX_CLEAR, SFX_OVER, SFX_CHORD_WARN, SFX_CHORD_HIT, SFX_CHORD_DOWN,
+                         SFX_COUNT };
 
     struct Signal {
         bool alive = false;
@@ -74,6 +75,18 @@ private:
         float x = 0, y = 0;
         float speed = 0;              // px/s along its weaving course
         float sway = 0, swayRate = 0, swayAt = 0;   // radians, radians/s, where in the sway
+    };
+    // The Chord: its layers' ratios and phases (0 the brightest), how many
+    // are stripped (the brightest left is ratio[stripped]), its phase
+    // drift and the middle layer's morph, which side it's on.
+    struct Chord {
+        bool active = false;
+        uint8_t ratio[CHORD_LAYERS] = {};
+        float phase[CHORD_LAYERS] = {}, drift[CHORD_LAYERS] = {};
+        int stripped = 0;
+        bool morph = false, left = false;
+        uint8_t morphA = 0, morphB = 0;
+        unsigned long morphAt = 0, startedAt = 0, sendAt = 0;
     };
     struct Shard { float x = 0, y = 0, vx = 0, vy = 0; unsigned long until = 0; bool white = false; };
 
@@ -121,6 +134,15 @@ private:
     void findSounds(AudioEngine &audio);
     void sfx(Sfx s);
 
+    // ---- The Chord (ResonanceChord.h) ----
+    bool isChordWave(int wave) const;
+    void setupChord();
+    float chordX() const;
+    void updateChord();
+    void findChordMatch();
+    void hitChord(int layer);
+    void chordShards(int layer, bool white);
+
     // ---- The scope and drawing (ResonanceScope.h) ----
     bool allocGlow();
     void freeGlow();
@@ -128,7 +150,9 @@ private:
     void fadeGlow();
     void plot(uint8_t *plane, int x, int y, uint8_t v);
     void line(uint8_t *plane, int x0, int y0, int x1, int y1, uint8_t v);
-    void drawFigure(uint8_t *a, uint8_t *b, const Ratio &r, float phase, float cx, float cy, float rad, bool big);
+    void drawFigure(uint8_t *a, uint8_t *b, const Ratio &r, float phase, float cx, float cy, float rad, bool big,
+                    uint8_t v = 255);
+    void drawChord(uint8_t *green, uint8_t *amber);
     void pushGlow(GFXcanvas16 &cv);
     void renderPlay(GFXcanvas16 &cv);
     void renderTitle(GFXcanvas16 &cv);
@@ -150,6 +174,9 @@ private:
     // ---- State ----
     hiscore::ScoreBoard _scores;
     Signal _signals[MAX_SIGNALS];
+    Chord  _chord;
+    int    _chordFocus = -1, _chordMatched = -1;   // a layer on your stop nearest your phase; in resonance
+    float  _chordGap = 1;
     Shard  _shards[MAX_SHARDS];
     uint8_t *_glow = nullptr;            // two planes, green then amber, W x SCOPE_H each
     uint16_t _lut[32 * 32];              // (green, amber) -> colour
@@ -222,6 +249,7 @@ private:
 
     // Running totals, for the host harness (test/resonanceflux_harness.cpp).
     long _statShatters = 0, _statMisfires = 0, _statHits = 0, _statWaves = 0, _statDampens = 0;
+    long _statLayers = 0, _statChords = 0;
 
     AudioEngine *_audio = nullptr;
 };
@@ -246,6 +274,8 @@ struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs
 const int RES_TITLE_N[] = { 330, 495, 660, 990 },  RES_TITLE_D[] = {  90,  90,  90, 220 };
 const int RES_CLEAR_N[] = { 660, 880, 1320 },      RES_CLEAR_D[] = {  80,  80,  200 };
 const int RES_OVER_N[]  = { 440, 415, 392, 220 },  RES_OVER_D[]  = { 140, 140, 140, 400 };
+const int RES_WARN_N[]  = { 220, 0, 220, 0, 220 }, RES_WARN_D[]  = { 150, 80, 150, 80, 300 };   // 0: a rest
+const int RES_DOWN_N[]  = { 1320, 990, 660, 440, 880 }, RES_DOWN_D[] = { 90, 90, 90, 90, 400 };
 const SfxDef RES_SFX[] = {
     { "/audio/res_title.wav",   nullptr, 0, 0, RES_TITLE_N, RES_TITLE_D, 4 },   // SFX_TITLE
     { "/audio/res_start.wav",   nullptr, 900, 80, nullptr, nullptr, 0 },        // SFX_START
@@ -257,8 +287,11 @@ const SfxDef RES_SFX[] = {
     { "/audio/res_damp.wav",    nullptr, 220, 200, nullptr, nullptr, 0 },       // SFX_DAMP
     { "/audio/res_clear.wav",   nullptr, 0, 0, RES_CLEAR_N, RES_CLEAR_D, 3 },   // SFX_CLEAR
     { "/audio/res_over.wav",    nullptr, 0, 0, RES_OVER_N, RES_OVER_D, 4 },     // SFX_OVER
+    { "/audio/res_chord_warn.wav", nullptr, 0, 0, RES_WARN_N, RES_WARN_D, 5 },  // SFX_CHORD_WARN
+    { "/audio/res_chord_hit.wav", nullptr, 600, 80, nullptr, nullptr, 0 },      // SFX_CHORD_HIT
+    { "/audio/res_chord_down.wav", "/audio/star_boss_die.wav", 0, 0, RES_DOWN_N, RES_DOWN_D, 5 },   // SFX_CHORD_DOWN
 };
-static_assert(sizeof(RES_SFX) / sizeof(RES_SFX[0]) == 10, "one SfxDef per Sfx");
+static_assert(sizeof(RES_SFX) / sizeof(RES_SFX[0]) == 13, "one SfxDef per Sfx");
 }  // namespace
 
 // Which optional sounds are on the card, checked once: a missing file
@@ -440,9 +473,8 @@ inline void ResonanceFluxGame::endDemo() {
 // The wave select, for trying any wave without playing up to it: left and
 // right step one wave, up and down five, each shown with its dial; A
 // starts a test run there, B goes back to the title, as does leaving it.
-// The options screen: up/down picks a line, left/right or A changes it
-// (bosses is greyed until there are bosses), B goes back, as does leaving
-// it alone. Each change is saved at once.
+// The options screen: up/down picks a line, left/right or A changes it, B
+// goes back, as does leaving it alone. Each change is saved at once.
 inline void ResonanceFluxGame::enterOptions() {
     _phaseState = PHASE_OPTIONS;
     if (_glow) memset(_glow, 0, 2 * W * SCOPE_H);
@@ -477,8 +509,9 @@ inline void ResonanceFluxGame::toggleOption(int row, int dir) {
         case OPT_HINT:  _opt.hint = !_opt.hint; break;
         case OPT_NOTES: _opt.notes = !_opt.notes; break;
         case OPT_PACE:  _opt.pace = (uint8_t)((_opt.pace + (dir < 0 ? 2 : 1)) % 3); break;
+        case OPT_BOSSES: _opt.bosses = !_opt.bosses; break;
         case OPT_DEBUG: _opt.debug = !_opt.debug; break;
-        default: return;                     // bosses: none yet
+        default: return;
     }
     saveOptions();
 }
@@ -611,6 +644,9 @@ inline void ResonanceFluxGame::startWave(int wave) {
     buildStops(wave);
     _toSpawn = 6 + 2 * wave;
     if (_toSpawn > 30) _toSpawn = 30;
+    _chord.active = false;
+    _chordFocus = _chordMatched = -1;
+    if (isChordWave(wave)) { setupChord(); _toSpawn = 0; }   // its escorts come from it
     _dampens = DAMPEN_PER_WAVE;
     _dampUntil = 0;
     for (auto &s : _signals) s.alive = false;
@@ -659,7 +695,12 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
     addStatic(-STATIC_DECAY * _dt);
 
     if (_round == ROUND_INTRO) {
-        if (_now - _roundAt >= WAVE_INTRO_MS) { _round = ROUND_PLAY; _roundAt = _now; _spawnAt = _now; sfx(SFX_WAVE); }
+        if (_now - _roundAt >= WAVE_INTRO_MS) {
+            _round = ROUND_PLAY;
+            _roundAt = _spawnAt = _now;
+            if (_chord.active) { _chord.startedAt = _now; _chord.sendAt = _now + 1500; }
+            sfx(_chord.active ? SFX_CHORD_WARN : SFX_WAVE);
+        }
         return;
     }
     if (_round == ROUND_CLEAR) {
@@ -669,14 +710,19 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
 
     if (_toSpawn > 0 && aliveCount() < maxOnScope() && (long)(_now - _spawnAt) >= 0) {
         spawnSignal();
+        --_toSpawn;
         const long step = (long)SPAWN_FIRST_MS - (long)SPAWN_STEP_MS * (_wave - 1);
         const long gap = step > (long)SPAWN_MIN_MS ? step : (long)SPAWN_MIN_MS;
         _spawnAt = _now + (unsigned long)(gap / paceSpeed());   // arrivals closer together at a faster pace
     }
+    updateChord();
     moveSignals();
     findMatch();
-    if (_matched >= 0 && !_wasMatched) sfx(SFX_LOCK);     // resonance just begun
-    _wasMatched = _matched >= 0;
+    findChordMatch();
+    // Resonance worth firing on (not a Chord's dimmer layer) just begun.
+    const bool matched = _matched >= 0 || (_chordMatched >= 0 && _chordMatched == _chord.stripped);
+    if (matched && !_wasMatched) sfx(SFX_LOCK);
+    _wasMatched = matched;
     if (in.btnAPressed) fire();
     if (in.btnBPressed && _dampens > 0 && _now >= _dampUntil) {
         --_dampens;
@@ -684,7 +730,7 @@ inline void ResonanceFluxGame::stepPlay(const InputState &in) {
         ++_statDampens;
         sfx(SFX_DAMP);
     }
-    if (_toSpawn == 0 && aliveCount() == 0) {
+    if (_toSpawn == 0 && aliveCount() == 0 && !_chord.active) {
         _clearBonus = (long)((PTS_STATIC_LEFT * (long)(100.0f - _static) + PTS_DAMPEN_LEFT * _dampens) * scoreMult());
         _score += _clearBonus;
         addStatic(STATIC_CLEAR);
@@ -755,7 +801,6 @@ inline void ResonanceFluxGame::spawnSignal() {
     slot->swayRate = frand(SWAY_RATE_MIN, SWAY_RATE_MAX);
     slot->swayAt = frand(0, TWO_PI_F);
     slot->alive = true;
-    --_toSpawn;
 }
 
 inline void ResonanceFluxGame::moveSignals() {
@@ -800,7 +845,11 @@ inline void ResonanceFluxGame::findMatch() {
 
 inline void ResonanceFluxGame::fire() {
     if ((long)(_now - _fireReadyAt) < 0) return;
+    // The Chord's brightest layer first, then a signal, then (wrongly) a
+    // dimmer layer.
+    if (_chordMatched >= 0 && _chordMatched == _chord.stripped) { hitChord(_chordMatched); return; }
     if (_matched >= 0) { shatter(_matched); return; }
+    if (_chordMatched >= 0) { hitChord(_chordMatched); return; }
     ++_statMisfires;
     addStatic(STATIC_MISFIRE);
     _fireReadyAt = _now + FIRE_COOLDOWN_MS;
@@ -881,8 +930,14 @@ inline void ResonanceFluxGame::updateHum(AudioEngine &audio) {
     // With the notes off (an option), only the hiss.
     _youLevel = _opt.notes ? HUM_YOU_LEVEL : 0;
     audio.setHum(0, pitchOf(_stops[_stop]), _youLevel);
-    const int who = _focus >= 0 ? _focus : _threat;
-    if (who >= 0) _targetHz = pitchOf(_signals[who].ratio);
+    // The note: a signal on your stop, else a Chord layer on it, else the
+    // signal nearest the core, else the Chord's brightest layer.
+    int who = -1;
+    if (_focus >= 0) who = _signals[_focus].ratio;
+    else if (_chordFocus >= 0) who = _chord.ratio[_chordFocus];
+    else if (_threat >= 0) who = _signals[_threat].ratio;
+    else if (_chord.active) who = _chord.ratio[_chord.stripped];
+    if (who >= 0) _targetHz = pitchOf(who);
     _targetLevel = _opt.notes && who >= 0 ? HUM_TARGET_LEVEL : 0;
     audio.setHum(1, _targetHz, _targetLevel);   // fading out at the pitch it had
     audio.setHiss(_static / 100.0f * HISS_LEVEL);
@@ -890,6 +945,7 @@ inline void ResonanceFluxGame::updateHum(AudioEngine &audio) {
 
 }  // namespace resonance
 
+#include "ResonanceChord.h"
 #include "ResonanceScope.h"
 #include "ResonanceAutopilot.h"
 

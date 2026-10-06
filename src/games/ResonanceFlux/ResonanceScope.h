@@ -70,8 +70,9 @@ inline void ResonanceFluxGame::line(uint8_t *plane, int x0, int y0, int x1, int 
 }
 
 // A figure into one plane, or both (b, if given: white).
+// v: how bright (the Chord's dimmer layers).
 inline void ResonanceFluxGame::drawFigure(uint8_t *a, uint8_t *b, const Ratio &r, float phase,
-                                          float cx, float cy, float rad, bool big) {
+                                          float cx, float cy, float rad, bool big, uint8_t v) {
     const int n = segmentsFor(r, big);
     int px = 0, py = 0;
     for (int i = 0; i <= n; ++i) {
@@ -79,8 +80,8 @@ inline void ResonanceFluxGame::drawFigure(uint8_t *a, uint8_t *b, const Ratio &r
         figurePoint(r, phase, TWO_PI_F * i / n, fx, fy);
         const int x = (int)lrintf(cx + fx * rad), y = (int)lrintf(cy - fy * rad);
         if (i > 0) {
-            line(a, px, py, x, y, 255);
-            if (b) line(b, px, py, x, y, 255);
+            line(a, px, py, x, y, v);
+            if (b) line(b, px, py, x, y, v);
         }
         px = x;
         py = y;
@@ -110,8 +111,10 @@ inline void ResonanceFluxGame::renderPlay(GFXcanvas16 &cv) {
         if (!s.alive) continue;
         drawFigure(amber, i == _matched && playing ? green : nullptr, RATIOS[s.ratio], s.phase, s.x, s.y, SIG_R, false);
     }
+    if (_chord.active && playing) drawChord(green, amber);
     if (playing) {
-        drawFigure(green, _matched >= 0 ? amber : nullptr, yourRatio(), phaseEff(),
+        const bool glow = _matched >= 0 || (_chordMatched >= 0 && _chordMatched == _chord.stripped);
+        drawFigure(green, glow ? amber : nullptr, yourRatio(), phaseEff(),
                    CORE_X, CORE_Y, CORE_R, true);
     }
     if (_now < _beamUntil) {
@@ -127,6 +130,23 @@ inline void ResonanceFluxGame::renderPlay(GFXcanvas16 &cv) {
     drawOverlays(cv);
     drawHud(cv);
     drawStrip(cv);
+}
+
+// The Chord's layers still there, the brightest at full and the others
+// faint, so the one to strip reads. In resonance, the brightest glows
+// white; a dimmer one shows green instead (a warning: firing at it
+// brings the stripped layers back).
+inline void ResonanceFluxGame::drawChord(uint8_t *green, uint8_t *amber) {
+    static const uint8_t bright[CHORD_LAYERS] = { 255, 56, 28 };
+    for (int i = CHORD_LAYERS - 1; i >= _chord.stripped; --i) {
+        const Ratio &r = RATIOS[_chord.ratio[i]];
+        if (i == _chordMatched && i != _chord.stripped) {
+            drawFigure(green, nullptr, r, _chord.phase[i], chordX(), CORE_Y, CHORD_R, true, 160);
+            continue;
+        }
+        drawFigure(amber, i == _chordMatched ? green : nullptr, r, _chord.phase[i],
+                   chordX(), CORE_Y, CHORD_R, true, bright[i - _chord.stripped]);
+    }
 }
 
 inline void ResonanceFluxGame::drawOverlays(GFXcanvas16 &cv) {
@@ -152,6 +172,28 @@ inline void ResonanceFluxGame::drawOverlays(GFXcanvas16 &cv) {
     // Corner marks: grey round the signal on your stop nearest your phase
     // (white in resonance); dim round the one nearest the core when none
     // shares your stop (its tone is the one you hear).
+    // The Chord: a red ring round it, a pip above for each layer left, and
+    // the corner marks when a layer of it is on your stop and no signal is.
+    if (inPlay() && _chord.active) {
+        const int hx = (int)chordX(), hy = (int)CORE_Y, rr = (int)CHORD_R + 4;
+        for (int i = 0; i < 72; ++i) {
+            const float a = TWO_PI_F * i / 72;
+            dim(hx + (int)lrintf(cosf(a) * rr), hy + (int)lrintf(sinf(a) * rr), 0x6000);
+        }
+        for (int i = 0; i < CHORD_LAYERS - _chord.stripped; ++i)
+            for (int k = 0; k < 3; ++k) dim(hx - 5 + i * 5 + k, hy - rr - 3, ArcadeConfig::COLOR_RED);
+        if (_focus < 0 && _chordFocus >= 0) {
+            const uint16_t c = _chordMatched >= 0 && _chordMatched == _chord.stripped ? ArcadeConfig::COLOR_WHITE
+                             : ArcadeConfig::COLOR_GREY;
+            const int x0 = hx - rr, y0 = hy - rr, x1 = hx + rr, y1 = hy + rr;
+            for (int k = 0; k < 5; ++k) {
+                dim(x0 + k, y0, c); dim(x0, y0 + k, c);
+                dim(x1 - k, y0, c); dim(x1, y0 + k, c);
+                dim(x0 + k, y1, c); dim(x0, y1 - k, c);
+                dim(x1 - k, y1, c); dim(x1, y1 - k, c);
+            }
+        }
+    }
     const int mark = _focus >= 0 ? _focus : _threat;
     if (inPlay() && mark >= 0) {
         const Signal &s = _signals[mark];
@@ -198,8 +240,8 @@ inline void ResonanceFluxGame::drawHud(GFXcanvas16 &cv) {
 
     if (!inPlay()) return;
     if (_round == ROUND_INTRO) {
-        snprintf(buf, sizeof(buf), "WAVE %d", _wave);
-        hiscore::printCentred(cv, buf, SCOPE_Y + 6, ArcadeConfig::COLOR_WHITE);
+        snprintf(buf, sizeof(buf), _chord.active ? "WAVE %d: CHORD" : "WAVE %d", _wave);
+        hiscore::printCentred(cv, buf, SCOPE_Y + 6, _chord.active ? ArcadeConfig::COLOR_RED : ArcadeConfig::COLOR_WHITE);
     } else if (_round == ROUND_CLEAR) {
         hiscore::printCentred(cv, "CLEAR", SCOPE_Y + 6, ArcadeConfig::COLOR_WHITE);
         snprintf(buf, sizeof(buf), "+%ld", _clearBonus);
@@ -227,6 +269,11 @@ inline void ResonanceFluxGame::drawStrip(GFXcanvas16 &cv) {
         const int x = dialX(_stopOf[_signals[_threat].ratio]);
         cv.drawFastVLine(x, base - 5, 5, ArcadeConfig::COLOR_AMBER);
         cv.fillRect(x - 1, base + 1, 3, 2, ArcadeConfig::COLOR_AMBER);
+    }
+    // The Chord's brightest layer's stop: a red mark above the line.
+    if (_opt.hint && inPlay() && _chord.active) {
+        const int x = dialX(_stopOf[_chord.ratio[_chord.stripped]]);
+        cv.fillRect(x - 1, STRIP_Y, 3, 2, ArcadeConfig::COLOR_RED);
     }
     cv.drawFastVLine(dialX(_stop), STRIP_Y + 1, 8, ArcadeConfig::COLOR_WHITE);
 
@@ -378,8 +425,14 @@ inline void ResonanceFluxGame::renderPicker(GFXcanvas16 &cv) {
     const int count = 6 + 2 * _pick > 30 ? 30 : 6 + 2 * _pick;
     float speed = DRIFT_START * powf(DRIFT_GROWTH, (float)(_pick - 1));
     if (speed > DRIFT_MAX) speed = DRIFT_MAX;
-    snprintf(line, sizeof(line), "%d SIGNALS, %.0f PX/S", count, speed);
-    hiscore::printCentred(cv, line, 84, ArcadeConfig::COLOR_WHITE);
+    if (isChordWave(_pick)) {
+        snprintf(line, sizeof(line), "CHORD%s%s", _pick >= CHORD_DRIFT_WAVE ? ", DRIFTING" : "",
+                 _pick >= CHORD_MORPH_WAVE ? ", MORPHING" : "");
+        hiscore::printCentred(cv, line, 84, ArcadeConfig::COLOR_RED);
+    } else {
+        snprintf(line, sizeof(line), "%d SIGNALS, %.0f PX/S", count, speed * paceSpeed());
+        hiscore::printCentred(cv, line, 84, ArcadeConfig::COLOR_WHITE);
+    }
     hiscore::printCentred(cv, "<> WAVE  ^v BY 5", 100, ArcadeConfig::COLOR_WHITE);
     hiscore::printCentred(cv, "A: TEST  B: BACK", 112, ArcadeConfig::COLOR_YELLOW);
 }
@@ -398,9 +451,9 @@ inline void ResonanceFluxGame::renderOptions(GFXcanvas16 &cv) {
         const char *value = i == OPT_HINT ? (_opt.hint ? "ON" : "OFF")
                           : i == OPT_NOTES ? (_opt.notes ? "ON" : "OFF")
                           : i == OPT_PACE ? paces[_opt.pace]
-                          : i == OPT_BOSSES ? "(SOON)"
+                          : i == OPT_BOSSES ? (_opt.bosses ? "ON" : "OFF")
                           : (_opt.debug ? "ON" : "OFF");
-        const bool grey = i == OPT_BOSSES;
+        const bool grey = false;
         const uint16_t c = grey ? ArcadeConfig::COLOR_GREY : i == _optRow ? ArcadeConfig::COLOR_WHITE : ArcadeConfig::COLOR_GREEN;
         cv.setTextColor(i == _optRow ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_BLACK);
         cv.setCursor(8, y);

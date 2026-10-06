@@ -135,7 +135,7 @@ else
     # shellcheck disable=SC2086
     ./brickflux_harness $s | tail -9
   done
-  for s in figure match "play 20000" quit idle demoexit pick sounds options; do
+  for s in figure match "play 20000" quit idle demoexit pick sounds options chord; do
     echo "=== resonance $s"
     # shellcheck disable=SC2086
     ./resonanceflux_harness $s | tail -1

@@ -181,11 +181,22 @@ small), up to four at once, and more ratios, each a new stop on the dial (1:2 an
 line in the scope's bottom corner shows the phase gap to the signal on
 your stop, for tuning the tolerance.
 
+Every fifth wave is a **Chord** (with BOSSES on): one big figure of three
+ratios drawn over one another at the left or right edge, the brightest
+full and the other two faint. Match the brightest layer (its stop is
+marked red above the dial) and fire to strip it; it jumps to the other
+side and the next is the one. Fire in resonance with a faint layer
+(it shows green, not white) and the stripped layers come back. It sends
+ordinary signals in every 5s, two at a time at most. From wave 10 its
+layers drift slowly in phase; from wave 15 its middle layer swaps
+between two ratios every 3s. 300 a layer, 5,000 for bringing it down
+and 1,000 for each second under 45.
+
 Its options (B on the title, how-to or scores screens, saved on the
 cabinet): **RATIO HINT** (the amber stop) and **NOTES** (the two notes;
 the hiss stays) on or off, **PACE** calm, normal or fast (drift speed and
-how often signals come, x0.75 or x1.25), **BOSSES** (greyed: none yet)
-and **DEBUG LINE**. Points are worth more with less help: x1.25 for each
+how often signals come, x0.75 or x1.25), **BOSSES** (the Chords) and
+**DEBUG LINE**. Points are worth more with less help: x1.25 for each
 help off, x1.5 fast, x0.75 calm, multiplied together (the HUD shows the
 multiplier when it isn't 1).
 
@@ -268,7 +279,7 @@ table). A starts a real game straight from a demo; nothing from a demo
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
 | Tube | a random tier, sometimes into the bonus round |
 | Star | a random stage and point in it, sometimes the boss; dodges by where shots, rocks and obstacles will cross its path, leads its targets, bombs packs |
-| Resonance | a random wave 1-8; takes the signal nearest the core, pauses a moment as a person would, steps the dial the shorter way round to its ratio, turns the phase to match and fires; dampens when one's about to get through |
+| Resonance | a random wave 1-8 (5 a Chord, with bosses on); takes the signal nearest the core, pauses a moment as a person would, steps the dial the shorter way round to its ratio, turns the phase to match and fires; dampens when one's about to get through |
 | Roll | a random course with two dash steps; plans a way through the cells to the goal (by gems that are close), aims as far ahead as it can roll straight without leaving that way, slows for turns, ice and edges, swaps colour ahead of a gate or bridge (at the very edge when it's on a bridge of its own colour), takes a moving part as a link between two landings (waits at the edge for it, rides it still, gets off at the far end), and dashes on long safe straights; at a guardian, it fills its dash meter from the arena's gems, then lines up on the lit weak point (leading a moving one) and dashes into it |
 
 ## Build
@@ -730,6 +741,9 @@ don't muddle the notes.
 | `res_damp.wav` | dampen (B) | ~0.4s | a tone |
 | `res_clear.wav` | a wave cleared | ~0.8s | three rising notes |
 | `res_over.wav` | overload: game over | ~1.2s | a falling run of notes |
+| `res_chord_warn.wav` | a Chord's wave starts | ~1s | three low beeps |
+| `res_chord_hit.wav` | a Chord's layer stripped | ~0.3s | a tone |
+| `res_chord_down.wav` | a Chord brought down | ~2s | `star_boss_die.wav`, else a falling run of notes |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

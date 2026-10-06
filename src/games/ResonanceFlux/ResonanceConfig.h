@@ -99,6 +99,21 @@ constexpr float HUM_YOU_LEVEL = 0.35f;
 constexpr float HUM_TARGET_LEVEL = 0.35f;
 constexpr float HISS_LEVEL = 0.4f;       // at full static
 
+// ---- The Chord (the boss, every CHORD_EVERY waves with BOSSES on) ----
+constexpr int   CHORD_EVERY = 5;
+constexpr int   CHORD_LAYERS = 3;
+constexpr float CHORD_R = 16.0f;          // its figure's size
+constexpr unsigned long CHORD_SEND_MS = 5000;   // an escort (an ordinary signal) this often
+constexpr int   CHORD_ESCORTS_MAX = 2;   //   while fewer than this are on the scope
+constexpr int   CHORD_DRIFT_WAVE = 10;   // from this wave its layers drift in phase,
+constexpr float CHORD_DRIFT_RATE = 0.12f;   //   up to this (radians/s; the tolerance is 0.12)
+constexpr int   CHORD_MORPH_WAVE = 15;   // from this wave its middle layer swaps ratio
+constexpr unsigned long CHORD_MORPH_MS = 3000;   //   this often
+constexpr long  PTS_LAYER = 300;         // each layer stripped
+constexpr long  PTS_CHORD = 5000;        // brought down, plus PTS_CHORD_SEC for each
+constexpr long  PTS_CHORD_SEC = 1000;    //   second under CHORD_PAR_S
+constexpr float CHORD_PAR_S = 45.0f;
+
 constexpr unsigned long GAMEOVER_MIN_MS = 1500, GAMEOVER_TIMEOUT_MS = 15000;
 
 // ---- Attract cycle, demo and the wave select ----

@@ -26,6 +26,9 @@
 //   options     B on the title opens the options (B with A still the wave
 //               select); each is saved and does what it says; the score
 //               multiplier; the how-to slides clear the bands round the scope
+//   chord       the boss: every fifth wave with bosses on; stripping, the
+//               wrong order, escorts, drift and morph; the autopilot brings
+//               down waves 5, 10, 15 and 20's
 //   all         everything (the default)
 //
 // DUMP_AT=frame,frame writes those frames of `play` as resonance_<frame>.ppm,
@@ -669,7 +672,9 @@ static bool scenarioOptions() {
     check("right then left round: calm, then back to fast", g._opt.pace == G::PACE_FAST, ok);
     push(false, true, false, false);
     push(false, false, false, true);
-    check("BOSSES: greyed, won't change", g._opt.bosses && g._optRow == G::OPT_BOSSES, ok);
+    check("down, right: BOSSES off", !g._opt.bosses && g._optRow == G::OPT_BOSSES, ok);
+    push(false, false, false, true);
+    check("  and right again: on", g._opt.bosses, ok);
     push(false, true, false, false);
     InputState a{}; a.btnA = a.btnAPressed = true;
     frame(a); frame();
@@ -715,6 +720,100 @@ static bool scenarioOptions() {
     return ok;
 }
 
+// The Chord: every fifth wave with bosses on, none with them off; strip
+// the brightest layer and it jumps sides; fire at a dimmer one and the
+// stripped ones come back; its escorts; drift and morph; and the
+// autopilot brings down each kind (waves 5, 10, 15, 20), static pinned.
+static bool scenarioChord() {
+    static ResonanceFluxGame g;
+    AudioEngine audio;
+    GFXcanvas16 canvas(W, H);
+    bool ok = true;
+    printf("chord:\n");
+    using G = ResonanceFluxGame;
+    startPlaying(g, audio, canvas);
+    g.startWave(4);
+    check("wave 4: no Chord", !g._chord.active && g._toSpawn > 0, ok);
+    g.startWave(5);
+    check("wave 5: a Chord, three different ratios, no signals of its own wave",
+          g._chord.active && g._toSpawn == 0 && g._chord.ratio[0] != g._chord.ratio[1] &&
+          g._chord.ratio[1] != g._chord.ratio[2] && g._chord.ratio[0] != g._chord.ratio[2], ok);
+    g._opt.bosses = false;
+    g.startWave(5);
+    check("bosses off: wave 5 is an ordinary wave", !g._chord.active && g._toSpawn > 0, ok);
+    g._opt.bosses = true;
+
+    // Strip the brightest; then fire at a dimmer one.
+    g.startWave(5);
+    g._round = G::ROUND_PLAY;
+    for (auto &sg : g._signals) sg.alive = false;
+    g._chord.sendAt = g_fakeMillis + 1000000;
+    g._fireReadyAt = 0;
+    auto tuneTo = [&](int layer) {
+        g._stop = g._stopOf[g._chord.ratio[layer]];
+        g._phase = g._chord.phase[layer];
+        g._jitP = 0;
+    };
+    InputState a{}; a.btnA = a.btnAPressed = true;
+    const bool left0 = g._chord.left;
+    const long score0 = g._score;
+    tuneTo(0);
+    step(g, audio, canvas);
+    tuneTo(0);
+    step(g, audio, canvas, a);
+    check("the brightest in resonance, fired: stripped, scored, to the other side",
+          g._chord.stripped == 1 && g._score > score0 && g._chord.left != left0, ok);
+    g._static = 0;
+    tuneTo(2);
+    step(g, audio, canvas);
+    tuneTo(2);
+    step(g, audio, canvas, a);
+    check("a dimmer layer fired at: the stripped one back, and static",
+          g._chord.stripped == 0 && g._static >= STATIC_MISFIRE - 0.1f, ok);
+
+    // Escorts: sent while it's up, a couple at a time.
+    g._chord.sendAt = g_fakeMillis;
+    int most = 0;
+    for (int f = 0; f < 900; ++f) {
+        g._static = 0;
+        step(g, audio, canvas);
+        most = std::max(most, g.aliveCount());
+    }
+    char what[96];
+    snprintf(what, sizeof(what), "escorts sent while it's up, %d at most", most);
+    check(what, most >= 1 && most <= CHORD_ESCORTS_MAX, ok);
+
+    // Drift from wave 10, morph from 15.
+    g.startWave(10);
+    g._round = G::ROUND_PLAY;
+    float p0 = g._chord.phase[0];
+    for (int f = 0; f < 30; ++f) step(g, audio, canvas);
+    check("wave 10: its layers drift in phase", fabsf(g._chord.phase[0] - p0) > 0.01f && !g._chord.morph, ok);
+    g.startWave(15);
+    g._round = G::ROUND_PLAY;
+    const int mid0 = g._chord.ratio[1];
+    for (unsigned long t = 0; t <= CHORD_MORPH_MS + STEP_MS; t += STEP_MS) step(g, audio, canvas);
+    check("wave 15: its middle layer swaps ratio", g._chord.morph && g._chord.ratio[1] != mid0, ok);
+
+    // The autopilot against each kind.
+    for (int w : { 5, 10, 15, 20 }) {
+        g.startWave(w);
+        g._round = G::ROUND_PLAY;
+        g._chord.startedAt = g_fakeMillis;
+        const long chords0 = g._statChords;
+        long f = 0;
+        for (; f < 6000 && g._chord.active; ++f) {
+            g._static = 0;
+            step(g, audio, canvas, g.autopilot());
+        }
+        for (long k = 0; k < 200 && g._round == G::ROUND_PLAY; ++k) step(g, audio, canvas);
+        snprintf(what, sizeof(what), "wave %d's Chord brought down in %.1fs, the wave cleared", w, f * STEP_MS / 1000.0f);
+        check(what, g._statChords == chords0 + 1 && g._round == G::ROUND_CLEAR, ok);
+    }
+    printf("chord -> %s\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 int main(int argc, char** argv) {
     const char* which = argc > 1 ? argv[1] : "all";
     const long frames = argc > 2 ? atol(argv[2]) : 0;
@@ -729,5 +828,6 @@ int main(int argc, char** argv) {
     if (all || !strcmp(which, "pick"))     ok &= scenarioPick();
     if (all || !strcmp(which, "sounds"))   ok &= scenarioSounds();
     if (all || !strcmp(which, "options"))  ok &= scenarioOptions();
+    if (all || !strcmp(which, "chord"))    ok &= scenarioChord();
     return ok ? 0 : 1;
 }
