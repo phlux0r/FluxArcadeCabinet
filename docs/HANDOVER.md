@@ -29,7 +29,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   docs/design/RollFlux.md.
 - **Brick Flux** is finished, with bosses every fifth level.
   docs/design/BrickFlux.md.
-- **Stage select** (a test cheat), in Roll, Brick, Resonance and Maze: on
+- **Stage select** (a test cheat), in Roll, Brick, Resonance, Maze and Runner: on
   the title, how-to or scores screens, hold B and press A; the stick picks
   the course, level or wave, A starts a test run (an orange T before the
   score, nothing put on the high-score table), B goes back. Harness
@@ -90,7 +90,9 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
     loop's life; it reaches stages 8-50, which says the stages hold up
     for a perfect-reaction player, not how they feel), `runnerstages`,
     `runnername`.
-  Still open from the review, in the proposed order: a stage select;
+  - Stage select (`runnerpick`), as in the other games: stages 1-32,
+    the stick by one or by a loop, over a preview of the stage's terrain.
+  Still open from the review, in the proposed order:
   the terrain vanishing during the 0.8s death; the score ticking by real
   time (a function `static`) not distance; particle trails; per-frame
   movement with no `_frameScale` (like the other 2D games).
@@ -117,9 +119,9 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the
   maze_door/switch/teleport files).
 - **Needs the board:** the frame rate of Maze (its textured walls doubled
-  the host cost), Asteroid (exhaust and Fire bolts) and Lander; the last
-  `pio run` size line seen was 38.4% flash, 31.1% RAM, before the Maze
-  redesign and Asteroid's Fire.
+  the host cost), Asteroid (exhaust and Fire bolts) and Lander. The last
+  `pio run` size line seen was 38.8% flash (1,219,833 of 3,145,728
+  bytes), 22.2% RAM, on the Runner review branch after its sounds.
 - **Particle trails** (merged):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
   a particle with one keeps its last positions, and how bright it was at

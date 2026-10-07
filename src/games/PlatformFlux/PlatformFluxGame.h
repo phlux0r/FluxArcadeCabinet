@@ -54,7 +54,8 @@ private:
     unsigned long _bannerUntil = 0;
 
     // NAME: entering a name for the high-score table, after the last life.
-    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_NAME, PHASE_GAMEOVER };
+    // PICK: the stage select.
+    enum GamePhase { PHASE_ATTRACT, PHASE_PLAYING, PHASE_DEATH, PHASE_NAME, PHASE_GAMEOVER, PHASE_PICK };
     GamePhase _phase = PHASE_ATTRACT;
 
     // Title, how-to-play, then the autopilot demo (a run with _demo set).
@@ -63,6 +64,15 @@ private:
     unsigned long _demoUntil = 0;
     AttractSlide  _attractSlide      = SLIDE_SPLASH;
     unsigned long _attractSlideTimer = 0;
+
+    // The stage select (a test cheat): B held and A on an attract screen.
+    // A test run plays from _testFrom; nothing from it goes on the table.
+    static const int PICK_STAGES = 32;   // four loops
+    static const unsigned long PICK_TIMEOUT_MS = 20000, PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
+    bool _test = false;
+    int  _testFrom = 1;
+    int  _pick = 1, _pickDir = 0;
+    unsigned long _pickRepeatAt = 0, _pickAt = 0;
 
     unsigned long _phaseTimer = 0;
     bool _uiDirty = true;
@@ -158,8 +168,14 @@ private:
             canvas.fillRect(lx + i * 5, 2, 3, 6, ArcadeConfig::COLOR_ORANGE);
         }
 
+        int sx = 58;
+        if (_test) {
+            canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
+            canvas.setCursor(sx, 1); canvas.print("T");
+            sx += 6;
+        }
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(58, 1);
+        canvas.setCursor(sx, 1);
         canvas.print(_score);
 
         canvas.setTextColor(ArcadeConfig::COLOR_GREY);
@@ -304,15 +320,18 @@ private:
         canvas.print("[BTN A] TO START");
     }
 
-    void startNewGame(AudioEngine &audio) {
+    // A game from stage `from`; a test run (the stage select) if test.
+    void startNewGame(AudioEngine &audio, int from = 1, bool test = false) {
         // Cut off whatever's still playing (e.g. the game-over sound, if
         // "play again" was pressed before it finished) so it doesn't keep
         // running into the new game.
         audio.mute();
+        _test = test;
+        _testFrom = from;
         _score = 0;
         _lives = ArcadeConfig::RUNNER_LIVES;
-        _loopsSeen = 0;
-        startStage(1);
+        startStage(from);
+        _loopsSeen = _platforms.loopsCompleted();   // no extra life for the loop it starts in
         // Music plays during a game only, not on the attract screen; it
         // carries on through lost lives and stops at game over.
         if (_musicOnCard) audio.loopWAV(MUSIC);
@@ -375,6 +394,53 @@ private:
         _particles.triggerExplosion(_player.getX() + RUNNER_WIDTH / 2.0f,
                                      _player.getY() + RUNNER_HEIGHT / 2.0f);
         sfx(SFX_DEATH);
+    }
+
+    // ---- Stage select --------------------------------------------------------
+
+    void enterPicker() {
+        _phase = PHASE_PICK;
+        _pick = 1; _pickDir = 0;
+        _pickAt = millis();
+        previewStage();
+    }
+
+    // The picked stage's world, scrolled on about a screen past its safe
+    // starting ledge so its own terrain shows.
+    void previewStage() {
+        _platforms.initGame(_pick);
+        for (float moved = 0; moved < ArcadeConfig::LANDSCAPE_WIDTH; moved += _platforms.getScrollSpeed())
+            _platforms.update();
+    }
+
+    // What each stage of a loop brings (see PlatformManager's tiers).
+    static const char* stageHazards(int stage) {
+        static const char* const what[PlatformManager::TIERS_PER_LOOP] = {
+            "FIRE PITS", "FIRE PITS, STAIRS", "PLATFORMS", "MOVING PLATFORMS",
+            "PLATFORMS + SHIP", "STAIRS, SPIKES", "SPIKES, BOULDERS", "ALL + SHIPS",
+        };
+        return what[(stage - 1) % PlatformManager::TIERS_PER_LOOP];
+    }
+
+    // The stage's terrain as it starts, behind its number and hazards.
+    void renderPicker(GFXcanvas16 &canvas) {
+        _backdrop.render(canvas, 0, _platforms.getLoop());
+        _platforms.render(canvas);
+        canvas.fillRect(20, 30, 120, 50, ArcadeConfig::COLOR_BLACK);
+        canvas.drawRect(20, 30, 120, 50, ArcadeConfig::COLOR_ORANGE);
+        char buf[24];
+        snprintf(buf, sizeof(buf), "STAGE %d", _pick);
+        hiscore::printCentred(canvas, buf, 35, ArcadeConfig::COLOR_WHITE, 2);
+        snprintf(buf, sizeof(buf), "LOOP %d: %s", _platforms.getLoop() + 1, stageHazards(_pick));
+        hiscore::printCentred(canvas, buf, 55, ArcadeConfig::COLOR_CYAN);
+        hiscore::printCentred(canvas, "A: TEST RUN  B: BACK", 68, ArcadeConfig::COLOR_ORANGE);
+        hiscore::printCentred(canvas, "STAGE SELECT", 2, ArcadeConfig::COLOR_ORANGE);
+    }
+
+    void leavePicker() {
+        _phase = PHASE_ATTRACT;
+        _attractSlide = SLIDE_SPLASH;
+        _attractSlideTimer = millis();
     }
 
     // ---- Attract demo --------------------------------------------------------
@@ -489,6 +555,7 @@ private:
     // A game's world at a random stage, played by demoPilot().
     void startDemo() {
         _demo = true;
+        _test = false;
         _score = 0;
         _lives = ArcadeConfig::RUNNER_LIVES;
         _loopsSeen = 0;
@@ -575,7 +642,40 @@ public:
 
             flushLandscape(canvas);
 
-            if (input.btnAPressed) startNewGame(audio);
+            // With B held, A opens the stage select.
+            if (input.btnAPressed && input.btnB) enterPicker();
+            else if (input.btnAPressed) startNewGame(audio);
+            return true;
+        }
+
+        // ---- PHASE: STAGE SELECT — the stick steps the stage (left and
+        // right by one, up and down by a loop), A starts a test run, B or
+        // leaving it alone goes back ----
+        if (_phase == PHASE_PICK) {
+            if (input.btnAPressed) { startNewGame(audio, _pick, true); return true; }
+            if (input.btnBPressed || millis() - _pickAt > PICK_TIMEOUT_MS) { leavePicker(); return true; }
+            bool up, down, left, right;
+            hiscore::screenDirs(input, getRotation(), up, down, left, right);
+            const int dir = right ? 1 : left ? -1 : up ? PlatformManager::TIERS_PER_LOOP
+                          : down ? -PlatformManager::TIERS_PER_LOOP : 0;
+            bool stepped = false;
+            const unsigned long now = millis();
+            if (dir != _pickDir) {
+                _pickDir = dir;
+                _pickRepeatAt = now + PICK_REPEAT_DELAY_MS;
+                stepped = dir != 0;
+            } else if (dir != 0 && (long)(now - _pickRepeatAt) >= 0) {
+                _pickRepeatAt = now + PICK_REPEAT_MS;
+                stepped = true;
+            }
+            if (stepped) {
+                _pick = (_pick - 1 + dir + PICK_STAGES) % PICK_STAGES + 1;
+                _pickAt = now;
+                previewStage();
+                audio.playTone(1200, 15);
+            }
+            renderPicker(canvas);
+            flushLandscape(canvas);
             return true;
         }
 
@@ -759,7 +859,7 @@ public:
                 // Out of lives: a name for the table if the score made it.
                 _particles.clearAll();
                 _scores.forget();
-                _phase             = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
+                _phase             = !_test && _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
                 audio.stopLoop();
                 sfx(SFX_OVER);
@@ -821,7 +921,8 @@ public:
 
             // Only after the input delay, so mashing at the end doesn't.
             const bool inputOk = elapsed >= ArcadeConfig::GAMEOVER_INPUT_DELAY_MS;
-            if (inputOk && input.btnAPressed) { startNewGame(audio); return true; }
+            // A test run plays again from its stage.
+            if (inputOk && input.btnAPressed) { startNewGame(audio, _test ? _testFrom : 1, _test); return true; }
 
             if (elapsed > GAMEOVER_TIMEOUT_MS) {
                 // Back to the title, from the start of the attract cycle
@@ -829,6 +930,7 @@ public:
                 _phase             = PHASE_ATTRACT;
                 _attractSlide      = SLIDE_SPLASH;
                 _attractSlideTimer = millis();
+                _test              = false;
             }
             return true;
         }
@@ -840,7 +942,7 @@ public:
     // table, under the last name entered; a name being entered is kept.
     void onQuit(AudioEngine &audio) override {
         if (_phase == PHASE_NAME) _scores.finishNow();
-        else if (!_demo && (_phase == PHASE_PLAYING || _phase == PHASE_DEATH)) _scores.record(_score);
+        else if (!_demo && !_test && (_phase == PHASE_PLAYING || _phase == PHASE_DEATH)) _scores.record(_score);
         audio.mute();
     }
 

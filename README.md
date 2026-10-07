@@ -427,7 +427,12 @@ Getting past a fire pit scores 10, a spike trap 10 if it rose while you
 were over it, and jumping a boulder 20,
 with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
 slow stars, a far mountain range and nearer hills, their colours changing
-each loop.
+each loop. Stage select, for testing: on the title, how-to or scores
+screens, hold B and press A; the stick picks the stage, 1-32 (left/right
+by one, up/down by a loop of 8), over a preview of its terrain and what
+it brings; A starts a test run there (an orange T before the score;
+nothing goes on the high-score table, and A at game over runs the stage
+again), B goes back.
 
 Tube Flux: the joystick rolls you round the tunnel (left/right) and nudges
 the speed (up boosts, down brakes). A starts a run, and fires once you've

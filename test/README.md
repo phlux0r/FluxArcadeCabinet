@@ -241,7 +241,11 @@ being freed on exit to the launcher).
   loop), stage starts (`runnerstages`: stages 1-25 started directly match
   a run from stage 1 in tier, loop and speed) and the end of a game
   (`runnername`: name entry, the stick changing a letter, the score on the
-  table; Back mid-game records it, a demo's doesn't);
+  table; Back mid-game records it, a demo's doesn't) and the stage
+  select (`runnerpick`: B held and A opens it, the stick's steps and
+  wrap, a test run at the stage with nothing put on the table at game
+  over or on Back, A at game over running it again, B or a timeout back
+  to the title, A alone still a real game from stage 1);
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -276,7 +280,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

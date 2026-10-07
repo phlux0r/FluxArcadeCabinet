@@ -624,6 +624,79 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnerpick")) {
+        // The stage select: B held and A on an attract screen opens it;
+        // the stick steps the stage (left/right by one, up/down by a loop,
+        // round from end to end); A starts a test run there (nothing goes
+        // on the table, at game over or on a Back quit; A at game over runs
+        // it again); B, or leaving it alone, goes back to the title. A on
+        // its own still starts a real game from stage 1.
+        using G = PlatformFluxGame;
+        static G g;
+        g = G();
+        AudioEngine audio;
+        g.init(audio);
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+        auto push = [&](int dx, int dy) {   // screen directions; landscape: up is the stick's left
+            InputState in{};
+            in.joyLeft = dy < 0; in.joyRight = dy > 0; in.joyUp = dx < 0; in.joyDown = dx > 0;
+            step(in); step();
+            return g._pick;
+        };
+        bool pass = true;
+        auto check = [&](const char* what, bool cond) {
+            printf("  %-58s %s\n", what, cond ? "ok" : "BAD");
+            pass &= cond;
+        };
+        printf("runnerpick:\n");
+        for (int f = 0; f < 10; ++f) step();
+        InputState ba{}; ba.btnB = true; ba.btnA = ba.btnAPressed = true;
+        step(ba);
+        check("B held and A on the title opens the stage select", g._phase == G::PHASE_PICK && g._pick == 1);
+        const int r = push(1, 0), u = push(0, -1), l = push(-1, 0), d = push(0, 1), wrap = push(-1, 0);
+        check("right +1, up +8, left -1, down -8, left from 1 wraps",
+              r == 2 && u == 10 && l == 9 && d == 1 && wrap == G::PICK_STAGES);
+        while (g._pick != 12) push(1, 0);
+        InputState a{}; a.btnA = a.btnAPressed = true;
+        step(a);
+        check("A starts a test run at stage 12", g._phase == G::PHASE_PLAYING && g._test && g._stage == 12 &&
+              g._score == 0 && g._lives == ArcadeConfig::RUNNER_LIVES && g._platforms.stageNumber() == 12);
+        check("no extra life for the loop it starts in", g._lives == ArcadeConfig::RUNNER_LIVES);
+        const auto best = g._scores.table().e[0].score;
+        g._score = 950000;
+        g.onQuit(audio);
+        check("Back in a test run puts nothing on the table", g._scores.table().e[0].score == best);
+        g._score = 950000;
+        g._lives = 1;
+        g._player._invincible = false;
+        g._player._y = 200;
+        for (int f = 0; f < 200 && g._phase == G::PHASE_PLAYING; ++f) step();
+        for (int f = 0; f < 200 && g._phase == G::PHASE_DEATH; ++f) step();
+        check("its game over skips name entry, table untouched", g._phase == G::PHASE_GAMEOVER &&
+              g._scores.table().e[0].score == best);
+        for (int f = 0; f < 120; ++f) step();
+        step(a);
+        check("A at game over runs stage 12 again, still a test", g._phase == G::PHASE_PLAYING && g._test &&
+              g._stage == 12 && g._score == 0);
+        // Back out of it: game over left alone goes to the title, no longer a test.
+        g._lives = 1; g._player._invincible = false; g._player._y = 200;
+        for (int f = 0; f < 3000 && g._phase != G::PHASE_ATTRACT; ++f) step();
+        check("game over timing out leaves the test behind", g._phase == G::PHASE_ATTRACT && !g._test);
+        step(ba);
+        step(); step();
+        InputState b{}; b.btnB = b.btnBPressed = true;
+        step(b);
+        check("B in the stage select goes back to the title", g._phase == G::PHASE_ATTRACT &&
+              g._attractSlide == G::SLIDE_SPLASH);
+        step(); step(ba);
+        for (int f = 0; f < 2000 && g._phase == G::PHASE_PICK; ++f) step();
+        check("left alone, it goes back to the title", g._phase == G::PHASE_ATTRACT);
+        step(); step(a);
+        check("A on its own: a real game from stage 1", g._phase == G::PHASE_PLAYING && !g._test && g._stage == 1);
+        printf("runnerpick -> %s\n", pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;
