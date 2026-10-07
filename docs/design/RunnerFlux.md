@@ -237,5 +237,5 @@ darts). Ruins: rocks crumble the ground; Storm: gusts while it drops.
   move and fatal without it; counts per stage; combinations fair (the
   bot clears them); the boss's patterns survivable.
 - README and test/README up to date; HANDOVER says where it stands.
-- `pio run`'s size line checked (a sprite frame is ~720 bytes; flash is
-  at 38.8%).
+- `pio run`'s size line checked (a sprite frame is ~720 bytes; flash was
+  at 39.3% with the Ruins).

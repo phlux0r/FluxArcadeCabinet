@@ -153,17 +153,17 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   rocks over crumbling slabs and logs were too much (no ship in stage 23,
   rocks held while a pillar's ahead); the boss's ground now drops to the
   base level. Scenario `runnerruins`; `runnerplay` must reach stage 28.
-  Needs the board: the look (sandstone, dusk, columns, gems), springs'
-  height and feel, how fair crumbling slabs and logs feel by hand.
-  Next: Storm, or more polish on the worlds there are.
+  Played on the board (2026-10): the owner likes the new stages and
+  finds them play well. Next: Storm, or more polish on the worlds there are.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the
   maze_door/switch/teleport files).
 - **Needs the board:** the frame rate of Maze (its textured walls doubled
   the host cost), Asteroid (exhaust and Fire bolts) and Lander. The last
-  `pio run` size line seen was 38.8% flash (1,219,833 of 3,145,728
-  bytes), 22.2% RAM, on the Runner review branch after its sounds.
+  `pio run` size line seen was 39.3% flash (1,236,469 of 3,145,728
+  bytes), 22.2% RAM, on the Runner branch with Night, the boss and the
+  Ruins.
 - **Particle trails** (merged):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
   a particle with one keeps its last positions, and how bright it was at
