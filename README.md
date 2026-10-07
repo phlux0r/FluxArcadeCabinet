@@ -11,7 +11,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
 | Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
-| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies |
+| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies; every second loop is Night (duck under beams, jets and darts) |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
@@ -307,7 +307,7 @@ an autopilot, and back to the title. A starts a real game straight from a demo; 
 | Game | The demo |
 |---|---|
 | Brick | a random level 2-12, or one time in four the Warden; predicts where the ball comes down, tilts to send it at the lowest brick (or the core) in that brick's colour, absorbs or dodges bolts, detours for capsules and sparks, and smashes (mostly Perfect) |
-| Runner | a random stage 2-7; the autopilot predicts on the game's own rules and jumps at the best moment |
+| Runner | a random stage 2-15 (Night from 9); the autopilot predicts on the game's own rules, jumps at the best moment and ducks under Night's obstacles |
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
@@ -426,7 +426,22 @@ invincible for 6s; it comes 30-45s after the last one was taken or went
 by, never while you're invincible already. The
 diamond gives 10s of flight (the stick moves you up and down, never into
 the ground; the runner flashes red as it runs out). The diamond turns up
-from stage 3, and from the second loop also just before fire pits.
+from stage 3, and from the second loop also just before fire pits; never
+at Night, nor in the stage before it.
+
+Every second loop is Night (stages 9-16, 25-32, ...; docs/design/RunnerFlux.md):
+dark, a moon, and the ground and gantries past the runner's lantern
+(about 100px ahead) drawn dimmer, flames and lamps still bright. **B held
+on the ground ducks** (in the air it does nothing; A from a duck jumps;
+let go to stand), and Night brings three low obstacles that only a duck
+gets under: beams (a gantry hanging to just above a ducked runner), flame
+jets (a shorter housing a standing runner passes under, until its flame
+lights, timed like the spikes: sputter, then lit for a moment) and darts
+(a launcher glints, then fires one at head height; duck or jump it).
+Beams go between the pits in stages 9-10, jets come in 14, darts in 15,
+all three in 16; the platform stages (11-13) have only the dark. Passing
+a beam scores 10, a jet 10 if it was lit over you, a dart 20.
+
 Distance scores a point every 3 frames (about 10 a second). Getting past
 a fire pit scores 10, a spike trap 10 if it rose while you
 were over it, and jumping a boulder 20,
@@ -816,6 +831,9 @@ the same way.
 | `runner_boulder.wav` | hit by a boulder | ~0.1s | a low tone |
 | `runner_stage.wav` | a stage cleared | ~0.3s | three rising notes |
 | `runner_life.wav` | a loop finished: an extra life | ~0.5s | four rising notes |
+| `runner_duck.wav` | the runner ducks | ~0.1s | nothing |
+| `runner_dart.wav` | a launcher fires a dart | ~0.2s | a high tone |
+| `runner_jet.wav` | a flame jet on screen lights | ~0.4s | a low tone |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

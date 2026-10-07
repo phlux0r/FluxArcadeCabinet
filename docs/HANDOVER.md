@@ -116,8 +116,18 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   chose a world per loop (loop 2 Night, 3 Ruins, 4 Storm, then the
   worlds again, faster), B to duck under low obstacles only (low beams,
   burning ropes, darts; not ships), and a boss stretch to survive at the
-  end of each loop. Night first; its details are waiting on the owner's
-  confirmation before any code.
+  end of every loop (the first included). **Night is built** (stages
+  9-16 and every second loop): B ducks (sprite frames from
+  `tools/runner_duck_sprite.py`), beams, flame jets and darts, the
+  lantern's dim far ground, a night backdrop with a moon; the autopilot
+  ducks, so the demo now plays stages 2-15. Placement rules found by the
+  harness bot (each in the design doc): columns level with the block
+  before, beams in the gaps round the pits, no boulders while an obstacle
+  is ahead, no diamond at Night. Scenarios `runnerduck`,
+  `runnerobstacles`, `runnernight`, `runnerdark`; `runnerplay` must reach
+  stage 17. Needs the board: the look (gantries, flame, darts, the
+  lantern's falloff), the duck's feel, and the frame rate at Night (the
+  lattice is a few more lines a column). Next: the boss stretch.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the

@@ -5,6 +5,7 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "assets/runner_sprites.h"
+#include "assets/runner_duck.h"
 
 // --- 18x20 SIDE-VIEW RUNNER SPRITE (16-bit RGB565, PROGMEM) ---
 // Generated from assets/frame1.png, frame2.png, frame3.png. Frame 1/2 are
@@ -15,6 +16,8 @@
 static const int RUNNER_WIDTH      = 18;
 static const int RUNNER_HEIGHT     = 20;
 static const int RUNNER_ANIM_SPEED = 90;   // ms per animation frame while grounded
+// Ducked (B held on the ground): the box is this tall, feet where they were.
+static const int RUNNER_DUCK_DROP  = RUNNER_HEIGHT - RUNNER_DUCK_HEIGHT;
 
 class PlayerRunner {
 private:
@@ -32,6 +35,7 @@ private:
     // edge (see jump()).
     unsigned long _groundedAt;
     bool  _jumpedSinceGround;
+    bool  _ducking;    // B held on the ground: crouched, RUNNER_DUCK_HEIGHT tall
 
     const uint16_t* frameData(int frame) const {
         switch (frame) {
@@ -46,7 +50,7 @@ public:
                      _currentFrame(0), _nextFrameTime(0),
                      _invincible(false), _invincibleEndTime(0),
                      _levitating(false), _levitationEndTime(0),
-                     _groundedAt(0), _jumpedSinceGround(false) {}
+                     _groundedAt(0), _jumpedSinceGround(false), _ducking(false) {}
 
     void reset(float x, float groundY) {
         _x        = x;
@@ -58,7 +62,20 @@ public:
         _levitating = false;
         _groundedAt = millis();
         _jumpedSinceGround = false;
+        _ducking = false;
     }
+
+    // B held: ducks, on the ground only (in the air, or flying, it does
+    // nothing); let go, it stands up. Returns true the frame it ducks.
+    bool setDucking(bool want) {
+        const bool was = _ducking;
+        _ducking = want && _onGround && !_levitating;
+        return _ducking && !was;
+    }
+    bool isDucking() const { return _ducking; }
+    // The top of the runner's box: lower while ducked. Its feet are always
+    // getY() + RUNNER_HEIGHT.
+    float hitTop() const { return _y + (_ducking ? (float)RUNNER_DUCK_DROP : 0.0f); }
 
     // Returns true only if the jump actually took effect (grounded), so
     // callers can gate a jump sound to real jumps rather than every press.
@@ -71,6 +88,7 @@ public:
     }
     bool jump() {
         if (!canJump()) return false;
+        _ducking = false;   // a jump from a duck stands up first
         _vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
         _onGround = false;
         _jumpedSinceGround = true;
@@ -95,6 +113,7 @@ public:
             _jumpedSinceGround = false;
         } else {
             _onGround = false;
+            _ducking = false;   // ran off an edge: no ducking in the air
         }
     }
 
@@ -102,6 +121,7 @@ public:
         _levitating        = true;
         _levitationEndTime = millis() + durationMs;
         _vy                = 0.0f;
+        _ducking           = false;
     }
 
     // Returns true the frame levitation just ended (so the caller can decide
@@ -182,9 +202,13 @@ public:
         // The warning takes priority now: it never gets swallowed by vanish.
         if (!warnFlash && _invincible && (millis() / 80) % 2 == 0) return;
 
-        const uint16_t* data = frameData(_currentFrame);
-        int baseX = (int)_x, baseY = (int)_y;
-        for (int row = 0; row < RUNNER_HEIGHT; row++) {
+        // Ducked: the crouched frames, shuffling with the run cycle.
+        const bool duck = _ducking;
+        const uint16_t* data = duck ? (_currentFrame == 1 ? runner_frame_duck2 : runner_frame_duck1)
+                                    : frameData(_currentFrame);
+        const int rows = duck ? RUNNER_DUCK_HEIGHT : RUNNER_HEIGHT;
+        int baseX = (int)_x, baseY = (int)_y + (duck ? RUNNER_DUCK_DROP : 0);
+        for (int row = 0; row < rows; row++) {
             for (int col = 0; col < RUNNER_WIDTH; col++) {
                 uint16_t px = pgm_read_word(&data[row * RUNNER_WIDTH + col]);
                 if (px == RUNNER_TRANSPARENT_KEY) continue;

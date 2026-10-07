@@ -87,7 +87,7 @@ private:
     // if it has one and that's there, else a tone or melody (what Runner
     // played before it had optional sounds). Checked once, in init().
     enum Sfx { SFX_TITLE, SFX_JUMP, SFX_POINTS, SFX_STAR, SFX_FLY, SFX_ROCK, SFX_BOULDER,
-               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_COUNT };
+               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_COUNT };
     struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
     static constexpr int TITLE_N[] = { 523, 659, 784, 1047 }, TITLE_D[] = { 80, 80, 80, 150 };
     static constexpr int JUMP_N[]  = { 700, 1050 },           JUMP_D[]  = { 35, 45 };
@@ -107,6 +107,9 @@ private:
         { "/audio/runner_life.wav",    nullptr, 0, 0, LIFE_N, LIFE_D, 4 },                       // SFX_LIFE
         { "/audio/death.wav",          nullptr, 0, 0, DEATH_N, DEATH_D, 3 },                     // SFX_DEATH
         { "/audio/gameend.wav",        nullptr, 0, 0, OVER_N, OVER_D, 4 },                       // SFX_OVER
+        { "/audio/runner_duck.wav",    nullptr, 0, 0, nullptr, nullptr, 0 },                     // SFX_DUCK (card only)
+        { "/audio/runner_dart.wav",    nullptr, 1800, 30, nullptr, nullptr, 0 },                 // SFX_DART
+        { "/audio/runner_jet.wav",     nullptr, 160, 90, nullptr, nullptr, 0 },                  // SFX_JET
     };
     static constexpr const char* MUSIC = "/audio/flux-runner.wav";
     AudioEngine* _audio = nullptr;
@@ -135,7 +138,8 @@ private:
         if (_sfxOnCard[s])           { _audio->playWAV(d.path); _lastSfx = d.path; }
         else if (_fallbackOnCard[s]) { _audio->playWAV(d.fallback); _lastSfx = d.fallback; }
         else if (d.notes)            { _audio->playMelody(d.notes, d.durs, d.len); _lastSfx = "melody"; }
-        else                         { _audio->playTone(d.hz, d.ms); _lastSfx = "tone"; }
+        else if (d.hz)               { _audio->playTone(d.hz, d.ms); _lastSfx = "tone"; }
+        else                         _lastSfx = "none";
     }
 
     void loadHighScore() {
@@ -282,31 +286,33 @@ private:
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
         canvas.setCursor(6, 13);
         canvas.print("[JOY] SHIFT FWD/BACK");
-        canvas.setCursor(6, 23);
-        canvas.print("[BTN A] JUMP");
+        canvas.setCursor(6, 22);
+        canvas.print("[A] JUMP   [B] DUCK");
 
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(6, 35);
-        canvas.print("HAZARDS:");
-
+        // The hazards, no heading: a line each.
         canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
-        canvas.setCursor(10, 45);
+        canvas.setCursor(10, 33);
         canvas.print("FIRE PITS");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(10, 55);
+        canvas.setCursor(10, 42);
         canvas.print("PLATFORMS & GAPS");
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(10, 65);
+        canvas.setCursor(10, 51);
         canvas.print("MOVING PLATFORMS");
         canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(10, 75);
+        canvas.setCursor(10, 60);
         canvas.print("STAIRS & SPIKE TRAPS");
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(10, 85);
+        canvas.setCursor(10, 69);
         canvas.print("ROLLING BOULDERS");
         canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
-        canvas.setCursor(10, 95);
+        canvas.setCursor(10, 78);
         canvas.print("FLYING ENEMY + ROCKS");
+        canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
+        canvas.setCursor(10, 87);
+        canvas.print("NIGHT: DUCK UNDER");
+        canvas.setCursor(10, 95);
+        canvas.print(" BEAMS, JETS, DARTS");
 
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
         canvas.setCursor(6, 104);
@@ -357,7 +363,7 @@ private:
         _phaseTimer = millis();
         char title[20];
         snprintf(title, sizeof(title), "STAGE %d", stage);
-        showBanner(title, "", ArcadeConfig::COLOR_GREEN);
+        showBanner(title, PlatformManager::worldName(_platforms.getLoop()), ArcadeConfig::COLOR_CYAN);
     }
 
     // Called each frame: a new stage reached means the last one was cleared.
@@ -372,7 +378,11 @@ private:
         _uiDirty = true;
 
         char title[20], sub[24];
-        snprintf(title, sizeof(title), "STAGE %d", _stage);
+        // A new loop's first stage names its world.
+        if ((_stage - 1) % PlatformManager::TIERS_PER_LOOP == 0)
+            snprintf(title, sizeof(title), "STAGE %d: %s", _stage, PlatformManager::worldName(_platforms.getLoop()));
+        else
+            snprintf(title, sizeof(title), "STAGE %d", _stage);
         snprintf(sub, sizeof(sub), perfect ? "PERFECT +%d" : "CLEAR +%d", bonus);
         showBanner(title, sub, perfect ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_WHITE);
 
@@ -390,11 +400,17 @@ private:
         sfx(SFX_STAGE);
     }
 
+    // At Night, how far ahead the runner's lantern lights fully (screen x).
+    int lanternReach() const {
+        if (!PlatformManager::isNight(_platforms.getLoop())) return 9999;
+        return (int)_player.getX() + RUNNER_WIDTH + ArcadeConfig::NIGHT_LANTERN;
+    }
+
     // Everything but the runner, from the backdrop up. A lost life draws
     // it stopped, under the burst.
     void renderWorld(GFXcanvas16 &canvas) {
         _backdrop.render(canvas, 11, _platforms.getLoop());
-        _platforms.render(canvas);
+        _platforms.render(canvas, lanternReach());
         _particles.render(canvas, 11);
         _powerUp.render(canvas);
         _levitationPowerUp.render(canvas);
@@ -425,27 +441,35 @@ private:
             _platforms.update();
     }
 
-    // What each stage of a loop brings (see PlatformManager's tiers).
+    // What each stage of a loop brings (see PlatformManager's tiers, and
+    // Night's obstacles on top).
     static const char* stageHazards(int stage) {
         static const char* const what[PlatformManager::TIERS_PER_LOOP] = {
             "FIRE PITS", "FIRE PITS, STAIRS", "PLATFORMS", "MOVING PLATFORMS",
             "PLATFORMS + SHIP", "STAIRS, SPIKES", "SPIKES, BOULDERS", "ALL + SHIPS",
         };
-        return what[(stage - 1) % PlatformManager::TIERS_PER_LOOP];
+        static const char* const night[PlatformManager::TIERS_PER_LOOP] = {
+            "PITS, BEAMS", "PITS, STAIRS, BEAMS", "PLATFORMS", "MOVING PLATFORMS",
+            "PLATFORMS + SHIP", "SPIKES, FLAME JETS", "BOULDERS, DARTS", "ALL + SHIPS",
+        };
+        const int tier = (stage - 1) % PlatformManager::TIERS_PER_LOOP;
+        return PlatformManager::isNight((stage - 1) / PlatformManager::TIERS_PER_LOOP) ? night[tier] : what[tier];
     }
 
     // The stage's terrain as it starts, behind its number and hazards.
     void renderPicker(GFXcanvas16 &canvas) {
         _backdrop.render(canvas, 0, _platforms.getLoop());
-        _platforms.render(canvas);
-        canvas.fillRect(20, 30, 120, 50, ArcadeConfig::COLOR_BLACK);
-        canvas.drawRect(20, 30, 120, 50, ArcadeConfig::COLOR_ORANGE);
+        _platforms.render(canvas, PlatformManager::isNight(_platforms.getLoop())
+                                      ? ArcadeConfig::RUNNER_BASE_X + RUNNER_WIDTH + ArcadeConfig::NIGHT_LANTERN : 9999);
+        canvas.fillRect(16, 28, 128, 60, ArcadeConfig::COLOR_BLACK);
+        canvas.drawRect(16, 28, 128, 60, ArcadeConfig::COLOR_ORANGE);
         char buf[24];
         snprintf(buf, sizeof(buf), "STAGE %d", _pick);
-        hiscore::printCentred(canvas, buf, 35, ArcadeConfig::COLOR_WHITE, 2);
-        snprintf(buf, sizeof(buf), "LOOP %d: %s", _platforms.getLoop() + 1, stageHazards(_pick));
-        hiscore::printCentred(canvas, buf, 55, ArcadeConfig::COLOR_CYAN);
-        hiscore::printCentred(canvas, "A: TEST RUN  B: BACK", 68, ArcadeConfig::COLOR_ORANGE);
+        hiscore::printCentred(canvas, buf, 33, ArcadeConfig::COLOR_WHITE, 2);
+        snprintf(buf, sizeof(buf), "LOOP %d: %s", _platforms.getLoop() + 1, PlatformManager::worldName(_platforms.getLoop()));
+        hiscore::printCentred(canvas, buf, 52, ArcadeConfig::COLOR_CYAN);
+        hiscore::printCentred(canvas, stageHazards(_pick), 62, ArcadeConfig::COLOR_CYAN);
+        hiscore::printCentred(canvas, "A: TEST RUN  B: BACK", 76, ArcadeConfig::COLOR_ORANGE);
         hiscore::printCentred(canvas, "STAGE SELECT", 2, ArcadeConfig::COLOR_ORANGE);
     }
 
@@ -500,6 +524,10 @@ private:
             const float px = x + shift, pr = px + RUNNER_WIDTH, pb = st.y + RUNNER_HEIGHT;
             if (_platforms.firePitHitsPlayer(px, pr, pb)) return false;
             if (_platforms.spikeNear(px, pr, pb)) return false;
+            // Night: it ducks on the ground under or near a column, or with
+            // a dart coming (as demoPilot will), and every jet is taken as lit.
+            const bool duck = st.onGround && _platforms.duckWanted(x, x + RUNNER_WIDTH, t);
+            if (_platforms.nightHits(x, x + RUNNER_WIDTH, st.y + (duck ? RUNNER_DUCK_DROP : 0), pb, t)) return false;
             int g = _platforms.groundYAt(px, pr, st.y, pb, t);
             float gy = (g == -1) ? (float)(ArcadeConfig::LANDSCAPE_HEIGHT + 40) : (float)g;
             st.vy += ArcadeConfig::RUNNER_GRAVITY;
@@ -553,6 +581,7 @@ private:
             return in;
         }
         in.joyY = demoStick(_player.isOnGround(), -1.0f);
+        in.btnB = _player.isOnGround() && _platforms.duckWanted(_player.getX(), _player.getX() + RUNNER_WIDTH);
         if (!_player.canJump() || demoSurvives(-1, H)) return in;
         if (_player.isOnGround() && demoSurvives(-1, H, 1.0f)) { in.joyY = 1.0f; return in; }
         const bool now = demoSurvives(0, H);
@@ -698,6 +727,9 @@ public:
 
             _particles.update();
             _platforms.update();
+            const int nightEvents = _platforms.updateNight(_player.getX());
+            if (nightEvents & 1) sfx(SFX_DART);
+            if (nightEvents & 2) sfx(SFX_JET);
             _backdrop.update(_platforms.getScrollSpeed());
             updatePopups(_platforms.getScrollSpeed());
             _platforms.advanceDifficulty();
@@ -726,6 +758,8 @@ public:
                     sfx(SFX_JUMP);
                 }
             }
+            // B held ducks (on the ground; a jump this frame stands it up).
+            if (_player.setDucking(in.btnB)) sfx(SFX_DUCK);
 
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap
@@ -753,6 +787,7 @@ public:
 
             float px = _player.getX(), pRight = px + RUNNER_WIDTH;
             float py = _player.getY(), pBottom = py + RUNNER_HEIGHT;
+            const float pTop = _player.hitTop();   // lower while ducked
             int ground = _platforms.groundYAt(px, pRight, py, pBottom);
             float groundTarget = (ground == -1) ? (float)(ArcadeConfig::LANDSCAPE_HEIGHT + 40) : (float)ground;
 
@@ -770,7 +805,14 @@ public:
             if (_levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate, _platforms)) sfx(SFX_FLY);
 
             if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit)) sfx(SFX_ROCK);
-            if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit)) sfx(SFX_BOULDER);
+            if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit,
+                                 _platforms.nightAhead(_player.getX()))) sfx(SFX_BOULDER);
+
+            // Night's beams, jets and darts: duck under them.
+            if (_platforms.nightHits(px, pRight, pTop, pBottom) && !_player.isInvincible()) {
+                _particles.spawnExplosion(px + RUNNER_WIDTH / 2.0f, pTop, ArcadeConfig::COLOR_ORANGE, 6);
+                playerHit = true;
+            }
 
             // Spike traps: contact damage, same invincibility rules as
             // enemies/boulders (levitating above one is naturally safe —

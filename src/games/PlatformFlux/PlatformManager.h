@@ -36,6 +36,8 @@
 class PlatformManager {
 private:
     enum SpikePhase { SPIKE_SAFE, SPIKE_WARN, SPIKE_DANGER };
+    // Night's obstacles (every second loop): see ArcadeConfig's NIGHT_ block.
+    enum NightKind { NIGHT_NONE, NIGHT_BEAM, NIGHT_JET, NIGHT_LAUNCHER };
 
     struct Platform {
         float x;
@@ -54,7 +56,24 @@ private:
         float      spikeOffsetX; // offset from x, scrolls with the segment
         SpikePhase spikePhase;
         unsigned long spikePhaseEnd;
+        // Night's obstacle on this segment, if any: a beam or a flame jet
+        // (a column, nightX its left edge from x), or a dart launcher (a
+        // post at nightX).
+        NightKind  night;
+        float      nightX;
+        SpikePhase jetPhase;      // the jet's flame, timed like a spike: off, sputtering, lit
+        unsigned long jetPhaseEnd;
+        bool       jetLive;       // lit while the runner was under it
+        unsigned long glintAt;    // the launcher: when it began to glint (0: not yet)
+        bool       fired, nightScored;
     };
+
+    // Darts in flight: screen space, flying left DART_SPEED faster than
+    // the scroll, at a fixed height.
+    struct Dart { float x; int y; bool active, scored; };
+    static const int DARTS = 3;
+    Dart _darts[DARTS];
+    bool _jetLitNear = false;   // a jet near the runner lit this update (for its sound)
 
     static const int POOL_SIZE = 6;
     Platform _pool[POOL_SIZE];
@@ -65,31 +84,46 @@ private:
     int      _lastGroundY;   // running elevation for stepped ground generation
     int      _pitStage;          // the stage _pitsDone counts for
     int      _pitsDone;          // fire pits placed in it so far
+    int      _beamsDone;         // Night: the gaps round the pits filled with a beam so far
     unsigned long _lastPitAt;    // distance at which the runner reaches the last pit
     static const unsigned long PIT_SPACING = 75;      // frames, at least, from one pit to the next
     static const unsigned long PIT_END_MARGIN = 20;   // and from a pit to its stage's end
+    static const unsigned long NIGHT_END_MARGIN = 40; // and a Night obstacle, so it's met in its own stage
     float    _distanceSinceLastSpike; // px generated since the last spike, enforces min spacing
     int      _loop;              // how many full tier 1-7 cycles have completed
     unsigned long _cycleDistance; // _distance wrapped to the current loop
     float    _scrollSpeedCap;    // per-loop scroll speed ceiling, rises each loop
     bool     _afterSlabs;        // floating platforms last: the next ground block starts level
+    float    _sinceNight;        // px generated since the last Night obstacle
+    bool     _prevNight, _prevPit;   // the block before this one carried one / a pit before it
+    int      _flatRunPx;         // px of level ground (no step, no pit) up to the last block
 
     // Ground/spike palettes rotate each loop so a repeat trip through the
     // tiers reads as visually distinct, not just "the same run again."
     // Index 0 matches the original colors.
+    // Night has its own: slate stone, pale spikes. The Outpost's loops
+    // (every other one) rotate through the rest.
     uint16_t groundColor() const {
-        static const uint16_t palette[4] = {
-            ArcadeConfig::COLOR_GREY, ArcadeConfig::COLOR_AMBER,
-            ArcadeConfig::COLOR_ION_BLUE, ArcadeConfig::COLOR_MAGENTA
+        static const uint16_t palette[3] = {
+            ArcadeConfig::COLOR_GREY, ArcadeConfig::COLOR_AMBER, ArcadeConfig::COLOR_MAGENTA
         };
-        return palette[_loop % 4];
+        return isNight(_loop) ? NIGHT_STONE : palette[(_loop / 2) % 3];
     }
     uint16_t spikeDangerColor() const {
-        static const uint16_t palette[4] = {
-            ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_YELLOW,
-            ArcadeConfig::COLOR_CYAN, ArcadeConfig::COLOR_ORANGE
+        static const uint16_t palette[3] = {
+            ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_YELLOW, ArcadeConfig::COLOR_ORANGE
         };
-        return palette[_loop % 4];
+        return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : palette[(_loop / 2) % 3];
+    }
+    static const uint16_t NIGHT_STONE = 0x3A90;   // rgb(60, 80, 130)
+    static const uint16_t STEEL       = 0x4A8C;   // rgb(72, 80, 100): Night's gantries
+    static const uint16_t STEEL_LIGHT = 0x9D17;   // rgb(150, 160, 184)
+
+    // A colour at a lantern's reach: full up to litTo, half for 30px past
+    // it, a quarter beyond (Night only; litTo is off the screen otherwise).
+    static uint16_t lit(uint16_t c, float x, int litTo) {
+        if (x <= litTo) return c;
+        return x <= litTo + 30 ? darken(c) : darken(darken(c));
     }
 
     int groundLevel() const {
@@ -149,7 +183,7 @@ private:
     // Two courses of offset bricks across the slab's top band — a repeating
     // pattern drawn over the existing fill color, not a different texture,
     // so static/moving/ground colors stay whatever the caller filled with.
-    void drawBrickPattern(GFXcanvas16 &canvas, int x, int y, int width, uint16_t baseColor) {
+    void drawBrickPattern(GFXcanvas16 &canvas, int x, int y, int width, uint16_t baseColor, int originX) {
         uint16_t mortar = darken(baseColor);
         static const int BRICK_W = 10;
         static const int BRICK_H = ArcadeConfig::PLATFORM_THICKNESS / 2;
@@ -160,8 +194,8 @@ private:
         for (int row = 0; row < 2; row++) {
             int rowY = y + row * BRICK_H;
             int offset = (row % 2 == 0) ? 0 : BRICK_W / 2;
-            for (int bx = x - offset; bx < x + width; bx += BRICK_W) {
-                if (bx <= x) continue;
+            for (int bx = originX - offset; bx < x + width; bx += BRICK_W) {
+                if (bx <= x || bx <= originX) continue;
                 canvas.drawFastVLine(bx, rowY, BRICK_H, mortar);
             }
         }
@@ -228,6 +262,7 @@ private:
 
         int stepDir = random(0, 3) - 1;      // -1, 0, or 1
         int stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
+        const int prevY = _lastGroundY;
         int newY = _lastGroundY + stepDir * stepAmt;
         int minY = groundLevel() - 50;
         int maxY = groundLevel();
@@ -247,26 +282,77 @@ private:
         const int passStage = stageForDistance(passAt);
         const int passTier = (passStage - 1) % TIERS_PER_LOOP;
         bool wantFirePit = false;
+        bool beamTurn = false;   // Night's pit stages: a beam's turn, between the pits
         if (passTier <= 1) {
-            if (passStage != _pitStage) { _pitStage = passStage; _pitsDone = 0; }
+            if (passStage != _pitStage) { _pitStage = passStage; _pitsDone = 0; _beamsDone = 0; }
             const int n = passTier == 0 ? ArcadeConfig::RUNNER_PITS_FIRST : ArcadeConfig::RUNNER_PITS_SECOND;
             const unsigned long start = stageStartDistance(passStage);
             const unsigned long len = stageStartDistance(passStage + 1) - start;
             const unsigned long due = start + len * (unsigned long)(2 * _pitsDone + 1) / (unsigned long)(2 * n + 1);
             wantFirePit = _pitsDone < n && passAt >= due && passAt >= _lastPitAt + PIT_SPACING &&
-                          passAt + PIT_END_MARGIN <= start + len;
+                          passAt + PIT_END_MARGIN <= start + len && !_prevNight;
+            // Night's beams go in the gaps around the pits, one each: before
+            // the first, then halfway between each pit's mark and the next's
+            // (2g (2n+1)ths), giving way once the next pit's is due.
+            // _beamsDone is the gaps filled (the current gap is _pitsDone).
+            const int gap = _pitsDone;
+            const unsigned long beamDue = gap == 0 ? start + 20
+                                        : start + len * (unsigned long)(2 * gap) / (unsigned long)(2 * n + 1);
+            const unsigned long nextPit = start + len * (unsigned long)(2 * gap + 1) / (unsigned long)(2 * n + 1);
+            beamTurn = !wantFirePit && _beamsDone <= gap && passAt >= beamDue &&
+                       (gap >= n || passAt < nextPit);
         }
+
+        // Night (by the stage it's reached in, like the pits): beams in its
+        // first two stages, flame jets in the sixth, dart launchers in the
+        // seventh, all three in the eighth; the platform stages have only
+        // the dark. A dart stage keeps its ground level, so a dart flies
+        // at head height all the way. In the pit stages a beam
+        // follows each pit, on its own mark (above); never on a pit's
+        // block, and no pit on the block after one (a duck then a jump at
+        // once); kept apart
+        // from each other and from spikes, and clear of the stage's end.
+        const int passLoop = (passStage - 1) / TIERS_PER_LOOP;
+        const bool night = isNight(passLoop);
+        if (night && (passTier == 6 || passTier == 7)) newY = _lastGroundY;
 
         // Spikes need at least 4 player-sprite-widths of clearance since
         // the last one — otherwise back-to-back rolls on adjacent segments
         // could place two spikes close enough together to be unfair.
         _distanceSinceLastSpike += width;
         bool spikeSpacingOK = _distanceSinceLastSpike >= RUNNER_WIDTH * 4;
-        bool wantSpike    = !wantFirePit &&
+        // (Night's dart stage has none: they'd stand in the darts' way.)
+        const bool nightDarts = isNight((passStage - 1) / TIERS_PER_LOOP) && passTier == 6;
+        bool wantSpike    = !wantFirePit && !nightDarts &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
-                           spikeSpacingOK &&
+                           spikeSpacingOK && _sinceNight >= ArcadeConfig::NIGHT_CLEAR &&
                            (random(0, 4) == 0);
         if (wantSpike) _distanceSinceLastSpike = 0.0f;
+
+        NightKind kind = NIGHT_NONE;
+        if (night && !wantFirePit && (passTier > 1 || beamTurn) && !wantSpike && !_prevPit &&
+            _sinceNight >= (passTier <= 1 ? 60 : ArcadeConfig::NIGHT_SPACING) &&   // pits part the beams
+            _distanceSinceLastSpike >= ArcadeConfig::NIGHT_CLEAR &&
+            passAt + NIGHT_END_MARGIN <= stageStartDistance(passStage + 1)) {
+            if (passTier <= 1) { kind = NIGHT_BEAM; _beamsDone = _pitsDone + 1; }
+            else if (passTier == 5) kind = NIGHT_JET;
+            else if (passTier == 6) kind = NIGHT_LAUNCHER;
+            else if (passTier == 7) kind = (NightKind)(NIGHT_BEAM + random(0, 3));
+            // A launcher needs level ground back to the runner; a column a
+            // block wide enough that the runner is wholly on it while
+            // under it (a stair step up beside it would lift it into it).
+            // (and no spike in a dart's way back to it).
+            if (kind == NIGHT_LAUNCHER && (_flatRunPx < 130 || newY != prevY || _distanceSinceLastSpike < 130))
+                kind = NIGHT_NONE;
+            // Level with the block before, too: off a step down the runner
+            // stays on the higher block till it's wholly past it, then
+            // falls, and it can't duck in the air.
+            if (kind == NIGHT_BEAM || kind == NIGHT_JET) {
+                width = max(width, 2 * RUNNER_WIDTH + ArcadeConfig::NIGHT_COLUMN_W + 8);
+                newY = prevY;
+                if (_afterSlabs) kind = NIGHT_NONE;   // the block steps level after slabs: not here
+            }
+        }
 
         // Back down from the floating platforms: level with the ground, so
         // this block never stands taller than a stair step above the last
@@ -303,6 +389,21 @@ private:
         _pool[index].y              = newY;
         _pool[index].bobPhase       = 0.0f;
 
+        _pool[index].night = kind;
+        _pool[index].nightScored = _pool[index].fired = _pool[index].jetLive = false;
+        _pool[index].glintAt = 0;
+        if (kind == NIGHT_BEAM || kind == NIGHT_JET) {
+            _pool[index].nightX = (float)random(RUNNER_WIDTH + 2, width - RUNNER_WIDTH - 2 - ArcadeConfig::NIGHT_COLUMN_W + 1);
+            _pool[index].jetPhase = SPIKE_SAFE;
+            _pool[index].jetPhaseEnd = millis() + random(0, ArcadeConfig::NIGHT_JET_OFF_MS);
+        } else if (kind == NIGHT_LAUNCHER) {
+            _pool[index].nightX = (float)(width - 8);
+        }
+        _sinceNight = kind != NIGHT_NONE ? 0.0f : _sinceNight + width;
+        _prevNight  = kind != NIGHT_NONE;
+        _prevPit    = wantFirePit;
+        _flatRunPx  = (newY == prevY && !wantFirePit) ? _flatRunPx + width : width;
+
         _pool[index].hasSpike = wantSpike;
         if (wantSpike) {
             _pool[index].spikeOffsetX  = width * 0.5f;
@@ -313,6 +414,7 @@ private:
     }
 
     void spawnPlatform(int index, float startX) {
+        _pool[index].night         = NIGHT_NONE;
         _pool[index].firePitBefore = false;
         _pool[index].hasSpike      = false;
         _pool[index].pitScored     = false;
@@ -376,16 +478,21 @@ private:
         _pool[index].isMoving = landingIsMoving;
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
         _afterSlabs = true;
+        _prevNight = _prevPit = false;
+        _flatRunPx = 0;
+        _sinceNight += (float)width;
     }
 
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
-                         _lastGroundY(0), _pitStage(0), _pitsDone(0), _lastPitAt(0),
+                         _lastGroundY(0), _pitStage(0), _pitsDone(0), _beamsDone(0), _lastPitAt(0),
                          _distanceSinceLastSpike(9999.0f), _loop(0),
                          _cycleDistance(0),
                          _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED),
-                         _afterSlabs(false) {
+                         _afterSlabs(false), _sinceNight(9999.0f), _prevNight(false), _prevPit(false),
+                         _flatRunPx(0) {
+        for (int i = 0; i < DARTS; i++) _darts[i].active = false;
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
@@ -448,9 +555,14 @@ public:
         _lastGroundY        = groundLevel();
         _pitStage           = 0;
         _pitsDone           = 0;
+        _beamsDone          = 0;
         _lastPitAt          = 0;
         _distanceSinceLastSpike = 9999.0f;
         _afterSlabs         = false;
+        _sinceNight         = 9999.0f;
+        _prevNight = _prevPit = false;
+        _flatRunPx          = 0;
+        for (int i = 0; i < DARTS; i++) _darts[i].active = false;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -462,6 +574,7 @@ public:
         _pool[0].isGroundSegment = true;
         _pool[0].firePitBefore = false;
         _pool[0].hasSpike = false;
+        _pool[0].night = NIGHT_NONE;
 
         float cursor = (float)_pool[0].width;
         for (int i = 1; i < POOL_SIZE; i++) {
@@ -542,8 +655,28 @@ public:
                 }
             }
 
+            // A flame jet: off, sputtering, lit, off again, like a spike.
+            Platform &p = _pool[i];
+            if (p.night == NIGHT_JET && millis() >= p.jetPhaseEnd) {
+                if (p.jetPhase == SPIKE_SAFE) {
+                    p.jetPhase = SPIKE_WARN;   p.jetPhaseEnd = millis() + ArcadeConfig::NIGHT_JET_WARN_MS;
+                } else if (p.jetPhase == SPIKE_WARN) {
+                    p.jetPhase = SPIKE_DANGER; p.jetPhaseEnd = millis() + ArcadeConfig::NIGHT_JET_LIT_MS;
+                    const float jx = p.x + p.nightX;
+                    if (jx > 0 && jx < ArcadeConfig::LANDSCAPE_WIDTH) _jetLitNear = true;
+                } else {
+                    p.jetPhase = SPIKE_SAFE;   p.jetPhaseEnd = millis() + ArcadeConfig::NIGHT_JET_OFF_MS;
+                }
+            }
+
             float edge = _pool[i].x + _pool[i].width;
             if (edge > rightmostEdge) rightmostEdge = edge;
+        }
+
+        for (int i = 0; i < DARTS; i++) {
+            if (!_darts[i].active) continue;
+            _darts[i].x -= _scrollSpeed + ArcadeConfig::NIGHT_DART_SPEED;
+            if (_darts[i].x < -10) _darts[i].active = false;
         }
 
         // Second pass: recycle anything that has scrolled fully off-screen,
@@ -693,6 +826,18 @@ public:
                 popY = (float)(p.y - 10);
                 return ArcadeConfig::RUNNER_PIT_POINTS;
             }
+            if ((p.night == NIGHT_BEAM || p.night == NIGHT_JET) && !p.nightScored) {
+                const float cl = p.x + p.nightX, cr = cl + ArcadeConfig::NIGHT_COLUMN_W;
+                if (p.night == NIGHT_JET && p.jetPhase == SPIKE_DANGER &&
+                    playerX + RUNNER_WIDTH > cl && playerX < cr) p.jetLive = true;
+                if (cr < playerX) {
+                    p.nightScored = true;
+                    if (p.night == NIGHT_JET && !p.jetLive) continue;   // never lit over it
+                    popX = cl + ArcadeConfig::NIGHT_COLUMN_W * 0.5f;
+                    popY = (float)(p.y - 30);
+                    return p.night == NIGHT_BEAM ? ArcadeConfig::RUNNER_BEAM_POINTS : ArcadeConfig::RUNNER_JET_POINTS;
+                }
+            }
             if (p.hasSpike && !p.spikeScored) {
                 const float sx = p.x + p.spikeOffsetX;
                 if (p.spikePhase != SPIKE_SAFE && playerX + RUNNER_WIDTH > sx - 6 && playerX < sx + 6) p.spikeLive = true;
@@ -705,7 +850,104 @@ public:
                 }
             }
         }
+        for (int i = 0; i < DARTS; i++) {
+            Dart &d = _darts[i];
+            if (!d.active || d.scored || d.x + 6.0f >= playerX) continue;
+            d.scored = true;   // gone past: ducked or jumped
+            popX = d.x + 3.0f;
+            popY = (float)(d.y - 8);
+            return ArcadeConfig::RUNNER_DART_POINTS;
+        }
         return 0;
+    }
+
+    // ---- Night ------------------------------------------------------------
+
+    // Every second loop is Night (docs/design/RunnerFlux.md; Ruins and
+    // Storm will make it a cycle of four).
+    static bool isNight(int loop) { return loop % 2 == 1; }
+    static const char* worldName(int loop) { return isNight(loop) ? "NIGHT" : "OUTPOST"; }
+
+    // Once a frame, with the runner's x: launchers glint as the runner
+    // comes within range, then fire. Returns a bit for each sound due:
+    // 1 a dart fired, 2 a jet lit on screen.
+    int updateNight(float runnerX) {
+        int events = _jetLitNear ? 2 : 0;
+        _jetLitNear = false;
+        for (int i = 0; i < POOL_SIZE; i++) {
+            Platform &p = _pool[i];
+            if (!p.active || p.night != NIGHT_LAUNCHER || p.fired) continue;
+            const float lx = p.x + p.nightX, ahead = lx - runnerX;
+            if (!p.glintAt && ahead > ArcadeConfig::NIGHT_LAUNCH_NEAR && ahead < ArcadeConfig::NIGHT_LAUNCH_FAR)
+                p.glintAt = millis() | 1;
+            if (p.glintAt && millis() - p.glintAt >= ArcadeConfig::NIGHT_GLINT_MS) {
+                p.fired = true;
+                for (int k = 0; k < DARTS; k++) {
+                    if (_darts[k].active) continue;
+                    _darts[k] = Dart{ lx - 2.0f, p.y - ArcadeConfig::NIGHT_DART_HEIGHT, true, false };
+                    events |= 1;
+                    break;
+                }
+            }
+        }
+        return events;
+    }
+
+    // Does a Night obstacle touch the runner's box (top is lower while it
+    // ducks)? `ahead` > 0: where things will be that many frames on, the
+    // box being where the runner will be on screen then; jets are taken
+    // as lit, as the demo's autopilot treats spikes as up.
+    bool nightHits(float px, float pr, float top, float bottom, int ahead = 0) const {
+        const float shift = _scrollSpeed * (float)ahead;
+        for (int i = 0; i < POOL_SIZE; i++) {
+            const Platform &p = _pool[i];
+            if (!p.active || (p.night != NIGHT_BEAM && p.night != NIGHT_JET)) continue;
+            const float cl = p.x + p.nightX - shift, cr = cl + ArcadeConfig::NIGHT_COLUMN_W;
+            if (pr - 3.0f <= cl || px + 3.0f >= cr) continue;
+            const bool flame = p.night == NIGHT_BEAM || ahead > 0 || p.jetPhase == SPIKE_DANGER;
+            const int under = p.y - (flame ? ArcadeConfig::NIGHT_BEAM_CLEAR : ArcadeConfig::NIGHT_JET_HOUSING);
+            if (top < (float)under) return true;
+        }
+        const float dartShift = (_scrollSpeed + ArcadeConfig::NIGHT_DART_SPEED) * (float)ahead;
+        for (int i = 0; i < DARTS; i++) {
+            const Dart &d = _darts[i];
+            if (!d.active) continue;
+            const float dx = d.x - dartShift;
+            if (pr - 2.0f > dx && px + 2.0f < dx + 6.0f && bottom > (float)d.y && top < (float)(d.y + 2)) return true;
+        }
+        return false;
+    }
+
+    // Should the autopilot duck, `ahead` frames on? Under a column or just
+    // short of one, or with a dart on its way.
+    bool duckWanted(float px, float pr, int ahead = 0) const {
+        const float shift = _scrollSpeed * (float)ahead;
+        for (int i = 0; i < POOL_SIZE; i++) {
+            const Platform &p = _pool[i];
+            if (!p.active || (p.night != NIGHT_BEAM && p.night != NIGHT_JET)) continue;
+            const float cl = p.x + p.nightX - shift, cr = cl + ArcadeConfig::NIGHT_COLUMN_W;
+            if (cl - 14.0f < pr && cr + 2.0f > px) return true;
+        }
+        const float dartShift = (_scrollSpeed + ArcadeConfig::NIGHT_DART_SPEED) * (float)ahead;
+        for (int i = 0; i < DARTS; i++) {
+            if (!_darts[i].active) continue;
+            const float dx = _darts[i].x - dartShift;
+            if (dx < pr + 50.0f && dx + 6.0f > px - 2.0f) return true;
+        }
+        return false;
+    }
+
+    // A Night obstacle on screen ahead of the runner, or a dart in flight:
+    // no boulder is sent then (one needs a jump, these a duck).
+    bool nightAhead(float runnerX) const {
+        for (int i = 0; i < DARTS; i++) if (_darts[i].active) return true;
+        for (int i = 0; i < POOL_SIZE; i++) {
+            const Platform &p = _pool[i];
+            if (!p.active || p.night == NIGHT_NONE || (p.night == NIGHT_LAUNCHER && p.fired)) continue;
+            const float x = p.x + p.nightX;
+            if (x > runnerX - 20.0f && x < ArcadeConfig::LANDSCAPE_WIDTH + 100) return true;
+        }
+        return false;
     }
 
     float getScrollSpeed() const { return _scrollSpeed; }
@@ -713,7 +955,10 @@ public:
     int   getLoop() const { return _loop; }
     unsigned long getDistance() const { return _distance; }
 
-    void render(GFXcanvas16 &canvas) {
+    // litTo: at Night, how far the runner's lantern reaches (screen x);
+    // the ground and gantries past it are drawn dimmer. Flames, lamps and
+    // darts stay bright, so they read first.
+    void render(GFXcanvas16 &canvas, int litTo = 9999) {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
 
@@ -730,8 +975,15 @@ public:
                 fillHeight = ArcadeConfig::PLATFORM_THICKNESS;
             }
 
-            canvas.fillRect((int)_pool[i].x, _pool[i].y, _pool[i].width, fillHeight, color);
-            drawBrickPattern(canvas, (int)_pool[i].x, _pool[i].y, _pool[i].width, color);
+            // In up to three parts: lit, half, a quarter.
+            const int x0 = (int)_pool[i].x, x1 = x0 + _pool[i].width;
+            const int cuts[4] = { x0, constrain(litTo, x0, x1), constrain(litTo + 30, x0, x1), x1 };
+            for (int k = 0; k < 3; k++) {
+                if (cuts[k + 1] <= cuts[k]) continue;
+                const uint16_t c = lit(color, (float)cuts[k] + 0.5f, litTo);
+                canvas.fillRect(cuts[k], _pool[i].y, cuts[k + 1] - cuts[k], fillHeight, c);
+                drawBrickPattern(canvas, cuts[k], _pool[i].y, cuts[k + 1] - cuts[k], c, x0);
+            }
 
             if (_pool[i].firePitBefore) {
                 int fireX = (int)(_pool[i].x - _pool[i].firePitGapWidth);
@@ -754,7 +1006,7 @@ public:
                 if (_pool[i].spikePhase != SPIKE_DANGER) {
                     // Retracted (or rising): just the tips showing, dim, so
                     // the trap can be seen coming.
-                    uint16_t dim = darken(spikeDangerColor());
+                    uint16_t dim = lit(darken(spikeDangerColor()), (float)sx, litTo);
                     canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 2, dim);
                     canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 2, dim);
                 }
@@ -763,11 +1015,65 @@ public:
                     canvas.drawFastVLine(sx, baseY - 3, 3, ArcadeConfig::COLOR_YELLOW);
                     canvas.drawFastVLine(sx + 5, baseY - 2, 2, ArcadeConfig::COLOR_YELLOW);
                 } else if (_pool[i].spikePhase == SPIKE_DANGER) {
-                    uint16_t spikeColor = spikeDangerColor();
+                    uint16_t spikeColor = lit(spikeDangerColor(), (float)sx, litTo);
                     canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 11, spikeColor);
                     canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 11, spikeColor);
                 }
             }
+
+            if (_pool[i].night != NIGHT_NONE) renderNight(canvas, _pool[i], litTo);
+        }
+        for (int i = 0; i < DARTS; i++) {
+            if (!_darts[i].active) continue;
+            const int dx = (int)_darts[i].x, dy = _darts[i].y;
+            canvas.drawFastHLine(dx + 1, dy, 5, ArcadeConfig::COLOR_WHITE);
+            canvas.drawPixel(dx, dy, ArcadeConfig::COLOR_RED);              // the point
+            canvas.drawFastVLine(dx + 6, dy - 1, 3, ArcadeConfig::COLOR_RED); // the flights
+        }
+    }
+
+    // A beam: a lattice gantry hanging from under the HUD to its girder,
+    // a lamp under it. A jet: a shorter housing whose nozzles sputter, then
+    // fill the gap below with flame. A launcher: a post with an eye that
+    // flashes before it fires.
+    void renderNight(GFXcanvas16 &canvas, const Platform &p, int litTo) {
+        const int top = ArcadeConfig::UI_MARGIN_TOP + 1;
+        if (p.night == NIGHT_LAUNCHER) {
+            const int lx = (int)(p.x + p.nightX), ly = p.y - 10;
+            canvas.fillRect(lx, ly, 4, 10, lit(STEEL, (float)lx, litTo));
+            const bool glint = p.glintAt && !p.fired && ((millis() / 60) & 1);
+            if (glint) canvas.fillRect(lx - 1, ly - 1, 3, 3, ArcadeConfig::COLOR_WHITE);
+            else canvas.drawPixel(lx, ly + 1, p.fired ? darken(ArcadeConfig::COLOR_RED) : ArcadeConfig::COLOR_RED);
+            return;
+        }
+        const int cl = (int)(p.x + p.nightX), w = ArcadeConfig::NIGHT_COLUMN_W;
+        const int under = p.y - (p.night == NIGHT_BEAM ? ArcadeConfig::NIGHT_BEAM_CLEAR : ArcadeConfig::NIGHT_JET_HOUSING);
+        const uint16_t steel = lit(STEEL, (float)cl, litTo), light = lit(STEEL_LIGHT, (float)cl, litTo);
+        canvas.fillRect(cl, top, w, under - top, steel);
+        canvas.drawFastVLine(cl, top, under - top, light);
+        canvas.drawFastVLine(cl + w - 1, top, under - top, light);
+        for (int y = top + 2; y < under - 4; y += 8) {   // the lattice
+            canvas.drawLine(cl + 1, y, cl + w - 2, y + 6, light);
+            canvas.drawLine(cl + w - 2, y, cl + 1, y + 6, light);
+        }
+        canvas.fillRect(cl, under - 3, w, 3, light);     // the girder / housing foot
+        if (p.night == NIGHT_BEAM) {
+            canvas.drawPixel(cl + w / 2, under, ArcadeConfig::COLOR_YELLOW);   // the lamp, always lit
+            canvas.drawPixel(cl + w / 2 - 1, under, darken(ArcadeConfig::COLOR_YELLOW));
+            canvas.drawPixel(cl + w / 2 + 1, under, darken(ArcadeConfig::COLOR_YELLOW));
+            return;
+        }
+        const bool flick = (millis() / 70) & 1;
+        if (p.jetPhase == SPIKE_WARN) {
+            for (int k = 0; k < 3; k++)
+                canvas.drawPixel(cl + 2 + k * 3 + (flick ? 1 : 0), under + (k & 1), ArcadeConfig::COLOR_ORANGE);
+        } else if (p.jetPhase == SPIKE_DANGER) {
+            const int bottom = p.y - ArcadeConfig::NIGHT_BEAM_CLEAR;
+            canvas.fillRect(cl, under, w, bottom - under, flick ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_RED);
+            for (int x = cl + 1; x < cl + w - 1; x += 2)
+                canvas.drawPixel(x, under + (flick ? 1 : 2), ArcadeConfig::COLOR_YELLOW);
+        } else {
+            canvas.drawFastHLine(cl + 1, under, w - 2, darken(ArcadeConfig::COLOR_RED));   // nozzles, cold
         }
     }
 };

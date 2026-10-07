@@ -46,6 +46,9 @@ public:
                     bool hasFirePitAhead, float firePitX) {
         if (_active || millis() < _cooldownUntil) return;
         if (tier < 2 && loop == 0) return;
+        // None at Night, under its gantries (a flying runner can't duck), nor
+        // in the stage before it, whose 10s of flight could carry over.
+        if (PlatformManager::isNight(loop) || (tier == 7 && PlatformManager::isNight(loop + 1))) return;
 
         if (hasFirePitAhead) {
             if (!_pendingFirePitSpawn) {

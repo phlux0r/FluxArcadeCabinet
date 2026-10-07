@@ -143,8 +143,9 @@ public:
             }
         }
 
-        float px = player.getX(), py = player.getY();
-        float pRight = px + RUNNER_WIDTH, pBottom = py + RUNNER_HEIGHT;
+        // The box's top drops while the runner ducks.
+        float px = player.getX(), py = player.hitTop();
+        float pRight = px + RUNNER_WIDTH, pBottom = player.getY() + RUNNER_HEIGHT;
 
         for (int i = 0; i < MAX_ROCKS; i++) {
             if (!_rocks[i].active) continue;

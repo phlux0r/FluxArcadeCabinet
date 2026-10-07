@@ -12,7 +12,8 @@
 // ground's speed. All dark, so platforms and hazards stay the brightest
 // things on screen, and the hills stop short of the ground line so a
 // platform-tier gap still reads as a black drop. Colours rotate with the
-// loop, like the ground's.
+// loop, like the ground's; Night (every second loop) has its own, darker,
+// with brighter stars and a moon.
 //
 // The skylines are sums of sines over a 256px repeat, fixed at compile
 // time: nothing here calls random(), so the game's own random sequence
@@ -61,19 +62,30 @@ public:
         const int W = ArcadeConfig::LANDSCAPE_WIDTH, H = ArcadeConfig::LANDSCAPE_HEIGHT;
         canvas.fillRect(0, top, W, H - top, ArcadeConfig::COLOR_BLACK);
 
-        // Stars: dim, a few brighter; two twinkle.
+        const bool night = loop % 2 == 1;
+
+        // Stars: dim, a few brighter; two twinkle. Brighter at Night.
         const int so = (int)_stars;
         for (int i = 0; i < STARS; i++) {
             int x = (_starX[i] - so) & 255;
             if (x >= W) continue;
             uint16_t c = (i % 5 == 0) ? rgb(150, 150, 170) : rgb(70, 70, 90);
+            if (night) c = (i % 3 == 0) ? rgb(210, 210, 230) : rgb(110, 110, 140);
             if (i % 11 == 0 && ((millis() / 400 + i) & 1)) c = rgb(30, 30, 40);
             canvas.drawPixel(x, _starY[i], c);
         }
 
-        const int l = loop & 3;
-        static const uint8_t FAR[4][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 } };
-        static const uint8_t NEAR[4][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 } };
+        // The moon, at Night: pale, a crater or two, far enough not to move.
+        if (night) {
+            canvas.fillCircle(126, top + 16, 6, rgb(210, 210, 190));
+            canvas.fillCircle(124, top + 14, 1, rgb(170, 170, 150));
+            canvas.fillCircle(129, top + 18, 1, rgb(170, 170, 150));
+        }
+
+        // The Outpost's loops rotate through the first four; Night is the fifth.
+        const int l = night ? 4 : (loop / 2) & 3;
+        static const uint8_t FAR[5][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 }, { 14, 18, 42 } };
+        static const uint8_t NEAR[5][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 }, { 8, 12, 26 } };
         const uint16_t farC  = rgb(FAR[l][0], FAR[l][1], FAR[l][2]);
         const uint16_t farTop = rgb(FAR[l][0] * 3 / 2, FAR[l][1] * 3 / 2, FAR[l][2] * 3 / 2);
         const uint16_t nearC = rgb(NEAR[l][0], NEAR[l][1], NEAR[l][2]);

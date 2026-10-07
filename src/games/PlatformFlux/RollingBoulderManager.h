@@ -75,10 +75,12 @@ public:
     // groundYAt supplies the current ground surface under the boulder's X so
     // it rolls along stairs at the correct height instead of a fixed line.
     // True if a boulder hit the runner this frame (the game plays the sound).
+    // `hold`: none sent now (a Night obstacle ahead wants a duck, a
+    // boulder a jump; never both at once).
     bool update(int tier, float scrollSpeed, const PlatformManager &platforms,
-                PlayerRunner &player, ParticleManager &particles, bool &playerHit) {
+                PlayerRunner &player, ParticleManager &particles, bool &playerHit, bool hold = false) {
         bool hit = false;
-        if (tier >= ArcadeConfig::RUNNER_BOULDER_TIER && millis() >= _nextSpawnAt) {
+        if (tier >= ArcadeConfig::RUNNER_BOULDER_TIER && millis() >= _nextSpawnAt && !hold) {
             for (int i = 0; i < MAX_BOULDERS; i++) {
                 if (_boulders[i].active) continue;
                 spawnBoulder(i);
@@ -88,8 +90,8 @@ public:
         }
 
         float rollSpeed = scrollSpeed * ArcadeConfig::BOULDER_SPEED_BONUS;
-        float px = player.getX(), py = player.getY();
-        float pRight = px + RUNNER_WIDTH, pBottom = py + RUNNER_HEIGHT;
+        float px = player.getX(), py = player.hitTop();
+        float pRight = px + RUNNER_WIDTH, pBottom = player.getY() + RUNNER_HEIGHT;
 
         for (int i = 0; i < MAX_BOULDERS; i++) {
             if (!_boulders[i].active) continue;

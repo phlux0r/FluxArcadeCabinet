@@ -252,7 +252,7 @@ struct ArcadeConfig {
     // Attract demo: the autopilot plays a random stage in this range for
     // DEMO_MIN..MAX_MS (or until it dies), silently.
     static const int   RUNNER_DEMO_MIN_STAGE = 2;
-    static const int   RUNNER_DEMO_MAX_STAGE = 7;
+    static const int   RUNNER_DEMO_MAX_STAGE = 15;   // into Night (its last stage, 16, ends the loop)
     static const unsigned long RUNNER_DEMO_MIN_MS = 30000;
     static const unsigned long RUNNER_DEMO_MAX_MS = 40000;
     static const int   RUNNER_DEMO_LOOKAHEAD  = 50;   // frames the autopilot predicts
@@ -335,6 +335,33 @@ struct ArcadeConfig {
     static constexpr float BOULDER_SPEED_BONUS  = 1.3f;
     static const int   BOULDER_SPAWN_MIN_MS     = 2200;
     static const int   BOULDER_SPAWN_MAX_MS     = 4200;
+
+    // Night (every second loop, docs/design/RunnerFlux.md): low obstacles
+    // to duck under. A beam hangs from the top of the screen to BEAM_CLEAR
+    // above the ground; a flame jet's housing to JET_HOUSING (a standing
+    // runner, 20 tall, passes under it unlit), its flame filling down to
+    // BEAM_CLEAR when lit, timed like the spikes; a launcher on the ground
+    // glints then fires a dart at DART_HEIGHT above the ground, DART_SPEED
+    // faster than the scroll. A ducked runner is 12 tall, so it passes
+    // under them all. NIGHT_SPACING px at least between Night obstacles,
+    // and NIGHT_CLEAR from them to a spike.
+    static const int   NIGHT_COLUMN_W     = 10;
+    static const int   NIGHT_BEAM_CLEAR   = 14;
+    static const int   NIGHT_JET_HOUSING  = 22;
+    static const int   NIGHT_DART_HEIGHT  = 16;
+    static constexpr float NIGHT_DART_SPEED = 2.2f;
+    static const int   NIGHT_LAUNCH_NEAR  = 40;    // a launcher fires once the runner is
+    static const int   NIGHT_LAUNCH_FAR   = 115;   // between these px behind it
+    static const unsigned long NIGHT_GLINT_MS   = 500;
+    static const unsigned long NIGHT_JET_OFF_MS  = 1300;
+    static const unsigned long NIGHT_JET_WARN_MS = 400;
+    static const unsigned long NIGHT_JET_LIT_MS  = 900;
+    static const int   NIGHT_SPACING      = 110;
+    static const int   NIGHT_CLEAR        = 72;
+    static const int   NIGHT_LANTERN      = 100;   // px ahead of the runner lit fully; dimmer past
+    static const int   RUNNER_BEAM_POINTS = 10;
+    static const int   RUNNER_JET_POINTS  = 10;
+    static const int   RUNNER_DART_POINTS = 20;
 
     // Highest a ground pickup can be placed above a platform surface and
     // still be reachable by a jump. True apex (V^2/2g) is ~42px with the

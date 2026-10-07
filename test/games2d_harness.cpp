@@ -170,6 +170,7 @@ int main(int argc, char** argv) {
                 }
                 if (pit >= 0) break;
                 InputState in{}; in.joyY = push ? -1.0f : 0.0f;
+                in.btnB = g._platforms.duckWanted(g._player.getX(), g._player.getX() + RUNNER_WIDTH);   // Night's beams
                 g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
             }
             if (pit < 0) return false;
@@ -182,12 +183,14 @@ int main(int argc, char** argv) {
                 bool alive = true;
                 for (int f = 0; f < 150 && !h._platforms._pool[pit].pitScored; ++f) {
                     InputState in{}; in.joyY = stick(h); in.btnAPressed = f == k;
+                    in.btnB = h._platforms.duckWanted(h._player.getX(), h._player.getX() + RUNNER_WIDTH);
                     h.update(canvas, in, audio); g_fakeMillis += STEP_MS;
                     if (h._phase != PlatformFluxGame::PHASE_PLAYING) { alive = false; break; }
                 }
                 // Over and landed: a few frames on, still alive.
                 for (int f = 0; f < 15 && alive; ++f) {
                     InputState in{}; in.joyY = stick(h);
+                    in.btnB = h._platforms.duckWanted(h._player.getX(), h._player.getX() + RUNNER_WIDTH);
                     h.update(canvas, in, audio); g_fakeMillis += STEP_MS;
                     alive = h._phase == PlatformFluxGame::PHASE_PLAYING;
                 }
@@ -315,9 +318,11 @@ int main(int argc, char** argv) {
 
     if (!strcmp(which, "all") || !strcmp(which, "runnerdiamond")) {
         // The diamond (levitation) turns up just before a fire pit: from
-        // the second loop, where pits are wide, not on the first loop's
-        // stages 1-2, whose pits a plain jump clears. (It was only ever
-        // allowed from stage 3, after the pits, so the placement never ran.)
+        // the second Outpost loop (stages 17-18), where pits are wide, not
+        // on the first loop's stages 1-2, whose pits a plain jump clears,
+        // and never at Night (stages 9-16: a flying runner can't duck
+        // under the gantries). (It was only ever allowed from stage 3,
+        // after the pits, so the placement never ran.)
         auto run = [&](int stage, int &placed, int &any) {
             placed = any = 0;
             for (int seed = 1; seed <= 12; ++seed) {
@@ -341,12 +346,13 @@ int main(int argc, char** argv) {
                 }
             }
         };
-        int placed1, any1, placed9, any9;
+        int placed1, any1, placed9, any9, placed17, any17;
         run(1, placed1, any1);
         run(9, placed9, any9);
-        bool pass = any1 == 0 && placed9 >= 6;
-        printf("runnerdiamond: stages 1-2 %d diamonds; stages 9-10 %d before a pit (%d in all), 12 runs each -> %s\n",
-               any1, placed9, any9, pass ? "PASS" : "FAIL");
+        run(17, placed17, any17);
+        bool pass = any1 == 0 && any9 == 0 && placed17 >= 6;
+        printf("runnerdiamond: stages 1-2 %d diamonds; Night's 9-10 %d; stages 17-18 %d before a pit (%d in all), 12 runs each -> %s\n",
+               any1, any9, placed17, any17, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 
@@ -397,7 +403,8 @@ int main(int argc, char** argv) {
         bool noCard = plays(G::SFX_TITLE, "melody") && plays(G::SFX_JUMP, "melody") && plays(G::SFX_POINTS, "tone") &&
                       plays(G::SFX_STAR, "tone") && plays(G::SFX_FLY, "tone") && plays(G::SFX_ROCK, "tone") &&
                       plays(G::SFX_BOULDER, "tone") && plays(G::SFX_STAGE, "melody") && plays(G::SFX_LIFE, "melody") &&
-                      plays(G::SFX_DEATH, "melody") && plays(G::SFX_OVER, "melody");
+                      plays(G::SFX_DEATH, "melody") && plays(G::SFX_OVER, "melody") &&
+                      plays(G::SFX_DUCK, "none") && plays(G::SFX_DART, "tone") && plays(G::SFX_JET, "tone");
         g._fallbackOnCard[G::SFX_STAR] = g._fallbackOnCard[G::SFX_TITLE] = true;
         bool shared = plays(G::SFX_STAR, "/audio/powerup.wav") && plays(G::SFX_TITLE, "/audio/lander_start.wav");
         for (int i = 0; i < G::SFX_COUNT; ++i) g._sfxOnCard[i] = true;
@@ -478,7 +485,7 @@ int main(int argc, char** argv) {
         // life, up to 5; the last life lost ends in game over.
         using G = PlatformFluxGame;
         bool rules = true;
-        int bestStage = 0, loops = 0, overs = 0;
+        int bestStage = 0, loops = 0, overs = 0, diedAt[64] = {};
         for (int seed = 1; seed <= 5; ++seed) {
             g_rng = (uint32_t)seed;
             static G g;
@@ -497,6 +504,7 @@ int main(int argc, char** argv) {
                 g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
                 if (phase == G::PHASE_PLAYING && g._phase == G::PHASE_DEATH) {
                     ++deaths;
+                    if (stage < 64) ++diedAt[stage];
                     rules &= g._lives == lives - 1;
                 }
                 if (phase == G::PHASE_DEATH && g._phase == G::PHASE_PLAYING) {
@@ -528,7 +536,11 @@ int main(int argc, char** argv) {
             printf("runnerplay seed %d: stage %d, score %d, %d stages cleared, %d lives lost, %d loops, %s after %ld frames\n",
                    seed, g._stage, g._score, clears, deaths, extra, ended ? "game over" : "still going", f);
         }
-        bool pass = rules && bestStage >= 9 && loops > 0;
+        printf("runnerplay lives lost by stage:");
+        for (int st = 1; st < 64; ++st) if (diedAt[st]) printf(" %d:%d", st, diedAt[st]);
+        printf("\n");
+        // It has to get through the Outpost and through Night.
+        bool pass = rules && bestStage >= 17 && loops > 0;
         printf("runnerplay: rules held %d, furthest stage %d, %d loops finished, %d games over -> %s\n",
                (int)rules, bestStage, loops, overs, pass ? "PASS" : "FAIL");
         ok &= pass;
@@ -876,6 +888,205 @@ int main(int argc, char** argv) {
         bool pass = got[0] == 150 / ArcadeConfig::RUNNER_SCORE_FRAMES && got[1] == got[0] && got[2] == got[0];
         printf("runnerscore: 150 frames at 17ms %d, at 50ms %d, a second game %d (want %d) -> %s\n",
                got[0], got[1], got[2], 150 / ArcadeConfig::RUNNER_SCORE_FRAMES, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerduck")) {
+        // The duck: B held on the ground crouches (the box 12 tall, feet
+        // where they were); let go, it stands; in the air or flying B does
+        // nothing; A from a duck jumps, standing up.
+        using G = PlatformFluxGame;
+        static G g;
+        g = G();
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+        for (int f = 0; f < 20; ++f) step();
+        InputState b{}; b.btnB = true;
+        step(b);
+        const float feet = g._player.getY() + RUNNER_HEIGHT;
+        const bool ducked = g._player.isDucking() && g._player.hitTop() == feet - RUNNER_DUCK_HEIGHT;
+        step();
+        const bool stood = !g._player.isDucking() && g._player.hitTop() == g._player.getY();
+        step(b);
+        InputState ab{}; ab.btnB = true; ab.btnA = ab.btnAPressed = true;
+        step(ab);
+        const bool jumped = !g._player.isOnGround() && !g._player.isDucking();
+        step(b); step(b);
+        const bool airNo = !g._player.isOnGround() && !g._player.isDucking();
+        for (int f = 0; f < 60; ++f) step();
+        g._player.activateLevitation(3000);
+        step(b);
+        const bool flyNo = !g._player.isDucking();
+        bool pass = ducked && stood && jumped && airNo && flyNo;
+        printf("runnerduck: ducks %d, stands %d, jumps from a duck %d, none in the air %d or flying %d -> %s\n",
+               (int)ducked, (int)stood, (int)jumped, (int)airNo, (int)flyNo, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerobstacles")) {
+        // Night's obstacles, one at a time on flat ground ahead: a beam
+        // kills a runner standing or jumping, a ducked one passes (+10);
+        // a jet lit kills one standing, unlit lets it pass standing, lit
+        // passes it ducked (+10); a dart kills one standing, passes one
+        // ducked (+20) or jumping.
+        using G = PlatformFluxGame;
+        using PM = PlatformManager;
+        AudioEngine audio;
+        enum How { STAND, DUCK, JUMP };
+        auto trial = [&](PM::NightKind kind, PM::SpikePhase jet, How how, int &points) {
+            static G g;
+            g = G();
+            g_rng = 3;
+            g.init(audio);
+            g.startNewGame(audio, 9, true);
+            g._player._invincible = false;
+            auto &pool = g._platforms._pool;
+            for (int i = 0; i < 6; ++i) {   // flat ground, nothing on it
+                auto &p = pool[i];
+                p.active = true; p.isGroundSegment = true; p.isMoving = false; p.firePitBefore = false;
+                p.hasSpike = false; p.night = PM::NIGHT_NONE; p.x = i * 60.0f; p.width = 60;
+                p.y = ArcadeConfig::LANDSCAPE_HEIGHT - 8; p.baseY = (float)p.y;
+            }
+            auto &p = pool[2];
+            p.night = kind; p.nightScored = p.fired = p.jetLive = false; p.glintAt = 0;
+            p.nightX = kind == PM::NIGHT_LAUNCHER ? 52.0f : 25.0f;
+            if (kind == PM::NIGHT_LAUNCHER) { p.x = 140.0f; }
+            p.jetPhase = jet; p.jetPhaseEnd = ~0UL;
+            const int score0 = g._score;
+            int pts = 0;
+            for (int f = 0; f < 200 && g._phase == G::PHASE_PLAYING; ++f) {
+                InputState in{};
+                in.btnB = how == DUCK;
+                // Jump: as it nears the obstacle (or as the dart nears it).
+                float target = kind == PM::NIGHT_LAUNCHER ? 9999.0f : p.x + p.nightX;
+                for (auto &d : g._platforms._darts) if (d.active) target = d.x;
+                if (how == JUMP && g._player.isOnGround() && target - (g._player.getX() + RUNNER_WIDTH) < 14) in.btnAPressed = true;
+                const int before = g._score;
+                g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                const int gained = g._score - before;
+                pts += gained - gained % 10;   // hazard points, not the distance tick
+            }
+            (void)score0;
+            points = pts;
+            return g._phase == G::PHASE_PLAYING;
+        };
+        struct Case { PM::NightKind kind; PM::SpikePhase jet; How how; bool lives; int points; const char* what; };
+        const Case cases[] = {
+            { PM::NIGHT_BEAM, PM::SPIKE_SAFE, STAND, false, 0, "beam, standing" },
+            { PM::NIGHT_BEAM, PM::SPIKE_SAFE, JUMP,  false, 0, "beam, jumping" },
+            { PM::NIGHT_BEAM, PM::SPIKE_SAFE, DUCK,  true, ArcadeConfig::RUNNER_BEAM_POINTS, "beam, ducked" },
+            { PM::NIGHT_JET, PM::SPIKE_DANGER, STAND, false, 0, "jet lit, standing" },
+            { PM::NIGHT_JET, PM::SPIKE_SAFE,   STAND, true, 0, "jet off, standing" },
+            { PM::NIGHT_JET, PM::SPIKE_DANGER, DUCK,  true, ArcadeConfig::RUNNER_JET_POINTS, "jet lit, ducked" },
+            { PM::NIGHT_LAUNCHER, PM::SPIKE_SAFE, STAND, false, 0, "dart, standing" },
+            { PM::NIGHT_LAUNCHER, PM::SPIKE_SAFE, DUCK,  true, ArcadeConfig::RUNNER_DART_POINTS, "dart, ducked" },
+            { PM::NIGHT_LAUNCHER, PM::SPIKE_SAFE, JUMP,  true, ArcadeConfig::RUNNER_DART_POINTS, "dart, jumped" },
+        };
+        bool pass = true;
+        printf("runnerobstacles:\n");
+        for (const Case &c : cases) {
+            int pts = 0;
+            const bool lives = trial(c.kind, c.jet, c.how, pts);
+            const bool good = lives == c.lives && (!c.lives || pts == c.points);
+            printf("  %-20s %s, +%d -> %s\n", c.what, lives ? "lives" : "dies", pts, good ? "ok" : "BAD");
+            pass &= good;
+        }
+        printf("runnerobstacles -> %s\n", pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnernight")) {
+        // Night's generation, 200 runs through loop 2 and into loop 3:
+        // beams in stages 9-10, jets in 14, darts in 15, all three in 16,
+        // none in 11-13 nor in the Outpost's loops; each column has the
+        // runner's width of the same block either side of it (no step
+        // under a duck), each launcher level ground behind it, and none
+        // on a pit's block. Pits still exact.
+        using PM = PlatformManager;
+        int seen[3][26] = {};   // beams, jets, launchers by stage
+        int badGround = 0, onPit = 0, pitsOff = 0, lacking = 0, missing[5] = {};
+        for (int seed = 1; seed <= 200; ++seed) {
+            g_rng = (uint32_t)seed;
+            PM pm;
+            pm.initGame(9);
+            int pits[26] = {};
+            int mine[3][26] = {};
+            const long frames = (long)(pm.stageStartDistance(18) - pm.stageStartDistance(9)) + 100;
+            for (long f = 0; f < frames; ++f) {
+                pm.update(); pm.advanceDifficulty();
+                pm.updateNight((float)ArcadeConfig::RUNNER_BASE_X);
+                const int st = pm.stageNumber();
+                for (auto &p : pm._pool) {
+                    if (!p.active) continue;
+                    if (p.firePitBefore && !p.pitScored && p.x < ArcadeConfig::RUNNER_BASE_X) { p.pitScored = true; if (st < 26) ++pits[st]; }
+                    if (p.night == PM::NIGHT_NONE || p.nightScored) continue;
+                    const float ox = p.x + p.nightX;
+                    if (ox >= ArcadeConfig::RUNNER_BASE_X) continue;
+                    p.nightScored = true;   // counted as the runner passes it
+                    if (st < 26) { ++seen[p.night - 1][st]; ++mine[p.night - 1][st]; }
+                    if (p.firePitBefore) ++onPit;
+                    if (p.night != PM::NIGHT_LAUNCHER) {
+                        badGround += p.nightX < RUNNER_WIDTH ||
+                                     p.nightX + ArcadeConfig::NIGHT_COLUMN_W + RUNNER_WIDTH > p.width;
+                    }
+                }
+            }
+            pitsOff += pits[9] != ArcadeConfig::RUNNER_PITS_FIRST || pits[10] != ArcadeConfig::RUNNER_PITS_SECOND;
+            // Every run meets each stage's obstacle at least once.
+            const bool miss[5] = { !mine[0][9], !mine[0][10], !mine[1][14], !mine[2][15],
+                                   !(mine[0][16] + mine[1][16] + mine[2][16]) };
+            for (int k = 0; k < 5; ++k) { lacking += miss[k]; missing[k] += miss[k]; }
+        }
+        bool pass = badGround == 0 && onPit == 0 && pitsOff == 0;
+        const char* names[3] = { "beams", "jets", "darts" };
+        for (int k = 0; k < 3; ++k) {
+            printf("runnernight %s by stage:", names[k]);
+            for (int st = 9; st <= 17; ++st) printf(" %d:%d", st, seen[k][st]);
+            printf("\n");
+        }
+        // Where each must and mustn't be (stage 17 is the Outpost again).
+        auto none = [&](int k, int st) { return seen[k][st] == 0; };
+        pass &= lacking == 0 && seen[0][16] > 0 && seen[1][16] > 0 && seen[2][16] > 0;
+        for (int st : { 11, 12, 13, 17 }) for (int k = 0; k < 3; ++k) pass &= none(k, st);
+        pass &= none(1, 9) && none(2, 9) && none(0, 14) && none(2, 14) && none(0, 15) && none(1, 15);
+        printf("runnernight runs without: beams 9 %d, beams 10 %d, jets 14 %d, darts 15 %d, any 16 %d\n",
+               missing[0], missing[1], missing[2], missing[3], missing[4]);
+        printf("runnernight: %d runs missing a stage's obstacle, %d columns without room either side, %d on a pit's block, %d runs with pits off -> %s\n",
+               lacking, badGround, onPit, pitsOff, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerdark")) {
+        // Night's lantern: the ground past its reach is drawn at half, then
+        // a quarter, brightness; flames stay bright. The Outpost: all lit.
+        using PM = PlatformManager;
+        PM pm;
+        pm.initGame(9);
+        for (auto &p : pm._pool) p.active = false;
+        auto &p = pm._pool[0];
+        p = {};
+        p.active = true; p.isGroundSegment = true; p.x = 0; p.width = 160; p.y = 110; p.baseY = 110;
+        p.night = PM::NIGHT_JET; p.nightX = 130; p.jetPhase = PM::SPIKE_DANGER; p.jetPhaseEnd = ~0UL;
+        canvas.fillScreen(0);
+        pm.render(canvas, 60);
+        auto at = [&](int x, int y) { return canvas.getBuffer()[y * canvas.width() + x]; };
+        const uint16_t g = PM::NIGHT_STONE, near = at(30, 120), mid = at(75, 120), far = at(120, 120);
+        const uint16_t flame = at(135, p.y - ArcadeConfig::NIGHT_BEAM_CLEAR - 2);
+        const bool lanternOk = near == g && mid == PM::darken(g) && far == PM::darken(PM::darken(g));
+        const bool flameOk = flame == ArcadeConfig::COLOR_ORANGE || flame == ArcadeConfig::COLOR_RED || flame == ArcadeConfig::COLOR_YELLOW;
+        PM out;
+        out.initGame(1);
+        for (auto &q : out._pool) q.active = false;
+        out._pool[0] = p;
+        out._pool[0].night = PM::NIGHT_NONE;
+        canvas.fillScreen(0);
+        out.render(canvas);
+        const bool outpostLit = at(30, 120) == at(120, 120);
+        bool pass = lanternOk && flameOk && outpostLit;
+        printf("runnerdark: ground near %04x, past %04x, far %04x (stone %04x); far flame %04x; outpost even %d -> %s\n",
+               near, mid, far, g, flame, (int)outpostLit, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 

@@ -253,7 +253,21 @@ being freed on exit to the launcher).
   and one as soon as the shield's gone), a lost life (`runnerdeath`: the
   world stays drawn and stopped under the burst; the burst and the flight
   exhaust are trailed) and the distance score (`runnerscore`: a point
-  every 3 frames, the same at 17ms and 50ms a frame and in a second game);
+  every 3 frames, the same at 17ms and 50ms a frame and in a second game),
+  and Night: the duck (`runnerduck`: B on the ground crouches to 12px and
+  stands on release, nothing in the air or flying, A from a duck jumps),
+  each obstacle alone on flat ground (`runnerobstacles`: a beam kills
+  standing or jumping and passes ducked, +10; a jet kills standing when
+  lit, passes standing unlit and ducked lit, +10; a dart kills standing,
+  passes ducked or jumped, +20), its generation (`runnernight`: 200 runs
+  through loop 2, every run meeting beams in 9 and 10, jets in 14, darts
+  in 15 and something in 16, none in 11-13 or the Outpost, every column
+  with the runner's width of its own block either side, none on a pit's
+  block, pits still exact) and the lantern (`runnerdark`: the ground at
+  full, half and a quarter brightness past it, a far flame bright, the
+  Outpost even). `runnerplay` has to get through Night (to stage 17) and
+  prints the lives lost by stage; `runnerpits` ducks at Night;
+  `runnerdiamond` checks the diamond stays away from Night;
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -288,7 +302,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score, Night; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot
