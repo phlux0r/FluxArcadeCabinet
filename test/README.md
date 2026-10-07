@@ -308,8 +308,8 @@ stage 28 (Storm's gusts about) and 37 too;
   narrowing a pixel every two levels to 16px from level 17, and the tank
   full to level 10 then 4% less a level to 60% from level 20);
   Asteroid's Fire power-up (`fire`: A shoots nothing without it; with
-  it a bolt breaks an asteroid ahead, scoring and counting as passing it
-  would; the HUD line is orange for the time left and green again after
+  it a bolt breaks an asteroid ahead, scoring what passing it would and 5
+  more, and counting as passing it would; the HUD line is orange for the time left and green again after
   20s, when A stops shooting), its power-ups (`powerups`: the mix drawn
   at 300, 550 and 700 points, Fire only from 500 and the extra life only
   when due, repeats only from the one redraw, 12-25s apart, and over 30000

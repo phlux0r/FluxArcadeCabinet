@@ -1689,8 +1689,9 @@ int main(int argc, char** argv) {
         const int score0 = g._score, size = rock.sizeClass, passed0 = g._asteroidsPassed;
         bool hit = false;
         for (int f = 0; f < 40 && !hit; ++f) { frame(true); bolts += g._bolts.activeCount(); hit = rock.x > 150; }
-        pass = hit && g._score == score0 + size && g._asteroidsPassed == passed0 + 1 && g._particles.activeCount() > 0;
-        printf("fire hit: %d bolt-frames, asteroid broken %d, score +%d (size %d), passed +%d -> %s\n",
+        // A shot asteroid scores what passing it would, and 5 more.
+        pass = hit && g._score == score0 + size + 5 && g._asteroidsPassed == passed0 + 1 && g._particles.activeCount() > 0;
+        printf("fire hit: %d bolt-frames, asteroid broken %d, score +%d (size %d, want size + 5), passed +%d -> %s\n",
                bolts, (int)hit, g._score - score0, size, g._asteroidsPassed - passed0, pass ? "PASS" : "FAIL");
         ok &= pass;
 

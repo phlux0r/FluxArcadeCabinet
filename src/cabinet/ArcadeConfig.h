@@ -166,6 +166,9 @@ struct ArcadeConfig {
     static constexpr float SPEED_STEP       = 0.07f;
     static constexpr float COMET_SPEED_CAP  = 6.0f;
     static const int   COMET_BONUS_SCORE    = 15;
+    // Shooting one (the Fire power-up) scores what passing it would, and
+    // this much more: otherwise a shot earned nothing over dodging.
+    static const int   ASTEROID_SHOT_BONUS  = 5;
 
     // Power-ups
     static const int   POWERUP_START_SCORE      = 100;

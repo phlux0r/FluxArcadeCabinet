@@ -199,8 +199,9 @@ public:
     }
 
     // A bolt that went from x0 to x1 along row y this frame (after the
-    // asteroids moved): breaks the first asteroid it met, which scores and
-    // counts towards the field filling up as passing it would, and comes
+    // asteroids moved): breaks the first asteroid it met, which scores as
+    // passing it would and ASTEROID_SHOT_BONUS more, counts towards the
+    // field filling up as passing it would, and comes
     // back in from the right. The asteroid's own move this frame is added
     // to the bolt's sweep so a fast one can't slip through it.
     bool shoot(float x0, float x1, float y, int &score, int &asteroidsPassed,
@@ -210,7 +211,7 @@ public:
             if (!a.active || fabsf(a.y - y) > a.radius) continue;
             if (a.x - a.radius >= ArcadeConfig::SCREEN_WIDTH) continue;   // not on screen yet
             if (a.x + a.radius < x0 || a.x - a.radius > x1 - a.vx) continue;
-            score += a.isComet ? ArcadeConfig::COMET_BONUS_SCORE : a.sizeClass;
+            score += (a.isComet ? ArcadeConfig::COMET_BONUS_SCORE : a.sizeClass) + ArcadeConfig::ASTEROID_SHOT_BONUS;
             particles.spawnExplosion(a.x, a.y, a.color, 8 + 3 * a.sizeClass, 600, 4);
             particles.spawnExplosion(a.x, a.y, ST7735_WHITE, 4, 300, 2);
             countCleared(asteroidsPassed, nextTargetScore);
