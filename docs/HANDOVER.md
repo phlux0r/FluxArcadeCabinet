@@ -5,7 +5,7 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at the Maze redesign merge)
+## State (main at the Runner worlds merge)
 
 Ten games, all merged and played on the board: Asteroid, Brick, Lander,
 Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
@@ -47,8 +47,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   the fallback tones are good enough for now and the owner will make the
   WAVs another time. README.md's audio section lists every file each game
   looks for.
-- **Runner (Platform Flux) review**, on `claude/nice-carson-z0uxjl`, not
-  merged. Fixed so far, each with a games2d scenario seen failing first:
+- **Runner (Platform Flux) review**, merged with the new worlds (from
+  `claude/nice-carson-z0uxjl`). Fixed, each with a games2d scenario seen failing first:
   - Fire pits needed a trick nobody was told: only back-on-the-ground,
     forward-in-the-air cleared one (1 of 40 first pits with the stick
     left alone). The flames now burn under the runner's middle rather
@@ -112,7 +112,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
     `_frameScale`, like the other 2D games.
   The review is done. Needs the board: the death frame and the trails'
   look and cost, and everything listed above.
-- **Runner: new stages (planned, docs/design/RunnerFlux.md).** The owner
+- **Runner: new stages (all four worlds built, docs/design/RunnerFlux.md).** The owner
   chose a world per loop (loop 2 Night, 3 Ruins, 4 Storm, then the
   worlds again, faster), B to duck under low obstacles only (low beams,
   burning ropes, darts; not ships), and a boss stretch to survive at the
@@ -154,7 +154,22 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   rocks held while a pillar's ahead); the boss's ground now drops to the
   base level. Scenario `runnerruins`; `runnerplay` must reach stage 28.
   Played on the board (2026-10): the owner likes the new stages and
-  finds them play well. Next: Storm, or more polish on the worlds there are.
+  finds them play well.
+  **Storm is built** (stages 28-36; the worlds now come Outpost, Night,
+  Ruins, Storm, round again from 37): gusts (`StormLayer.h`: a second's
+  warning of streaks, arrows under the HUD and a sound, then a push
+  forward or back at half the stick's speed for about a second, in the
+  air too) in 28-32 and 35, conveyor blocks in 33-35, rain and lightning,
+  and the boss's gust pattern. Storm's pits are sized for a pushed jump
+  into a headwind; the flying ship holds its rocks while a gust is coming
+  or blowing (without that the harness bot lost about a life a run in 32
+  and 35). Scenario `runnerstorm`; `runnerplay` must reach stage 37 (4 of
+  its 5 games get there, the best to 77). The owner asked for Storm before
+  playing the Ruins much, and will play all four worlds over a few days
+  for polish. Needs the board: the look (rain, streaks, belts), how gusts
+  and belts feel, and Storm's frame rate (rain is 40 short lines a frame,
+  the streaks up to 18). The harness bot's weak spot is every loop's
+  platforms-and-ship stage (5, 14, 32, 41 cost it about a life a run).
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the

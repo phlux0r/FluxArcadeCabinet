@@ -13,8 +13,9 @@
 // things on screen, and the hills stop short of the ground line so a
 // platform-tier gap still reads as a black drop. Colours rotate with the
 // loop, like the ground's; Night has its own, darker, with brighter
-// stars and a moon, and the Ruins a warm dusk with broken columns on the
-// far skyline (the worlds come a loop each: Outpost, Night, Ruins).
+// stars and a moon, the Ruins a warm dusk with broken columns on the
+// far skyline, and Storm grey-green cloud (no stars), rain and now and then
+// lightning (the worlds come a loop each: Outpost, Night, Ruins, Storm).
 //
 // The skylines are sums of sines over a 256px repeat, fixed at compile
 // time: nothing here calls random(), so the game's own random sequence
@@ -61,13 +62,15 @@ public:
     // Replaces the play area's black clear: from `top` to the bottom.
     void render(GFXcanvas16 &canvas, int top, int loop) {
         const int W = ArcadeConfig::LANDSCAPE_WIDTH, H = ArcadeConfig::LANDSCAPE_HEIGHT;
-        canvas.fillRect(0, top, W, H - top, ArcadeConfig::COLOR_BLACK);
-
-        const bool night = loop % 3 == 1, ruins = loop % 3 == 2;
+        const int world = loop % ArcadeConfig::RUNNER_WORLDS;
+        const bool night = world == 1, ruins = world == 2, storm = world == 3;
+        // Storm's lightning: the sky lit for a few frames every 7s or so.
+        const bool flash = storm && millis() % 7000 < 90;
+        canvas.fillRect(0, top, W, H - top, flash ? rgb(70, 76, 90) : ArcadeConfig::COLOR_BLACK);
 
         // Stars: dim, a few brighter; two twinkle. Brighter at Night.
         const int so = (int)_stars;
-        for (int i = 0; i < STARS; i++) {
+        for (int i = 0; i < STARS && !storm; i++) {
             int x = (_starX[i] - so) & 255;
             if (x >= W) continue;
             uint16_t c = (i % 5 == 0) ? rgb(150, 150, 170) : rgb(70, 70, 90);
@@ -84,10 +87,10 @@ public:
         }
 
         // The Outpost's loops rotate through the first four; Night is the
-        // fifth, the Ruins the sixth.
-        const int l = night ? 4 : ruins ? 5 : (loop / 3) & 3;
-        static const uint8_t FAR[6][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 }, { 14, 18, 42 }, { 92, 48, 44 } };
-        static const uint8_t NEAR[6][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 }, { 8, 12, 26 }, { 62, 40, 26 } };
+        // fifth, the Ruins the sixth, Storm the seventh.
+        const int l = night ? 4 : ruins ? 5 : storm ? 6 : (loop / ArcadeConfig::RUNNER_WORLDS) & 3;
+        static const uint8_t FAR[7][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 }, { 14, 18, 42 }, { 92, 48, 44 }, { 40, 50, 52 } };
+        static const uint8_t NEAR[7][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 }, { 8, 12, 26 }, { 62, 40, 26 }, { 22, 32, 30 } };
         const uint16_t farC  = rgb(FAR[l][0], FAR[l][1], FAR[l][2]);
         const uint16_t farTop = rgb(FAR[l][0] * 3 / 2, FAR[l][1] * 3 / 2, FAR[l][2] * 3 / 2);
         const uint16_t nearC = rgb(NEAR[l][0], NEAR[l][1], NEAR[l][2]);
@@ -112,10 +115,24 @@ public:
             canvas.drawPixel(x, ny, nearTop);
             canvas.drawFastVLine(x, ny + 1, nh - 1, nearC);
         }
+
+        // Storm's rain: short streaks slanting down and back, over the hills.
+        if (storm) {
+            const int t = (int)(millis() / 33);
+            for (int i = 0; i < RAIN; i++) {
+                uint32_t h = (uint32_t)(i + 1) * 2654435761u;   // scattered: mixed, not a plain multiple
+                h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+                const int span = NEAR_HORIZON - top;
+                const int y = top + (int)(((h >> 9) + (uint32_t)(t * 5)) % (uint32_t)span);
+                const int x = (int)(((h >> 17) + (uint32_t)(t * 2) + (uint32_t)(W - (y - top) / 2)) % (uint32_t)(W + 8)) - 4;
+                canvas.drawLine(x, y, x - 1, y + 3, rgb(90, 110, 130));
+            }
+        }
     }
 
 private:
     static const int STARS = 36;
+    static const int RAIN  = 40;
     uint8_t _far[256], _near[256];
     uint8_t _starX[STARS], _starY[STARS];
     float   _stars = 0, _farX = 0, _nearX = 0;

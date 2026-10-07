@@ -23,13 +23,15 @@
 //   DART   (Night's boss) darts fired at head height: duck.
 //   CRACK  (the Ruins' boss) two rocks land ahead and crack the ground:
 //          holes coming at the runner, to jump.
+//   GUST   (Storm's boss) a gust, warned of, then three aimed rocks while
+//          it blows: fight the wind to dodge them.
 // Everything runs in frames, like the scroll, so the demo's autopilot can
 // predict it exactly (wouldHit).
 // =============================================================================
 class RunnerBoss {
 public:
     enum Phase { IDLE, ENTER, FIGHT, LEAVE };
-    enum Pattern { P_LINE, P_TRACK, P_ROLL, P_DART, P_CRACK, P_COUNT };
+    enum Pattern { P_LINE, P_TRACK, P_ROLL, P_DART, P_CRACK, P_GUST, P_COUNT };
 
     // Rocks fall from just under the ship at ROCK_TOP with this pull,
     // slow (about 70 frames to the ground) so a spread can be read and
@@ -41,6 +43,7 @@ public:
     static const int ENTER_FRAMES = 75;     // flying in, nothing dropped
     static const int TELEGRAPH    = 24;     // the bay flashes before a line drops
     static const int LEAVE_BEFORE = 100;    // no new pattern this close to the end
+    static const int GUST_BLOW    = 90;     // GUST: frames its gust blows
 
 private:
     struct Rock {
@@ -54,7 +57,7 @@ private:
 
     Phase _phase = IDLE;
     bool  _night = false;
-    int   _world = 0;          // 0 Outpost, 1 Night, 2 Ruins
+    int   _world = 0;          // 0 Outpost, 1 Night, 2 Ruins, 3 Storm
     int   _loop = 0;
     long  _frame = 0;          // frames since it began
     long  _nextAt = 0;         // frame the next pattern starts
@@ -77,6 +80,7 @@ private:
             case P_ROLL:  return _step >= 1;
             case P_DART:  return _step >= 2;
             case P_CRACK: return _step >= 1;
+            case P_GUST:  return _step >= 3;
             default:      return true;
         }
     }
@@ -105,12 +109,14 @@ private:
     static const int GAP_REACH = 40;
 
     void choosePattern(float runnerCentre) {
-        // The world's patterns: the three, and Night's darts or the Ruins' cracks.
+        // The world's patterns: the three, and Night's darts, the Ruins'
+        // cracks or Storm's gusts.
         const int kinds = _world == 0 ? 3 : 4;
         Pattern p;
         do {
             p = (Pattern)random(0, kinds);
             if (p == P_DART && _world == 2) p = P_CRACK;
+            if (p == P_DART && _world == 3) p = P_GUST;
         } while (p == _last);
         _pattern = _last = p;
         _step = 0;
@@ -164,6 +170,17 @@ private:
                     for (int k = 0; k < 2; k++)
                         if (Rock* r = spawnRock(runnerCentre + 60.0f + 50.0f * k, platforms, false)) r->cracks = true;
                     _step = 1;
+                    _dropped = true;
+                }
+                break;
+            case P_GUST:
+                // The gust's warning starts with the pattern; three rocks,
+                // aimed as TRACK's, 20 frames apart from 10 in, land while
+                // it blows (about 80 frames to fall).
+                if (since == 0) platforms.storm().forceGust(random(0, 2) ? 1 : -1, GUST_BLOW);
+                if (_step < 3 && since >= 10 + (long)_step * 20) {
+                    spawnRock(constrain(runnerCentre, reachLo() + 16.0f, reachHi() - 16.0f), platforms, false);
+                    ++_step;
                     _dropped = true;
                 }
                 break;
@@ -223,7 +240,8 @@ public:
             if (_frame >= ENTER_FRAMES) _phase = FIGHT;
         } else if (_phase == FIGHT) {
             _shipX += (sway - _shipX) * 0.1f;
-            if (!patternDone() || rocksFalling() || platforms.dartsFlying()) _nextAt = _frame + breather();
+            if (!patternDone() || rocksFalling() || platforms.dartsFlying() || platforms.storm().gusting())
+                _nextAt = _frame + breather();
             if (framesLeft <= LEAVE_BEFORE) _phase = LEAVE;
             else if (_frame >= _nextAt) choosePattern(centre);
             if (_phase == FIGHT) runPattern(centre, platforms);

@@ -90,7 +90,7 @@ private:
     // played before it had optional sounds). Checked once, in init().
     enum Sfx { SFX_TITLE, SFX_JUMP, SFX_POINTS, SFX_STAR, SFX_FLY, SFX_ROCK, SFX_BOULDER,
                SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_BOSS, SFX_DROP,
-               SFX_SPRING, SFX_GEM, SFX_CHAIN, SFX_CRUMBLE, SFX_TOPPLE, SFX_COUNT };
+               SFX_SPRING, SFX_GEM, SFX_CHAIN, SFX_CRUMBLE, SFX_TOPPLE, SFX_GUST, SFX_COUNT };
     struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
     static constexpr int TITLE_N[] = { 523, 659, 784, 1047 }, TITLE_D[] = { 80, 80, 80, 150 };
     static constexpr int JUMP_N[]  = { 700, 1050 },           JUMP_D[]  = { 35, 45 };
@@ -123,6 +123,7 @@ private:
         { "/audio/runner_chain.wav",   nullptr, 0, 0, CHAIN_N, CHAIN_D, 4 },                     // SFX_CHAIN
         { "/audio/runner_crumble.wav", nullptr, 140, 60, nullptr, nullptr, 0 },                  // SFX_CRUMBLE
         { "/audio/runner_topple.wav",  nullptr, 90, 140, nullptr, nullptr, 0 },                  // SFX_TOPPLE
+        { "/audio/runner_gust.wav",    nullptr, 110, 250, nullptr, nullptr, 0 },                 // SFX_GUST
     };
     static constexpr const char* MUSIC = "/audio/flux-runner.wav";
     AudioEngine* _audio = nullptr;
@@ -297,45 +298,36 @@ private:
         canvas.setCursor(30, 2);
         canvas.print("--== HOW TO PLAY ==--");
 
+        // Lines 8px apart from here, to fit every world's.
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(6, 13);
+        canvas.setCursor(6, 12);
         canvas.print("[JOY] SHIFT FWD/BACK");
-        canvas.setCursor(6, 22);
+        canvas.setCursor(6, 20);
         canvas.print("[A] JUMP   [B] DUCK");
 
         // The hazards, no heading: a line each.
-        canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
-        canvas.setCursor(10, 33);
-        canvas.print("FIRE PITS");
-        canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
-        canvas.setCursor(10, 42);
-        canvas.print("PLATFORMS & GAPS");
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(10, 51);
-        canvas.print("MOVING PLATFORMS");
-        canvas.setTextColor(ArcadeConfig::COLOR_WHITE);
-        canvas.setCursor(10, 60);
-        canvas.print("STAIRS & SPIKE TRAPS");
-        canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
-        canvas.setCursor(10, 69);
-        canvas.print("ROLLING BOULDERS");
-        canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
-        canvas.setCursor(10, 78);
-        canvas.print("FLYING ENEMY + ROCKS");
-        canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
-        canvas.setCursor(10, 87);
-        canvas.print("NIGHT: DUCK UNDER");
-        canvas.setCursor(10, 95);
-        canvas.print(" BEAMS, JETS, DARTS");
-
-        canvas.setTextColor(PlatformManager::SANDSTONE);
-        canvas.setCursor(10, 104);
-        canvas.print("RUINS: SPRINGS, PILLARS");
+        static const struct { const char* text; uint16_t colour; } lines[] = {
+            { "FIRE PITS",               ArcadeConfig::COLOR_ORANGE },
+            { "PLATFORMS & GAPS",        ArcadeConfig::COLOR_GREEN },
+            { "MOVING PLATFORMS",        ArcadeConfig::COLOR_CYAN },
+            { "STAIRS & SPIKE TRAPS",    ArcadeConfig::COLOR_WHITE },
+            { "ROLLING BOULDERS",        ArcadeConfig::COLOR_AMBER },
+            { "FLYING ENEMY + ROCKS",    ArcadeConfig::COLOR_MAGENTA },
+            { "NIGHT: DUCK UNDER",       ArcadeConfig::COLOR_ION_BLUE },
+            { " BEAMS, JETS, DARTS",     ArcadeConfig::COLOR_ION_BLUE },
+            { "RUINS: SPRINGS, PILLARS", PlatformManager::SANDSTONE },
+            { "STORM: GUSTS, CONVEYORS", ArcadeConfig::COLOR_WHITE },
+        };
+        for (int i = 0; i < (int)(sizeof(lines) / sizeof(lines[0])); i++) {
+            canvas.setTextColor(lines[i].colour);
+            canvas.setCursor(10, 30 + 8 * i);
+            canvas.print(lines[i].text);
+        }
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(6, 112);
+        canvas.setCursor(6, 111);
         canvas.print("STAR:SHIELD");
         canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
-        canvas.setCursor(78, 112);
+        canvas.setCursor(78, 111);
         canvas.print("DIAMOND:FLY");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
@@ -493,9 +485,14 @@ private:
             "PITS, SPRING, GEMS", "PITS, SPRING, GEMS", "CRUMBLING SLABS", "MOVING, CRUMBLING",
             "MORE CRUMBLING", "SPIKES, PILLARS", "BOULDERS, PILLARS", "ALL + SHIPS", "BOSS SHIP + CRACKS",
         };
+        static const char* const storm[PlatformManager::TIERS_PER_LOOP] = {
+            "PITS, GUSTS", "PITS, STAIRS, GUSTS", "PLATFORMS, GUSTS", "MOVING, GUSTS",
+            "SHIP, GUSTS", "SPIKES, CONVEYORS", "BOULDERS, CONVEYORS", "ALL + GUSTS + BELTS", "BOSS SHIP + GUSTS",
+        };
         const int tier = (stage - 1) % PlatformManager::TIERS_PER_LOOP;
         const int loop = (stage - 1) / PlatformManager::TIERS_PER_LOOP;
-        return PlatformManager::isNight(loop) ? night[tier] : PlatformManager::isRuins(loop) ? ruins[tier] : what[tier];
+        return PlatformManager::isNight(loop) ? night[tier] : PlatformManager::isRuins(loop) ? ruins[tier]
+             : PlatformManager::isStorm(loop) ? storm[tier] : what[tier];
     }
 
     // The stage's terrain as it starts, behind its number and hazards.
@@ -527,9 +524,10 @@ private:
     // jump is what clears a wide fire pit, for the bot as for a player),
     // and on the ground towards `target`, an offset: normally right back,
     // keeping the most room to go forward, or wherever steps out from under
-    // a falling rock or into a boss's gap.
-    static float demoStick(bool onGround, float offset, float target) {
-        return onGround ? constrain(target - offset, -1.0f, 1.0f) : 1.0f;
+    // a falling rock or into a boss's gap. (In the air with a gust behind
+    // it, it lets the gust carry it: pushing too would overshoot a slab.)
+    static float demoStick(bool onGround, float offset, float target, float wind = 0.0f) {
+        return onGround ? constrain(target - offset, -1.0f, 1.0f) : wind > 0.0f ? 0.0f : 1.0f;
     }
     static constexpr float DEMO_BACK = (float)ArcadeConfig::RUNNER_X_MIN_OFFSET;
 
@@ -556,16 +554,21 @@ private:
         int landed = 0;
         for (int t = t0 + 1; t <= horizon; ++t) {
             if (--_demoBudget < 0) return false;
-            const float stick = demoStick(st.onGround, st.off, target);   // read before this frame's jump, as in play
+            const float shift = s * (float)t;
+            // Storm: the gust, and a conveyor under its feet (where it
+            // stood last frame, as in play).
+            const float wind = _platforms.storm().windAt(t);
+            const float stick = demoStick(st.onGround, st.off, target, wind);   // read before this frame's jump, as in play
+            const float x0 = (float)ArcadeConfig::RUNNER_BASE_X + st.off + shift;
+            const float belt = st.onGround ? _platforms.beltUnder(x0, x0 + RUNNER_WIDTH, st.y + RUNNER_HEIGHT) : 0.0f;
             if (t - 1 == jumpAt && (t == t0 + 1 ? st.canJump : st.onGround)) {
                 st.vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
                 st.onGround = false;
                 jumped = true;
             }
-            st.off = constrain(st.off + stick * ArcadeConfig::RUNNER_X_MOVE_SPEED,
+            st.off = constrain(st.off + stick * ArcadeConfig::RUNNER_X_MOVE_SPEED + wind + belt,
                                (float)ArcadeConfig::RUNNER_X_MIN_OFFSET, offsetCeiling(st.off));
             const float x = (float)ArcadeConfig::RUNNER_BASE_X + st.off;
-            const float shift = s * (float)t;
             const float px = x + shift, pr = px + RUNNER_WIDTH, pb = st.y + RUNNER_HEIGHT;
             if (_platforms.firePitHitsPlayer(px, pr, pb)) return false;
             if (_platforms.spikeNear(px, pr, pb)) return false;
@@ -634,7 +637,8 @@ private:
             in.joyX = constrain((targetY - _player.getY()) / 8.0f, -1.0f, 1.0f);
             return in;
         }
-        in.joyY = demoStick(_player.isOnGround(), _playerXOffset, DEMO_BACK);
+        const float wind = _platforms.storm().windAt(1);   // the coming frame's
+        in.joyY = demoStick(_player.isOnGround(), _playerXOffset, DEMO_BACK, wind);
         in.btnB = _player.isOnGround() && _platforms.duckWanted(_player.getX(), _player.getX() + RUNNER_WIDTH);
         if (!_player.canJump() || demoSurvives(-1, H)) return in;
         // Somewhere else on the ground: right forward, or partway (a gap).
@@ -646,7 +650,7 @@ private:
             const int n = boss ? (int)(sizeof(bossTargets) / sizeof(float)) : (int)(sizeof(targets) / sizeof(float));
             for (int k = 0; k < n; ++k) {
                 const float t = list[k];
-                if (demoSurvives(-1, H, t)) { in.joyY = demoStick(true, _playerXOffset, t); return in; }
+                if (demoSurvives(-1, H, t)) { in.joyY = demoStick(true, _playerXOffset, t, wind); return in; }
             }
         }
         const bool now = demoSurvives(0, H);
@@ -835,8 +839,13 @@ public:
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap
             // AsteroidFlux uses for its physical orientation.
+            // Storm: a gust blows it along, in the air too, and a conveyor
+            // under its feet carries it; the stick can fight both.
             const float prevOffset = _playerXOffset;
-            _playerXOffset += in.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED;
+            const float belt = _player.isOnGround()
+                                   ? _platforms.beltUnder(_player.getX(), _player.getX() + RUNNER_WIDTH, _player.getY() + RUNNER_HEIGHT)
+                                   : 0.0f;
+            _playerXOffset += in.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED + _platforms.storm().wind() + belt;
             _playerXOffset  = constrain(_playerXOffset, (float)ArcadeConfig::RUNNER_X_MIN_OFFSET,
                                         offsetCeiling(prevOffset));
             _player.setX((float)ArcadeConfig::RUNNER_BASE_X + _playerXOffset);
@@ -886,8 +895,10 @@ public:
                                           hasFirePitAhead, firePitX);
             if (_levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate, _platforms)) sfx(SFX_FLY);
 
+            // (No rocks dropped while a Ruins log is ahead or a Storm gust
+            // is coming or blowing: one thing at a time.)
             if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit,
-                                _platforms.ruins().ahead(_player.getX()))) sfx(SFX_ROCK);
+                                _platforms.ruins().ahead(_player.getX()) || _platforms.storm().gusting())) sfx(SFX_ROCK);
             if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit,
                                  _platforms.nightAhead(_player.getX()) || _platforms.ruins().ahead(_player.getX()) ||
                                  bossTier)) sfx(SFX_BOULDER);
@@ -895,6 +906,7 @@ public:
             // The boss stretch: its ship and its rocks.
             if (_boss.update(_platforms.getScrollSpeed(), _platforms.framesLeftInStage(), _player, _platforms,
                              _particles, playerHit)) sfx(SFX_DROP);
+            if (_platforms.storm().takeTell()) sfx(SFX_GUST);   // a gust coming (Storm's, or its boss's)
 
             // The Ruins: gems taken (a whole chain counts twice), pillars and
             // the boss's holes.

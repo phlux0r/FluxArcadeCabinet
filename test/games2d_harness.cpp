@@ -205,7 +205,8 @@ int main(int argc, char** argv) {
             { 2,  false, 4, "stage 2, plain jump" },
             { 10, true,  2, "stage 10, pushed jump" },
             { 19, true,  2, "stage 19, pushed jump" },
-            { 28, true,  2, "stage 28, pushed jump" },
+            { 28, true,  2, "stage 28 (Storm's gusts), pushed jump" },
+            { 37, true,  2, "stage 37, pushed jump" },
         };
         int firstLoopMax = 0;
         for (const Case &c : cases) {
@@ -541,8 +542,8 @@ int main(int argc, char** argv) {
         printf("runnerplay lives lost by stage:");
         for (int st = 1; st < 64; ++st) if (diedAt[st]) printf(" %d:%d", st, diedAt[st]);
         printf("\n");
-        // It has to get through the Outpost, Night and the Ruins, bosses and all.
-        bool pass = rules && bestStage >= 28 && loops > 0;
+        // It has to get through all four worlds, bosses and all.
+        bool pass = rules && bestStage >= 37 && loops > 0;
         printf("runnerplay: rules held %d, furthest stage %d, %d loops finished, %d games over -> %s\n",
                (int)rules, bestStage, loops, overs, pass ? "PASS" : "FAIL");
         ok &= pass;
@@ -1101,9 +1102,9 @@ int main(int argc, char** argv) {
         // lost life), the runner may range further forward and walks back
         // after; surviving it ends the loop with a life and the bonus. And
         // it's fair: the autopilot (as a player) gets through 20 runs each
-        // of the Outpost's (9), Night's (18) and the Ruins' (27) with no
-        // lives lost, meeting every pattern, each line's gap within
-        // its reach.
+        // of the Outpost's (9), Night's (18), the Ruins' (27) and Storm's
+        // (36) with no lives lost, meeting every pattern, each line's gap
+        // within its reach.
         using G = PlatformFluxGame;
         using PM = PlatformManager;
         AudioEngine audio;
@@ -1113,8 +1114,8 @@ int main(int argc, char** argv) {
             pass &= cond;
         };
         printf("runnerboss:\n");
-        check("stage 9 is the boss, 18 and 27 too, 10 not", PM::isBossStage(9) && PM::isBossStage(18) &&
-              PM::isBossStage(27) && !PM::isBossStage(10) && !PM::isBossStage(8));
+        check("stage 9 is the boss, 18, 27 and 36 too, 10 not", PM::isBossStage(9) && PM::isBossStage(18) &&
+              PM::isBossStage(27) && PM::isBossStage(36) && !PM::isBossStage(10) && !PM::isBossStage(8));
 
         // The ground, as the runner reaches it, from a screen into the stage.
         int steps = 0, things = 0;
@@ -1199,7 +1200,7 @@ int main(int argc, char** argv) {
               gained < ArcadeConfig::RUNNER_STAGE_BONUS * 2 + ArcadeConfig::RUNNER_BOSS_POINTS + 2);
 
         // Fair: the autopilot, as a player, 20 runs of each boss.
-        for (int stage : { 9, 18, 27 }) {
+        for (int stage : { 9, 18, 27, 36 }) {
             int died = 0, through = 0, kinds[RunnerBoss::P_COUNT] = {}, farGaps = 0, patterns = 0;
             for (int seed = 1; seed <= 20; ++seed) {
                 g = G(); g_rng = (uint32_t)seed; g.init(audio);
@@ -1227,14 +1228,15 @@ int main(int argc, char** argv) {
                      stage, through, died, patterns / 20.0, farGaps);
             check(what, through == 20 && died == 0 && patterns >= 20 * 4 && farGaps == 0 &&
                         kinds[0] && kinds[1] && kinds[2] &&
-                        (kinds[RunnerBoss::P_DART] > 0) == (world == 1) && (kinds[RunnerBoss::P_CRACK] > 0) == (world == 2));
+                        (kinds[RunnerBoss::P_DART] > 0) == (world == 1) && (kinds[RunnerBoss::P_CRACK] > 0) == (world == 2) &&
+                        (kinds[RunnerBoss::P_GUST] > 0) == (world == 3));
         }
         printf("runnerboss -> %s\n", pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 
     if (!strcmp(which, "all") || !strcmp(which, "runnerruins")) {
-        // The Ruins, every third loop (stages 19-27, then 46-54, ...).
+        // The Ruins, every fourth loop (stages 19-27, then 55-63, ...).
         using G = PlatformFluxGame;
         using PM = PlatformManager;
         AudioEngine audio;
@@ -1244,9 +1246,9 @@ int main(int argc, char** argv) {
             pass &= cond;
         };
         printf("runnerruins:\n");
-        check("the worlds in turn: Outpost, Night, Ruins, Outpost",
+        check("the worlds in turn: Outpost, Night, Ruins, (Storm,) Outpost",
               !strcmp(PM::worldName(0), "OUTPOST") && !strcmp(PM::worldName(1), "NIGHT") &&
-              !strcmp(PM::worldName(2), "RUINS") && !strcmp(PM::worldName(3), "OUTPOST") && PM::isRuins(5));
+              !strcmp(PM::worldName(2), "RUINS") && !strcmp(PM::worldName(4), "OUTPOST") && PM::isRuins(6));
 
         // What's built where, as the runner reaches it, 100 runs from stage 19 to 29.
         int springsBy[32] = {}, crumblyBy[32] = {}, pillarsBy[32] = {}, pitsBy[32] = {}, lacking = 0, springNoPit = 0, missBy[10] = {};
@@ -1430,6 +1432,175 @@ int main(int argc, char** argv) {
         snprintf(what + n, sizeof(what) - n, ")");
         check(what, through == 20 && lost <= 40);
         printf("runnerruins -> %s\n", pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerstorm")) {
+        // Storm, every fourth loop (stages 28-36, then 64-72, ...).
+        using G = PlatformFluxGame;
+        using PM = PlatformManager;
+        AudioEngine audio;
+        bool pass = true;
+        auto check = [&](const char* what, bool cond) {
+            printf("  %-66s %s\n", what, cond ? "ok" : "BAD");
+            pass &= cond;
+        };
+        printf("runnerstorm:\n");
+        check("the worlds in turn: Outpost, Night, Ruins, Storm, Outpost",
+              !strcmp(PM::worldName(3), "STORM") && !strcmp(PM::worldName(4), "OUTPOST") &&
+              PM::isStorm(7) && !PM::isStorm(4) && PM::isNight(5) && PM::isRuins(6));
+
+        // What comes where, 100 runs from stage 28 to 38: gusts (each whole
+        // within the stages that have them), conveyors as the runner
+        // reaches them, and the pits.
+        int gustsBy[40] = {}, beltsBy[40] = {}, pitsBy[40] = {}, lacking = 0, missBy[8] = {}, split = 0;
+        for (int seed = 1; seed <= 100; ++seed) {
+            g_rng = (uint32_t)seed;
+            PM pm;
+            pm.initGame(28);
+            int gusts[40] = {}, belts[40] = {}, pits[40] = {};
+            bool was = false;
+            const long frames = (long)(pm.stageStartDistance(39) - pm.stageStartDistance(28));
+            for (long f = 0; f < frames; ++f) {
+                pm.update(); pm.advanceDifficulty();
+                const int st = pm.stageNumber();
+                if (st >= 40) break;
+                const bool now = pm.storm().blowing();
+                if (now && !was) ++gusts[st];
+                if (now && !PM::gustTier((st - 1) % PM::TIERS_PER_LOOP)) ++split;   // blowing where there are none
+                was = now;
+                const float rx = (float)ArcadeConfig::RUNNER_BASE_X;
+                for (auto &p : pm._pool) {
+                    if (!p.active) continue;
+                    if (p.firePitBefore && !p.pitScored && p.x < rx) { p.pitScored = true; ++pits[st]; }
+                    // (spikeScored is spare on a belt without a spike: it marks it counted)
+                    if (p.belt && !p.hasSpike && !p.spikeScored && p.x < rx) { p.spikeScored = true; ++belts[st]; }
+                }
+            }
+            for (int st = 28; st < 40; ++st) { gustsBy[st] += gusts[st]; beltsBy[st] += belts[st]; pitsBy[st] += pits[st]; }
+            const bool miss[8] = { !gusts[28], !gusts[29], !gusts[30], !gusts[31], !gusts[32], !belts[33] || !belts[34],
+                                   !gusts[35] || !belts[35], pits[28] != 2 || pits[29] != 3 };
+            for (int k = 0; k < 8; ++k) { lacking += miss[k]; missBy[k] += miss[k]; }
+        }
+        printf("  by stage (100 runs): gusts/conveyors/pits\n   ");
+        for (int st = 28; st <= 38; ++st) printf(" %d:%d/%d/%d", st, gustsBy[st], beltsBy[st], pitsBy[st]);
+        printf("\n  runs without: gusts 28 %d, 29 %d, 30 %d, 31 %d, 32 %d; conveyors 33-34 %d; both 35 %d; pits %d; gust frames in a stage without %d\n",
+               missBy[0], missBy[1], missBy[2], missBy[3], missBy[4], missBy[5], missBy[6], missBy[7], split);
+        // (Built a screen ahead, a stage's last conveyor can be reached
+        // just into the next: 35's in the boss's first moments.)
+        bool elsewhere = split > 0 || beltsBy[36] > 10;
+        for (int st = 28; st <= 38; ++st)
+            elsewhere |= (gustsBy[st] && (st == 33 || st == 34 || st > 35)) || (beltsBy[st] && (st < 33 || st > 36));
+        check("every run: gusts in 28-32 and 35, conveyors in 33-35, pits 2 and 3", lacking == 0);
+        check("none anywhere else; no gust running into another stage", !elsewhere);
+
+        static G g;
+        auto fresh = [&](int stage) {
+            g = G(); g_rng = 4; g.init(audio);
+            g.startNewGame(audio, stage, true);
+            g._player._invincible = false;
+            auto &pool = g._platforms._pool;
+            for (int i = 0; i < 6; ++i) {   // flat ground, nothing on it
+                auto &p = pool[i];
+                p.active = true; p.isGroundSegment = true; p.isMoving = false; p.firePitBefore = false;
+                p.hasSpike = false; p.night = PM::NIGHT_NONE; p.crumbly = p.falling = false; p.crumbleAt = -1; p.belt = 0;
+                p.x = i * 60.0f; p.width = 60; p.y = ArcadeConfig::LANDSCAPE_HEIGHT - 8; p.baseY = (float)p.y;
+            }
+            g._platforms._storm.reset();
+            g._enemies.initGame();
+            g._boulders.initGame(); g._boulders._nextSpawnAt = ~0UL;
+        };
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += 33; };
+
+        // A gust: warned of (its sound, no push), then blowing the runner
+        // half a pixel a frame; the stick against it still makes way.
+        for (int against = 0; against <= 1; ++against) {
+            fresh(33);   // a stage without gusts of its own
+            g._playerXOffset = 0.0f;
+            g._platforms._storm.forceGust(-1, 40);
+            g._sfxPlayed = 0;
+            float off0 = g._playerXOffset;
+            bool still = true;
+            for (int f = 0; f < ArcadeConfig::STORM_TELL - 1; ++f) { step(); still &= g._playerXOffset == off0; }
+            const bool sound = (g._sfxPlayed & (1u << G::SFX_GUST)) != 0;
+            off0 = g._playerXOffset;
+            for (int f = 0; f < 20; ++f) { InputState in{}; in.joyY = against ? 1.0f : 0.0f; step(in); }
+            const float moved = g._playerXOffset - off0;
+            char what[96];
+            snprintf(what, sizeof(what), against ? "a headwind fought: %+.1fpx in 20 frames (want +10)"
+                                                 : "a gust: warned, its sound, then %+.1fpx in 20 frames (want -10)", moved);
+            check(what, against ? fabsf(moved - 10.0f) < 0.6f : still && sound && fabsf(moved + 10.0f) < 0.6f);
+        }
+
+        // A conveyor carries the runner standing on it, not in the air.
+        {
+            fresh(33);
+            for (auto &p : g._platforms._pool) p.belt = 1;
+            g._playerXOffset = -10.0f;
+            for (int f = 0; f < 10; ++f) step();
+            const float ground = g._playerXOffset + 10.0f;
+            InputState a{}; a.btnAPressed = true;
+            step(a);
+            const float off1 = g._playerXOffset;
+            for (int f = 0; f < 10; ++f) step();
+            const float air = g._playerXOffset - off1;
+            char what[96];
+            snprintf(what, sizeof(what), "a conveyor: %+.1fpx in 10 frames standing (want +5), %+.1f jumping", ground, air);
+            check(what, fabsf(ground - 5.0f) < 0.6f && fabsf(air) < 0.01f);
+        }
+
+        // Storm's widest pits, a headwind blowing through the whole jump:
+        // pushed (back on the ground, forward in the air), still clear.
+        for (int stage : { 28, 29 }) {
+            int window = 0, gap = 0;
+            for (int jf = 0; jf < 60; ++jf) {
+                fresh(stage);
+                float lo, hi;
+                g._platforms.pitGapRange(g._platforms.getScrollSpeed(), 3, lo, hi);
+                gap = (int)hi;
+                auto &pool = g._platforms._pool;
+                for (int i = 3; i < 6; ++i) pool[i].x += hi;
+                pool[3].firePitBefore = true; pool[3].firePitGapWidth = hi; pool[3].pitScored = false;
+                g._platforms._storm.forceGust(-1, 100000);
+                bool scored = false;
+                for (int f = 0; f < 300 && g._phase == G::PHASE_PLAYING && !scored; ++f) {
+                    InputState in{}; in.joyY = g._player.isOnGround() ? -1.0f : 1.0f;
+                    in.btnAPressed = f == ArcadeConfig::STORM_TELL + 20 + jf;
+                    step(in);
+                    scored = pool[3].pitScored;
+                }
+                for (int f = 0; f < 15 && g._phase == G::PHASE_PLAYING; ++f) { InputState in{}; in.joyY = -1.0f; step(in); }
+                window += scored && g._phase == G::PHASE_PLAYING;
+            }
+            char what[96];
+            snprintf(what, sizeof(what), "stage %d's widest pit (%dpx) in a headwind: %d frames to jump in", stage, gap, window);
+            check(what, window >= 2);
+        }
+
+        // The autopilot, as a player, through Storm and its boss. (Its weak
+        // spot is every loop's platforms-and-ship stage, 32 here: stage 5
+        // costs it about a life a run too.)
+        int through = 0, lost = 0;
+        int lostBy[40] = {};
+        for (int seed = 1; seed <= 20; ++seed) {
+            g = G(); g_rng = (uint32_t)seed; g.init(audio);
+            g.startNewGame(audio, 28, true);
+            g._lives = 99;
+            for (int f = 0; f < 12000 && g._stage <= 36; ++f) {
+                const G::GamePhase phase = g._phase;
+                const int st = g._stage;
+                InputState in = phase == G::PHASE_PLAYING ? g.demoPilot() : InputState{};
+                step(in);
+                if (phase == G::PHASE_PLAYING && g._phase == G::PHASE_DEATH) { ++lost; if (st < 40) ++lostBy[st]; }
+            }
+            through += g._stage == 37;
+        }
+        char what[128];
+        int n = snprintf(what, sizeof(what), "autopilot: %d/20 through, %d lives lost (", through, lost);
+        for (int st = 28; st <= 36; ++st) n += snprintf(what + n, sizeof(what) - n, "%s%d", st > 28 ? " " : "", lostBy[st]);
+        snprintf(what + n, sizeof(what) - n, ")");
+        check(what, through == 20 && lost <= 50);
+        printf("runnerstorm -> %s\n", pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 

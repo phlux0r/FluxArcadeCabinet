@@ -120,7 +120,7 @@ public:
 
     // True if a rock hit the runner this frame (the game plays the sound).
     // `hold`: no rock dropped now (a Ruins pillar ahead wants a jump, and a
-    // rock falling into it was too much at once).
+    // rock falling into it was too much at once; a Storm gust likewise).
     bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles, bool &playerHit,
                 bool hold = false) {
         bool rockHit = false;

@@ -8,8 +8,8 @@
 
 // =============================================================================
 // RUINS LAYER
-// What the Ruins (every third loop, docs/design/RunnerFlux.md) add on top
-// of PlatformManager's ground, all scrolling with it:
+// What the Ruins (the third loop of every four, docs/design/RunnerFlux.md)
+// add on top of PlatformManager's ground, all scrolling with it:
 //   - springs, each just before a fire pit: running over one throws the
 //     runner up onto a long high slab across the pit, with a chain of gems
 //     along it (collect the whole chain and it counts twice);

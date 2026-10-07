@@ -346,8 +346,8 @@ struct ArcadeConfig {
     static const int   BOULDER_SPAWN_MIN_MS     = 2200;
     static const int   BOULDER_SPAWN_MAX_MS     = 4200;
 
-    // Night (every second loop, docs/design/RunnerFlux.md): low obstacles
-    // to duck under. A beam hangs from the top of the screen to BEAM_CLEAR
+    // Night (the second loop of every four, docs/design/RunnerFlux.md): low
+    // obstacles to duck under. A beam hangs from the top of the screen to BEAM_CLEAR
     // above the ground; a flame jet's housing to JET_HOUSING (a standing
     // runner, 20 tall, passes under it unlit), its flame filling down to
     // BEAM_CLEAR when lit, timed like the spikes; a launcher on the ground
@@ -373,7 +373,8 @@ struct ArcadeConfig {
     static const int   RUNNER_JET_POINTS  = 10;
     static const int   RUNNER_DART_POINTS = 20;
 
-    // Ruins (every third loop, docs/design/RunnerFlux.md; RuinsLayer.h).
+    // Ruins (the third loop of every four, docs/design/RunnerFlux.md;
+    // RuinsLayer.h).
     // A spring throws the runner up at SPRING_VY (about 74px up) onto a
     // high slab ROUTE_RISE above the ground, with a gem every 12px (GEM
     // points each; a whole chain counts twice). A crumbling slab (no wider
@@ -386,6 +387,20 @@ struct ArcadeConfig {
     static const int   RUINS_SLAB_MAX_W      = 26;
     static const int   RUINS_PILLAR_RANGE    = 115;
     static const int   RUINS_PILLAR_SPACING  = 110;
+
+    // The worlds a loop each, in turn: the Outpost, Night, the Ruins, Storm.
+    static const int   RUNNER_WORLDS = 4;
+    // Storm (every fourth loop; StormLayer.h). A gust blows the runner
+    // forward or back GUST px a frame for BLOW frames, after TELL frames of
+    // warning streaks, GAP_MIN to GAP_MAX frames apart; conveyor ground
+    // moves it BELT px a frame while it stands there. The stick moves a
+    // pixel a frame, so it can always fight either.
+    static constexpr float STORM_GUST    = 0.5f;
+    static constexpr float STORM_BELT    = 0.5f;
+    static const int   STORM_TELL        = 30;
+    static const int   STORM_BLOW        = 36;
+    static const int   STORM_GAP_MIN     = 90;
+    static const int   STORM_GAP_MAX     = 180;
 
     // Highest a ground pickup can be placed above a platform surface and
     // still be reachable by a jump. True apex (V^2/2g) is ~42px with the

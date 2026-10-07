@@ -11,7 +11,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
 | Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
-| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies; then Night (duck under beams, jets and darts) and the Ruins (springs, gems, crumbling slabs, pillars), a loop each, round again |
+| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies; then Night (duck under beams, jets and darts), the Ruins (springs, gems, crumbling slabs, pillars) and Storm (gusts, conveyors), a loop each, round again |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
@@ -307,7 +307,7 @@ an autopilot, and back to the title. A starts a real game straight from a demo; 
 | Game | The demo |
 |---|---|
 | Brick | a random level 2-12, or one time in four the Warden; predicts where the ball comes down, tilts to send it at the lowest brick (or the core) in that brick's colour, absorbs or dodges bolts, detours for capsules and sparks, and smashes (mostly Perfect) |
-| Runner | a random stage 2-17 (the boss at 9, Night from 10; the Ruins aren't in it); the autopilot predicts on the game's own rules, jumps at the best moment, ducks under Night's obstacles and steps into the boss's gaps |
+| Runner | a random stage 2-17 (the boss at 9, Night from 10; the Ruins and Storm aren't in it); the autopilot predicts on the game's own rules, jumps at the best moment, ducks under Night's obstacles and steps into the boss's gaps |
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
@@ -415,8 +415,8 @@ scores 50, or 100 if you didn't die in it. A loop is 8 stages and then a
 boss stretch (stage 9, 18, 27, ...): a gunship flies in over plain, level
 ground and drops rocks for about 25 seconds (a spread with one gap in it
 after its bay flashes: step into the gap; rocks aimed where you are: keep
-moving; a rock that lands ahead and rolls at you: jump it; at Night, darts
-too: duck). The runner can range across the left half of the screen
+moving; a rock that lands ahead and rolls at you: jump it; and each
+world's own: at Night darts, duck; in the Ruins cracks; in Storm gusts). The runner can range across the left half of the screen
 while it lasts, and walks back afterwards. Survive it and the loop's done:
 250 more points and an extra life (up to 5); lose a life in it and it
 starts again. The scroll speeds up a little each stage (0.08 px a frame)
@@ -438,9 +438,9 @@ from stage 3, and from the second loop also just before fire pits; never
 at Night, in a boss stretch, or the stage before Night's loop.
 
 The worlds come a loop each, round again faster: the Outpost (stages 1-9),
-Night (10-18), the Ruins (19-27), the Outpost again (28-36), and so on
-(docs/design/RunnerFlux.md; Storm will be the fourth). Night (stages 10-17,
-then its boss at 18):
+Night (10-18), the Ruins (19-27), Storm (28-36), the Outpost again (37-45),
+and so on (docs/design/RunnerFlux.md). Night (stages 10-17, then its boss
+at 18):
 dark, a moon, and the ground and gantries past the runner's lantern
 (about 100px ahead) drawn dimmer, flames and lamps still bright. **B held
 on the ground ducks** (in the air it does nothing; A from a duck jumps;
@@ -469,6 +469,21 @@ broken columns on the skyline.
   while a pillar's ahead.
 - **The boss** (27) adds a pattern: two rocks land ahead and crack the
   ground; the cracks open into holes coming at you, to jump.
+
+Storm (stages 28-35, then its boss at 36): weathered green stone under
+grey cloud, rain, and now and then lightning.
+- **Gusts:** in the first five stages (28-32) and the eighth (35), every
+  3-6 seconds a gust: first a second of streaks blowing its way and
+  arrows under the HUD (and a sound), then it blows you forward or back,
+  in the air too, for about a second, at half the stick's speed: push
+  against it to hold your place. The fire pits are sized for a jump made
+  into one. The flying ship holds its rocks while a gust is coming or
+  blowing.
+- **Conveyors:** in the later ground stages (33-35), half the blocks are
+  belts (yellow chevrons running the way they go) carrying you forward or
+  back while you stand on them, at half the stick's speed too.
+- **The boss** (36) adds a pattern: a gust, and three aimed rocks while
+  it blows.
 
 Distance scores a point every 3 frames (about 10 a second). Getting past
 a fire pit scores 10, a spike trap 10 if it rose while you
@@ -617,7 +632,8 @@ FluxArcadeCabinet/
         │                       # renderer, player, collectibles, sprites + assets/
         ├── PlatformFlux/       # PlatformFluxGame.h + platform/boulder/enemy/
         │                       # power-up managers, PlayerRunner.h, RunnerBackdrop.h
-        │                       # (the parallax layers) + assets/
+        │                       # (the parallax layers), RunnerBoss.h, RuinsLayer.h,
+        │                       # StormLayer.h (the worlds' extras) + assets/
         ├── StarFlux/           # On-rails space shooter, rendered via Jet:
         │   ├── StarFluxGame.h      # Class declaration
         │   ├── StarFluxConfig.h    # All tuning: camera, ship box, weapons, enemies, boss
@@ -869,6 +885,7 @@ the same way.
 | `runner_chain.wav` | a whole chain of gems taken | ~0.4s | four rising notes |
 | `runner_crumble.wav` | a crumbling slab starts to go | ~0.2s | a low tone |
 | `runner_topple.wav` | a pillar topples | ~0.4s | a low tone |
+| `runner_gust.wav` | a gust coming (as its warning starts) | ~1s | a low tone |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

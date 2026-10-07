@@ -20,19 +20,19 @@ Night first, then the boss.
 | 1 | 1-8, boss 9 | Outpost (today's game) | pits, platforms, spikes, boulders, the ship |
 | 2 | 10-17, boss 18 | Night | B ducks: low beams, flame jets, darts |
 | 3 | 19-26, boss 27 | Ruins | springs to a high slab with gems, crumbling slabs, falling pillars |
-| 4 | (planned) | Storm | wind gusts and conveyor ground pushing the runner |
-| then | 28- | the worlds again, faster | |
+| 4 | 28-35, boss 36 | Storm | wind gusts and conveyor ground pushing the runner |
+| then | 37- | the worlds again, faster | |
 
-(A loop was 8 stages; the boss made it 9, so the numbers are as built.
-Until Storm exists the three come round in turn: Outpost, Night, Ruins.)
+(A loop was 8 stages; the boss made it 9, so the numbers are as built.)
 
 Each world keeps the old hazards, mixed with its own, so it's harder,
 not just different. Each loop ends with the boss stretch (section 4) and
 its extra life. Each world has its own backdrop colours and its
 name in the stage banner ("NIGHT 3", say) and on the stage select.
 
-Order of work: Night, then the boss, then Ruins, then Storm. Each phase
-merges on its own and is played on the board before the next starts.
+Order of work: Night, then the boss, then Ruins, then Storm (all four
+built; the owner chose to build Storm before playing the Ruins much, and
+polish all four from play afterwards).
 
 ---
 
@@ -171,12 +171,50 @@ with a chain bonus, and the boss cracking the ground.
   and their boss, about one life lost a run (mostly the ship's rocks in
   26, as in the other worlds' last stages).
 
-## 3b. Storm (loop 4), in outline
+## 3b. Storm (loop 4, built)
 
-- **Storm:** gusts (telegraphed by blown particles and a sound) push the
-  runner's position forward or back for a second; conveyor ground does
-  the same while you stand on it. The stick fights them. Rain streaks in
-  the backdrop.
+`StormLayer.h` (the gusts, in frames) and conveyors on `PlatformManager`'s
+ground blocks; numbers in ArcadeConfig's STORM_ block. Both push the
+runner's offset at half the stick's speed (0.5px a frame), so the stick
+always wins, slowly.
+
+| Stage | Terrain | Storm's addition |
+|---|---|---|
+| 28 | ground, pits (2) | gusts |
+| 29 | ground, pits (3), stairs | gusts |
+| 30 | floating platforms | gusts |
+| 31 | moving platforms | gusts |
+| 32 | platforms + the ship | gusts |
+| 33 | stairs, spikes | conveyors |
+| 34 | boulders | conveyors |
+| 35 | all + ships | gusts and conveyors |
+| 36 | the boss | its gust |
+
+- **Gusts:** 90-180 frames apart; 30 frames of warning (sparse streaks
+  blowing its way, three flashing arrows under the HUD, `runner_gust.wav`
+  or a low tone), then 36 frames blowing, forward or back at random, in
+  the air too. Each is chosen as the last ends, and only if the whole of
+  it fits before the run of gust stages ends, so none is cut off or
+  carried into 33, 34 or the boss; the autopilot knows the wind over its
+  whole lookahead. In the air with a gust behind it, the autopilot lets
+  the gust carry it (pushing too overshot slabs).
+- **Pits** in Storm are sized for a pushed jump made into a headwind (the
+  push counted at half): the harness's widest pit in a headwind blowing
+  throughout has 20 or more frames to jump in.
+- **Conveyors:** half the ground blocks in 33-35, never three plain in a
+  row, each way at random: a dark belt with yellow chevrons running its
+  way. They carry the runner only while it stands on them.
+- **The ship holds its rocks** while a gust is warned of or blowing (as
+  for the Ruins' logs). The harness bot lost about a life a run in 32 and
+  35 before this, mostly to the ship's rocks at loop 4's speed; with it,
+  fewer than without Storm's mechanics at all. (Every loop's platforms
+  and ship stage costs the bot about a life a run; stage 5 too.)
+- **The look:** grey-green cloud, no stars, rain slanting down and back,
+  the sky lit for a few frames every 7s; weathered green stone, yellow
+  spikes.
+- **The boss's GUST** pattern: a gust (90 frames) and three rocks aimed
+  as TRACK's, dropped 20 frames apart from 10 frames in, landing while it
+  blows.
 
 ---
 
@@ -215,15 +253,15 @@ life. A life lost restarts it.
   frames, too quick to dodge), and shatter on the ground. About 5
   patterns fit in a stretch.
 - **Fair**: the harness bot (as a player) gets through 20 runs each of
-  the bosses at 9, 18 and 27 with no lives lost, meeting about 5 patterns a
-  run. Each rule above was found by it dying without it.
+  the bosses at 9, 18, 27 and 36 with no lives lost, meeting about 5
+  patterns a run. Each rule above was found by it dying without it.
 - The look: a long hull (magenta; steel at Night) with a canopy, engine
   glows, portholes, and the red bay that flashes white before a spread.
 - Sounds (optional): `runner_boss.wav` as it arrives (three low beeps
   without), `runner_drop.wav` as it drops or fires (a low tone).
 
-Each world's boss adds its world's twist as the worlds come (Night's:
-darts). Ruins: rocks crumble the ground; Storm: gusts while it drops.
+Each world's boss adds its world's twist (a fourth pattern): Night's
+darts, the Ruins' cracks, Storm's gust.
 
 ---
 

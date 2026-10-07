@@ -265,14 +265,15 @@ being freed on exit to the launcher).
   with the runner's width of its own block either side, none on a pit's
   block, pits still exact) and the lantern (`runnerdark`: the ground at
   full, half and a quarter brightness past it, a far flame bright, the
-  Outpost even), and the boss (`runnerboss`: stages 9, 18, 27 are bosses;
+  Outpost even), and the boss (`runnerboss`: stages 9, 18, 27, 36 are bosses;
   its ground level with nothing on it over 100 runs; it flies in at the
   stage's start and again after a lost life; no ship, boulder, star or
   diamond comes once it's in; the runner reaches offset 60 and walks back
   a pixel a frame after; clearing it gives the stage bonus, 250 and a
-  life; the autopilot gets through 20 runs each of 9, 18 and 27 with no
+  life; the autopilot gets through 20 runs each of 9, 18, 27 and 36 with no
   lives lost, at least 4 patterns a run, every pattern met, each line's gap
-  in reach; 27, the Ruins' boss, meets its cracks), the Ruins
+  in reach; each world's boss meets its own pattern and no other's: darts
+  at 18, cracks at 27, the gust at 36), the Ruins
   (`runnerruins`: the worlds in turn; 100 runs from stage 19: a spring in
   19 and 20, each just before a pit, crumbling slabs in 21-23, pillars in
   24-26, none of them anywhere else, pits still exact; a crumbling slab
@@ -280,9 +281,20 @@ being freed on exit to the launcher).
   every gem taken, the chain doubled; a pillar topples and its log kills
   run into; jumped, 5 or more frames to jump in at stage 24's speed and at
   26's; a crack's hole kills run into and is jumpable; the autopilot
-  through all 20 runs of the Ruins and their boss, 40 lives lost at most).
-  `runnerplay` has to get through the Ruins and their boss (to stage 28) and
-  prints the lives lost by stage; `runnerpits` ducks at Night;
+  through all 20 runs of the Ruins and their boss, 40 lives lost at most),
+  Storm (`runnerstorm`: the worlds in turn; 100 runs from stage 28: gusts
+  in every run of 28-32 and 35, conveyors in 33-35, none anywhere else and
+  no gust blowing in a stage without them, pits still exact; a forced
+  gust warned of (its sound, no push) and then moving the runner 10px in
+  20 frames, the stick against it still making 10px; a conveyor moving
+  it standing, not jumping; stages 28's and 29's widest pits cleared by a
+  pushed jump into a headwind blowing throughout, 2 or more frames to
+  jump in; the autopilot through all 20 runs of Storm and its boss, 50
+  lives lost at most, its weak spot being the platforms-and-ship stage as
+  in every loop).
+  `runnerplay` has to get through all four worlds and their bosses (to stage 37) and
+  prints the lives lost by stage; `runnerpits` ducks at Night, and tries
+stage 28 (Storm's gusts about) and 37 too;
   `runnerdiamond` checks the diamond stays away from Night;
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its

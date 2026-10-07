@@ -6,6 +6,7 @@
 #include "../../cabinet/ArcadeConfig.h"
 #include "PlayerRunner.h"
 #include "RuinsLayer.h"
+#include "StormLayer.h"
 
 // =============================================================================
 // PLATFORM MANAGER
@@ -37,7 +38,7 @@
 class PlatformManager {
 private:
     enum SpikePhase { SPIKE_SAFE, SPIKE_WARN, SPIKE_DANGER };
-    // Night's obstacles (every second loop): see ArcadeConfig's NIGHT_ block.
+    // Night's obstacles (the second loop of every four): see ArcadeConfig's NIGHT_ block.
     enum NightKind { NIGHT_NONE, NIGHT_BEAM, NIGHT_JET, NIGHT_LAUNCHER };
 
     struct Platform {
@@ -72,6 +73,9 @@ private:
         bool       crumbly, falling;
         long       crumbleAt;
         float      fallVy;
+        // Storm: conveyor ground, moving the runner standing on it forward
+        // (1) or back (-1); 0 for plain ground.
+        int8_t     belt;
     };
 
     RuinsLayer _ruins;
@@ -82,6 +86,8 @@ private:
     int   _springStage = 0;       // the Ruins pit stage that's had its spring
     float _sincePillar = 9999.0f; // px built since the last pillar
     int   _slabsSinceCrumbly = 0;  // still slabs built since the last crumbling one
+    StormLayer _storm;
+    int   _sinceBelt = 0;         // plain blocks built since the last conveyor
 
     // Darts in flight: screen space, flying left DART_SPEED faster than
     // the scroll, at a fixed height.
@@ -117,19 +123,22 @@ private:
     // Ground/spike palettes rotate each loop so a repeat trip through the
     // tiers reads as visually distinct, not just "the same run again."
     // Index 0 matches the original colors.
-    // Night and the Ruins have their own: slate, sandstone. The Outpost's
-    // loops (every third) rotate through the rest.
+    // Night, the Ruins and Storm have their own: slate, sandstone,
+    // weathered green. The Outpost's loops (every fourth) rotate through
+    // the rest.
     uint16_t groundColor() const {
         static const uint16_t palette[3] = {
             ArcadeConfig::COLOR_GREY, ArcadeConfig::COLOR_AMBER, ArcadeConfig::COLOR_MAGENTA
         };
-        return isNight(_loop) ? NIGHT_STONE : isRuins(_loop) ? SANDSTONE : palette[(_loop / 3) % 3];
+        return isNight(_loop) ? NIGHT_STONE : isRuins(_loop) ? SANDSTONE : isStorm(_loop) ? STORM_STONE
+             : palette[(_loop / WORLDS) % 3];
     }
     uint16_t spikeDangerColor() const {
         static const uint16_t palette[3] = {
             ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_YELLOW, ArcadeConfig::COLOR_ORANGE
         };
-        return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : isRuins(_loop) ? ArcadeConfig::COLOR_WHITE : palette[(_loop / 3) % 3];
+        return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : isRuins(_loop) ? ArcadeConfig::COLOR_WHITE
+             : isStorm(_loop) ? ArcadeConfig::COLOR_YELLOW : palette[(_loop / WORLDS) % 3];
     }
 
     // A colour at a lantern's reach: full up to litTo, half for 30px past
@@ -247,7 +256,8 @@ private:
     // RUNNER_PIT_* block): what a plain jump clears with a comfortable
     // window on the first loop; wider each loop after, up to what a jump
     // pushed forward clears (the stick adds RUNNER_X_MOVE_SPEED a frame
-    // in the air, from as far back as the runner goes).
+    // in the air, from as far back as the runner goes). In Storm a gust
+    // may blow against the jump, taking half the push.
     void pitGapRange(float speed, int loop, float &lo, float &hi) const {
         const int air = jumpFramesClear();
         const float minGap = (float)ArcadeConfig::RUNNER_PIT_MIN_GAP;
@@ -255,7 +265,8 @@ private:
         lo = minGap;
         if (loop > 0) {
             const int pushFrames = air - ArcadeConfig::RUNNER_PIT_HARD_WINDOW;
-            const float push = min((float)pushFrames * ArcadeConfig::RUNNER_X_MOVE_SPEED,
+            const float stick = ArcadeConfig::RUNNER_X_MOVE_SPEED - (isStorm(loop) ? ArcadeConfig::STORM_GUST : 0.0f);
+            const float push = min((float)pushFrames * stick,
                                    (float)(ArcadeConfig::RUNNER_X_MAX_OFFSET - ArcadeConfig::RUNNER_X_MIN_OFFSET));
             const float pushed = speed * (float)pushFrames + push;
             const float widen = (float)(ArcadeConfig::RUNNER_PIT_WIDEN_PX * loop);
@@ -400,6 +411,13 @@ private:
                            _sincePillar >= ArcadeConfig::NIGHT_CLEAR &&
                            (random(0, 4) == 0);
         if (wantSpike) _distanceSinceLastSpike = 0.0f;
+        // Storm's conveyors (stages 6-8 of a loop): half the blocks, never
+        // three plain in a row, each way at random.
+        int8_t belt = 0;
+        if (isStorm(passLoop) && !boss && passTier >= ArcadeConfig::RUNNER_GROUND2_TIER_START &&
+            (_sinceBelt >= 2 || random(0, 2) == 0))
+            belt = random(0, 2) ? 1 : -1;
+        _sinceBelt = belt ? 0 : _sinceBelt + 1;
         if (wantPillar) {
             width = max(width, RuinsLayer::PILLAR_LEN + 16);
             _sincePillar = 0.0f;
@@ -453,6 +471,7 @@ private:
         _pool[index].baseY          = (float)newY;
         _pool[index].y              = newY;
         _pool[index].bobPhase       = 0.0f;
+        _pool[index].belt           = belt;
 
         if (wantPillar) _ruins.addPillar(startX + width - 6.0f, newY);
 
@@ -487,6 +506,7 @@ private:
 
     void spawnPlatform(int index, float startX) {
         _pool[index].night         = NIGHT_NONE;
+        _pool[index].belt          = 0;
         _pool[index].crumbly = _pool[index].falling = false;
         _pool[index].crumbleAt     = -1;
         _pool[index].fallVy        = 0.0f;
@@ -574,6 +594,7 @@ public:
     static const uint16_t NIGHT_STONE = 0x3A90;   // rgb(60, 80, 130)
     static const uint16_t STEEL       = 0x4A8C;   // rgb(72, 80, 100): Night's gantries
     static const uint16_t STEEL_LIGHT = 0x9D17;   // rgb(150, 160, 184)
+    static const uint16_t STORM_STONE = 0x538D;   // rgb(80, 112, 104): Storm's weathered stone
 
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
@@ -664,6 +685,9 @@ public:
         _springStage = 0;
         _sincePillar = 9999.0f;
         _slabsSinceCrumbly = 0;
+        _storm.reset();
+        _sinceBelt = 0;
+        for (int i = 0; i < POOL_SIZE; i++) _pool[i].belt = 0;
         for (int i = 0; i < POOL_SIZE; i++) { _pool[i].crumbly = _pool[i].falling = false; _pool[i].crumbleAt = -1; }
 
         // First platform is always a safe, wide starting ledge under the player.
@@ -791,6 +815,7 @@ public:
             if (_darts[i].x < -10) _darts[i].active = false;
         }
         _ruinsEvents |= _ruins.update(_scrollSpeed, _runnerRight);
+        _storm.update(gustFramesLeft());
 
         // Second pass: recycle anything that has scrolled fully off-screen,
         // always building off the confirmed global rightmost edge.
@@ -992,14 +1017,46 @@ public:
     // ---- Night ------------------------------------------------------------
 
     // The worlds come round in turn, a loop each (docs/design/RunnerFlux.md):
-    // the Outpost, Night, the Ruins (Storm will make it four).
-    static const int WORLDS = 3;
+    // the Outpost, Night, the Ruins, Storm.
+    static const int WORLDS = ArcadeConfig::RUNNER_WORLDS;
     static int  worldOf(int loop) { return loop % WORLDS; }
     static bool isNight(int loop) { return worldOf(loop) == 1; }
     static bool isRuins(int loop) { return worldOf(loop) == 2; }
+    static bool isStorm(int loop) { return worldOf(loop) == 3; }
     static const char* worldName(int loop) {
-        static const char* const names[WORLDS] = { "OUTPOST", "NIGHT", "RUINS" };
+        static const char* const names[WORLDS] = { "OUTPOST", "NIGHT", "RUINS", "STORM" };
         return names[worldOf(loop)];
+    }
+
+    // ---- Storm ------------------------------------------------------------
+
+    // Storm's gusts blow in its first five stages and its eighth (not over
+    // the conveyors of the sixth and seventh, nor in the boss's, which
+    // calls up its own).
+    static bool gustTier(int tier) { return tier <= 4 || tier == 7; }
+
+    // Frames from now that gusts may still blow: to the end of the run of
+    // gust stages the runner's in (0 outside one).
+    long gustFramesLeft() const {
+        if (!isStorm(_loop) || _introPlatformsLeft > 0 || !gustTier(_tier)) return 0;
+        int s = stageNumber();   // stage s + 1 is the one after stage s
+        while (gustTier(s % TIERS_PER_LOOP)) ++s;
+        return (long)stageStartDistance(s + 1) - (long)_distance;
+    }
+
+    StormLayer &storm() { return _storm; }
+    const StormLayer &storm() const { return _storm; }
+
+    // The push of a conveyor under the runner's middle, its feet on it
+    // (px a frame, + forward); 0 off one.
+    float beltUnder(float px, float pr, float bottom) const {
+        const float mid = (px + pr) * 0.5f;
+        for (int i = 0; i < POOL_SIZE; i++) {
+            const Platform &p = _pool[i];
+            if (!p.active || !p.belt || mid < p.x || mid >= p.x + p.width) continue;
+            if (fabsf(bottom - (float)p.y) <= 1.0f) return (float)p.belt * ArcadeConfig::STORM_BELT;
+        }
+        return 0.0f;
     }
 
     RuinsLayer &ruins() { return _ruins; }
@@ -1199,6 +1256,7 @@ public:
                 }
             }
 
+            if (_pool[i].belt) renderBelt(canvas, x0, _pool[i].y, _pool[i].width, _pool[i].belt);
             if (_pool[i].night != NIGHT_NONE) renderNight(canvas, _pool[i], litTo);
             if (_pool[i].crumbly) {   // its cracks
                 const int cx = x0 + _pool[i].width / 3, cy = _pool[i].y;
@@ -1207,12 +1265,27 @@ public:
             }
         }
         _ruins.render(canvas, SANDSTONE, SANDSTONE_DARK);
+        _storm.render(canvas);
         for (int i = 0; i < DARTS; i++) {
             if (!_darts[i].active) continue;
             const int dx = (int)_darts[i].x, dy = _darts[i].y;
             canvas.drawFastHLine(dx + 1, dy, 5, ArcadeConfig::COLOR_WHITE);
             canvas.drawPixel(dx, dy, ArcadeConfig::COLOR_RED);              // the point
             canvas.drawFastVLine(dx + 6, dy - 1, 3, ArcadeConfig::COLOR_RED); // the flights
+        }
+    }
+
+    // A conveyor: a dark belt along the block's top, its chevrons pointing
+    // and running the way it moves the runner.
+    void renderBelt(GFXcanvas16 &canvas, int x0, int y, int w, int dir) {
+        canvas.fillRect(x0, y, w, 3, 0x2104);
+        const int phase = (int)((float)_frames * ArcadeConfig::STORM_BELT) & 7;
+        for (int cx = x0 - 8 + (dir > 0 ? phase : 7 - phase); cx < x0 + w - 1; cx += 8) {
+            if (cx < x0) continue;
+            const int a = dir > 0 ? 0 : 1;   // the chevron's back column
+            canvas.drawPixel(cx + a, y, ArcadeConfig::COLOR_YELLOW);
+            canvas.drawPixel(cx + 1 - a, y + 1, ArcadeConfig::COLOR_YELLOW);
+            canvas.drawPixel(cx + a, y + 2, ArcadeConfig::COLOR_YELLOW);
         }
     }
 
