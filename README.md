@@ -414,12 +414,16 @@ were on (score kept) with 2s of blinking protection. Clearing a stage
 scores 50, or 100 if you didn't die in it, and finishing a full loop of 8
 stages gives an extra life (up to 5). Jumps are forgiving: A pressed just
 before landing still jumps, and so does one just after running off an edge.
-Fire pits burn when the runner's middle is over them. On the first loop
+Fire pits come in each loop's first two stages, 2 in the first and 3 in
+the second, spread through the stage, and burn when the runner's middle
+is over them. On the first loop
 (stages 1 and 2) they're short enough for a plain jump; each loop after,
 they're wider, until the widest need the stick pushed forward through the
 jump (best from as far back as you can stand). Spike traps show dim tips
 while retracted, rise (a thin yellow nub) and then stand up for a moment;
-only the standing spikes hurt. The star makes you invincible for 6s; the
+only the standing spikes hurt. The star (from stage 6) makes you
+invincible for 6s; it comes 30-45s after the last one was taken or went
+by, never while you're invincible already. The
 diamond gives 10s of flight (the stick moves you up and down, never into
 the ground; the runner flashes red as it runs out). The diamond turns up
 from stage 3, and from the second loop also just before fire pits.

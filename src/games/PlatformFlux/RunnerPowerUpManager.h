@@ -10,7 +10,9 @@
 
 // =============================================================================
 // RUNNER POWER-UP MANAGER
-// A single star pickup that grants brief invincibility. Renders a small
+// A single star pickup that grants brief invincibility, one every
+// RUNNER_STAR_GAP_MIN..MAX_MS at most and never while the runner's already
+// invincible. Renders a small
 // halo each frame via ParticleManager::spawnExplosion at low count/lifespan
 // so it reads as a continuous shimmer rather than a one-shot burst.
 // =============================================================================
@@ -19,19 +21,28 @@ private:
     float _x, _y;
     bool  _active;
     unsigned long _nextHaloTick;
+    unsigned long _nextSpawnAt;   // the earliest the next star may come
+
+    // The wait from the last star picked up or gone by (or a life's start).
+    void startWait() {
+        _nextSpawnAt = millis() + (unsigned long)random((long)ArcadeConfig::RUNNER_STAR_GAP_MIN_MS,
+                                                        (long)ArcadeConfig::RUNNER_STAR_GAP_MAX_MS + 1);
+    }
 
 public:
-    RunnerPowerUpManager() : _x(0), _y(0), _active(false), _nextHaloTick(0) {}
+    RunnerPowerUpManager() : _x(0), _y(0), _active(false), _nextHaloTick(0), _nextSpawnAt(0) {}
 
-    void reset() { _active = false; }
+    void reset() { _active = false; startWait(); }
 
     // Gated to start once contact hazards actually exist — spikes/boulders
     // arrive well before the flying enemy now, so this keys off the second
     // ground-hazard phase rather than the (now much later) enemy tier.
-    void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms) {
-        if (_active) return;
+    // `shielded`: the runner's invincible already, so no star comes (the
+    // wait, once over, holds until the shield's gone).
+    void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms, bool shielded) {
+        if (_active || shielded || millis() < _nextSpawnAt) return;
         if (tier < ArcadeConfig::RUNNER_GROUND2_TIER_START) return;
-        if (random(0, 400) == 0) {
+        {
             _x = rightEdgeX + random(20, 60);
             // Clear whatever platform (if any) ends up under this X so the
             // pickup never spawns inside a slab — floats above its surface.
@@ -53,7 +64,7 @@ public:
         if (!_active) return false;
 
         _x -= scrollSpeed;
-        if (_x < -10) { _active = false; return false; }
+        if (_x < -10) { _active = false; startWait(); return false; }
 
         if (millis() >= _nextHaloTick) {
             particles.spawnExplosion(_x, _y, ArcadeConfig::COLOR_YELLOW, 3, 250);
@@ -67,6 +78,7 @@ public:
             player.activateInvincibility(ArcadeConfig::RUNNER_INVINCIBLE_MS);
             uiNeedsUpdate = true;
             _active = false;
+            startWait();
             return true;
         }
         return false;

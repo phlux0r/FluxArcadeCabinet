@@ -748,7 +748,7 @@ public:
             _player.updateAnimation();
             _player.updateInvincibility();
 
-            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms);
+            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms, _player.isInvincible());
             if (_powerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate)) sfx(SFX_STAR);
 
             float firePitX;

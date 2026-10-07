@@ -92,6 +92,16 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
     `runnername`.
   - Stage select (`runnerpick`), as in the other games: stages 1-32,
     the stick by one or by a loop, over a preview of the stage's terrain.
+  - Owner's playtest: stage 1 sometimes had no fire pits (29% of runs;
+    stage 9 87%: pits needed the stairs back at ground level), and the
+    star came every ~20s, even while invincible. Pits are now planned by
+    the stage the runner will reach them in (`arrivalAt`, piecewise over
+    a stage boundary's speed change): 2 in a loop's first stage, 3 in its
+    second, one due in the middle of each equal share, at any stair
+    height (both sides level; the flames' height follows). 2000 runs over
+    four loops all exact (`runnerpitcount`). The star waits 30-45s from
+    the last one taken or gone (or a life's start), and not while the
+    runner is invincible (`runnerstars`).
   Still open from the review, in the proposed order:
   the terrain vanishing during the 0.8s death; the score ticking by real
   time (a function `static`) not distance; particle trails; per-frame

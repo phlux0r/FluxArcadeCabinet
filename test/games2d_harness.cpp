@@ -697,6 +697,115 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnerpitcount")) {
+        // Fire pits per stage, counted as the runner passes them: every
+        // run gets the same number in each fire-pit stage (2 in a loop's
+        // first stage, 3 in its second; stage 1 often had none), and none
+        // two in a row closer than a stage's share apart.
+        const int want[4] = { ArcadeConfig::RUNNER_PITS_FIRST, ArcadeConfig::RUNNER_PITS_SECOND,
+                              ArcadeConfig::RUNNER_PITS_FIRST, ArcadeConfig::RUNNER_PITS_SECOND };
+        const int stages[4] = { 1, 2, 9, 10 };
+        int off[4] = {}, lo[4] = { 99, 99, 99, 99 }, hi[4] = {}, others = 0, close = 0;
+        for (int seed = 1; seed <= 200; ++seed) {
+            g_rng = (uint32_t)seed;
+            PlatformManager pm;
+            pm.initGame(1);
+            int cnt[24] = {};
+            long lastAt = -100000;
+            for (long f = 0; f < (long)pm.cycleLength() * 2 + 100; ++f) {
+                pm.update(); pm.advanceDifficulty();
+                for (auto &p : pm._pool) {
+                    if (!p.active || !p.firePitBefore || p.pitScored || p.x >= ArcadeConfig::RUNNER_BASE_X) continue;
+                    p.pitScored = true;
+                    const int s = pm.stageNumber();
+                    if (s < 24) ++cnt[s];
+                    close += f - lastAt < 60;
+                    lastAt = f;
+                }
+            }
+            for (int k = 0; k < 4; ++k) {
+                const int c = cnt[stages[k]];
+                off[k] += c != want[k];
+                lo[k] = min(lo[k], c); hi[k] = max(hi[k], c);
+            }
+            for (int s = 1; s < 18; ++s)
+                if (s != 1 && s != 2 && s != 9 && s != 10) others += cnt[s];
+        }
+        bool pass = others == 0 && close == 0;
+        for (int k = 0; k < 4; ++k) {
+            printf("runnerpitcount stage %d: %d-%d pits (want %d), %d of 200 runs off\n",
+                   stages[k], lo[k], hi[k], want[k], off[k]);
+            pass &= off[k] == 0;
+        }
+        printf("runnerpitcount: %d pits in other stages, %d closer than 60 frames -> %s\n",
+               others, close, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerstars")) {
+        // The star: one every 30-45s at most, the wait starting once the
+        // last one's been picked up or gone by; never a new one while the
+        // runner is invincible. Real games from stage 6, the autopilot
+        // playing, ~30fps.
+        using G = PlatformFluxGame;
+        const unsigned long step33 = 33;
+        int stars = 0, whileShield = 0, early = 0;
+        unsigned long shortest = ~0UL;
+        for (int seed = 1; seed <= 10; ++seed) {
+            g_rng = (uint32_t)seed;
+            static G g;
+            g = G();
+            AudioEngine audio;
+            g.init(audio);
+            g.startNewGame(audio, 6, true);
+            // The wait starts when a star's picked up or gone by, and with
+            // each life (a stage started again).
+            unsigned long waitFrom = millis();
+            for (int f = 0; f < 6000 && g._phase != G::PHASE_GAMEOVER && g._phase != G::PHASE_NAME; ++f) {
+                const bool was = g._powerUp._active;
+                const G::GamePhase phase = g._phase;
+                if (g._phase == G::PHASE_PLAYING && g._stage > 8) { g.startStage(6); waitFrom = millis(); }   // stay in the star's stages
+                InputState in = g._phase == G::PHASE_PLAYING ? g.demoPilot() : InputState{};
+                const bool shielded = g._player.isInvincible();
+                g.update(canvas, in, audio); g_fakeMillis += step33;
+                if (phase == G::PHASE_DEATH && g._phase == G::PHASE_PLAYING) waitFrom = millis();
+                if (!was && g._powerUp._active) {
+                    ++stars;
+                    whileShield += shielded;
+                    const unsigned long gap = millis() - waitFrom;
+                    shortest = min(shortest, gap);
+                    early += gap < (unsigned long)ArcadeConfig::RUNNER_STAR_GAP_MIN_MS;
+                }
+                if (was && !g._powerUp._active) waitFrom = millis();
+            }
+        }
+        // Shielded with the wait over: nothing; the shield gone: the star.
+        static G h;
+        h = G();
+        AudioEngine audio;
+        h.init(audio);
+        h.startNewGame(audio, 6, true);
+        h._powerUp._nextSpawnAt = 0;
+        h._player.activateInvincibility(60000);
+        int during = 0;
+        for (int f = 0; f < 600; ++f) {
+            h._player._invincibleEndTime = millis() + 60000;
+            InputState in = h.demoPilot(); h.update(canvas, in, audio); g_fakeMillis += step33;
+            during += h._powerUp._active;
+            h._powerUp._active = false;
+        }
+        h._player._invincible = false;
+        bool after = false;
+        for (int f = 0; f < 5 && !after; ++f) {
+            InputState in = h.demoPilot(); h.update(canvas, in, audio); g_fakeMillis += step33;
+            after = h._powerUp._active;
+        }
+        bool pass = stars > 0 && whileShield == 0 && early == 0 && during == 0 && after;
+        printf("runnerstars: %d stars, %d while invincible, shortest wait %lus (%d under 30s); shielded %d frames with one, after %d -> %s\n",
+               stars, whileShield, shortest == ~0UL ? 0 : shortest / 1000, early, during, (int)after, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;

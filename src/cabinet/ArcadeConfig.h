@@ -224,6 +224,11 @@ struct ArcadeConfig {
     static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
     static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
     static const int   RUNNER_INVINCIBLE_MS       = 6000;
+    // The star (invincibility) comes along STAR_GAP_MIN..MAX ms after the
+    // last one was picked up or went by, never while the runner's already
+    // invincible (see RunnerPowerUpManager).
+    static const unsigned long RUNNER_STAR_GAP_MIN_MS = 30000;
+    static const unsigned long RUNNER_STAR_GAP_MAX_MS = 45000;
     // Lives and stages: each tier of each loop is a numbered stage, and a
     // death restarts the stage you were on (score kept). Clearing a stage
     // scores STAGE_BONUS, doubled if you didn't die in it; finishing a whole
@@ -282,6 +287,11 @@ struct ArcadeConfig {
     static const int   RUNNER_PIT_EASY_WINDOW  = 6;
     static const int   RUNNER_PIT_HARD_WINDOW  = 6;
     static const int   RUNNER_PIT_WIDEN_PX     = 8;
+    // Fire pits per stage, the same every run: a loop's first stage has
+    // FIRST, its second SECOND, spread evenly through it (see
+    // PlatformManager::spawnGroundSegment).
+    static const int   RUNNER_PITS_FIRST       = 2;
+    static const int   RUNNER_PITS_SECOND      = 3;
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 

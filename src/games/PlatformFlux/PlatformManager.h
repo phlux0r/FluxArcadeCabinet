@@ -63,7 +63,11 @@ private:
     unsigned long _distance;
     int      _introPlatformsLeft;
     int      _lastGroundY;   // running elevation for stepped ground generation
-    int      _firePitsPlaced; // this loop's count so far, during the tier 0/1 window
+    int      _pitStage;          // the stage _pitsDone counts for
+    int      _pitsDone;          // fire pits placed in it so far
+    unsigned long _lastPitAt;    // distance at which the runner reaches the last pit
+    static const unsigned long PIT_SPACING = 75;      // frames, at least, from one pit to the next
+    static const unsigned long PIT_END_MARGIN = 20;   // and from a pit to its stage's end
     float    _distanceSinceLastSpike; // px generated since the last spike, enforces min spacing
     int      _loop;              // how many full tier 1-7 cycles have completed
     unsigned long _cycleDistance; // _distance wrapped to the current loop
@@ -163,6 +167,19 @@ private:
         }
     }
 
+    // The distance (advanceDifficulty's frames) at which the runner will
+    // reach screen x `x`: at today's speed to the end of this stage, then
+    // the next stage's starting speed (the ground's built less than a
+    // stage ahead, so one boundary at most).
+    unsigned long arrivalAt(float x) const {
+        const float dx = max(0.0f, x - (float)ArcadeConfig::RUNNER_BASE_X);
+        const int stage = stageNumber();
+        const unsigned long end = stageStartDistance(stage + 1);
+        const float toEnd = (float)(end > _distance ? end - _distance : 0);
+        if (dx <= toEnd * _scrollSpeed) return _distance + (unsigned long)(dx / _scrollSpeed);
+        return end + (unsigned long)((dx - toEnd * _scrollSpeed) / speedAtStageStart(stage + 1));
+    }
+
     // Frames a jump keeps the runner's feet clear of a pit's flames (more
     // than firePitHitsPlayer's 4px up), on the runner's own physics.
     static int jumpFramesClear() {
@@ -176,22 +193,22 @@ private:
         }
     }
 
-    // A new fire pit's width at today's speed (see ArcadeConfig's
+    // A new fire pit's width at `speed`, on loop `loop` (see ArcadeConfig's
     // RUNNER_PIT_* block): what a plain jump clears with a comfortable
     // window on the first loop; wider each loop after, up to what a jump
     // pushed forward clears (the stick adds RUNNER_X_MOVE_SPEED a frame
     // in the air, from as far back as the runner goes).
-    float pitGapWidth() const {
+    float pitGapWidth(float speed, int loop) const {
         const int air = jumpFramesClear();
         const float minGap = (float)ArcadeConfig::RUNNER_PIT_MIN_GAP;
-        float hi = _scrollSpeed * (float)(air - ArcadeConfig::RUNNER_PIT_EASY_WINDOW);
+        float hi = speed * (float)(air - ArcadeConfig::RUNNER_PIT_EASY_WINDOW);
         float lo = minGap;
-        if (_loop > 0) {
+        if (loop > 0) {
             const int pushFrames = air - ArcadeConfig::RUNNER_PIT_HARD_WINDOW;
             const float push = min((float)pushFrames * ArcadeConfig::RUNNER_X_MOVE_SPEED,
                                    (float)(ArcadeConfig::RUNNER_X_MAX_OFFSET - ArcadeConfig::RUNNER_X_MIN_OFFSET));
-            const float pushed = _scrollSpeed * (float)pushFrames + push;
-            const float widen = (float)(ArcadeConfig::RUNNER_PIT_WIDEN_PX * _loop);
+            const float pushed = speed * (float)pushFrames + push;
+            const float widen = (float)(ArcadeConfig::RUNNER_PIT_WIDEN_PX * loop);
             hi = min(hi + widen, pushed);
             lo = min(minGap + widen, hi);
         }
@@ -209,41 +226,36 @@ private:
     void spawnGroundSegment(int index, float startX) {
         int width = random(35, 60);
 
-        unsigned long tier2Start = ArcadeConfig::RUNNER_TIER_DISTANCE * 2;
-        bool wantMorePits = (_tier <= 1) && (_firePitsPlaced < 3);
-        // Once the tier 0/1 window is running out and we still owe fire
-        // pits, steer the elevation back toward baseline instead of a
-        // random step — a fire pit can only ever be placed when the
-        // approach is at EXACTLY baseline (see below), so without this a
-        // pit that's "owed" could keep missing its chance forever if the
-        // random walk simply never happened to revisit baseline in time.
-        bool nearDeadline = wantMorePits && (_cycleDistance + 400 >= tier2Start) &&
-                           (_lastGroundY != groundLevel());
-        int stepDir, stepAmt;
-        if (nearDeadline) {
-            stepAmt = min(8, abs(_lastGroundY - groundLevel()));
-            stepDir = (_lastGroundY < groundLevel()) ? 1 : -1;
-        } else {
-            stepDir = random(0, 3) - 1;      // -1, 0, or 1
-            stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
-        }
+        int stepDir = random(0, 3) - 1;      // -1, 0, or 1
+        int stepAmt = random(4, 9);          // stays under groundYAt's +10 snap tolerance
         int newY = _lastGroundY + stepDir * stepAmt;
         int minY = groundLevel() - 50;
         int maxY = groundLevel();
         if (newY < minY) newY = minY;
         if (newY > maxY) newY = maxY;
 
-        // Eligible from tier 0 (right after the flat intro) through tier 1,
-        // and only ever rolled when the approach is at EXACTLY baseline
-        // ground height — not just "close." groundYAt()'s tight tolerance
-        // for gap-preceded platforms (see groundYAt) is only guaranteed
-        // lethal-if-not-jumped when both sides of the pit are the same
-        // height; any residual elevation slack here effectively adds back
-        // onto that tolerance and can let a fall get caught early again.
-        bool eligibleTier = (_tier <= 1) && (_lastGroundY == groundLevel());
-        bool runningOut   = wantMorePits && (_cycleDistance + 200 >= tier2Start);
-        bool mustForce    = eligibleTier && runningOut;
-        bool wantFirePit  = eligibleTier && (mustForce || random(0, 3) == 0);
+        // Fire pits go by the stage the runner will be in when it gets
+        // here (the ground's built a screen or so ahead): a loop's first
+        // stage has RUNNER_PITS_FIRST, its second RUNNER_PITS_SECOND. The
+        // k-th of n (from 0) is due 2k+1 (2n+1)ths of the way through (one
+        // in the middle of each equal share, the last share's end left
+        // over for a late one), and goes on
+        // the first block the runner reaches from then, not too close to
+        // the last pit nor the stage's end. Any stair height will do: both
+        // sides of a pit are level.
+        const unsigned long passAt = arrivalAt(startX);
+        const int passStage = stageForDistance(passAt);
+        const int passTier = (passStage - 1) % TIERS_PER_LOOP;
+        bool wantFirePit = false;
+        if (passTier <= 1) {
+            if (passStage != _pitStage) { _pitStage = passStage; _pitsDone = 0; }
+            const int n = passTier == 0 ? ArcadeConfig::RUNNER_PITS_FIRST : ArcadeConfig::RUNNER_PITS_SECOND;
+            const unsigned long start = stageStartDistance(passStage);
+            const unsigned long len = stageStartDistance(passStage + 1) - start;
+            const unsigned long due = start + len * (unsigned long)(2 * _pitsDone + 1) / (unsigned long)(2 * n + 1);
+            wantFirePit = _pitsDone < n && passAt >= due && passAt >= _lastPitAt + PIT_SPACING &&
+                          passAt + PIT_END_MARGIN <= start + len;
+        }
 
         // Spikes need at least 4 player-sprite-widths of clearance since
         // the last one — otherwise back-to-back rolls on adjacent segments
@@ -265,15 +277,18 @@ private:
         }
 
         if (wantFirePit) {
-            _firePitsPlaced++;
-            float gapWidth = pitGapWidth();
+            ++_pitsDone;
+            _lastPitAt = passAt;
+            // Sized for the speed and loop of the stage it's in: a pit built
+            // at the end of one loop is crossed at the next one's slower start.
+            const float speed = passStage == stageNumber() ? _scrollSpeed : speedAtStageStart(passStage);
+            float gapWidth = pitGapWidth(speed, (passStage - 1) / TIERS_PER_LOOP);
 
             _pool[index].x               = startX + gapWidth;
             _pool[index].firePitBefore   = true;
             _pool[index].firePitGapWidth = gapWidth;
-            // Land back at baseline after a pit so its shape reads cleanly,
-            // rather than mixing a stair step into the same spot.
-            newY = groundLevel();
+            // Level with the approach, so the pit's no step up or down.
+            newY = _lastGroundY;
         } else {
             _pool[index].x             = startX; // contiguous — no gap
             _pool[index].firePitBefore = false;
@@ -366,7 +381,7 @@ private:
 public:
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
-                         _lastGroundY(0), _firePitsPlaced(0),
+                         _lastGroundY(0), _pitStage(0), _pitsDone(0), _lastPitAt(0),
                          _distanceSinceLastSpike(9999.0f), _loop(0),
                          _cycleDistance(0),
                          _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED),
@@ -391,6 +406,22 @@ public:
         return (unsigned long)loop * cycleLength() + (tier == 0 ? 0 : t[tier - 1]);
     }
 
+    // The stage the runner is in at `distance` (advanceDifficulty's frames).
+    int stageForDistance(unsigned long distance) const {
+        const unsigned long cycleLen = cycleLength();
+        return (int)(distance / cycleLen) * TIERS_PER_LOOP + tierForDistance(distance % cycleLen) + 1;
+    }
+
+    // The speed advanceDifficulty() has reached as `stage` begins: each loop
+    // starts 0.25 faster, and every tier change adds a step (from loop 1
+    // on, the wrap into tier 0 is one too), up to the loop's ceiling.
+    static float speedAtStageStart(int stage) {
+        const int loop = (stage - 1) / TIERS_PER_LOOP, tier = (stage - 1) % TIERS_PER_LOOP;
+        const float speed = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * loop +
+                            ArcadeConfig::RUNNER_SPEED_STEP * (float)(tier + (loop > 0 ? 1 : 0));
+        return min(speed, ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + 0.25f * loop);
+    }
+
     // 0..1 through the current stage, for the HUD's progress line.
     float stageProgress() const {
         unsigned long t[7];
@@ -411,16 +442,13 @@ public:
         _loop               = (int)(_distance / cycleLen);
         _cycleDistance      = _distance % cycleLen;
         _tier               = tierForDistance(_cycleDistance);
-        // The speed advanceDifficulty() would have reached: each loop starts
-        // 0.25 faster, and every tier change adds a step (from loop 1 on,
-        // the wrap into tier 0 is one too).
         _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + 0.25f * _loop;
-        _scrollSpeed        = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * _loop +
-                              ArcadeConfig::RUNNER_SPEED_STEP * (float)(_tier + (_loop > 0 ? 1 : 0));
-        if (_scrollSpeed > _scrollSpeedCap) _scrollSpeed = _scrollSpeedCap;
+        _scrollSpeed        = speedAtStageStart(stage);
         _introPlatformsLeft = stage <= 1 ? ArcadeConfig::PLATFORM_INTRO_COUNT : 1;
         _lastGroundY        = groundLevel();
-        _firePitsPlaced     = 0;
+        _pitStage           = 0;
+        _pitsDone           = 0;
+        _lastPitAt          = 0;
         _distanceSinceLastSpike = 9999.0f;
         _afterSlabs         = false;
 
@@ -460,7 +488,6 @@ public:
 
         if (newLoop != _loop) {
             _loop           = newLoop;
-            _firePitsPlaced = 0;
             // Both floor and ceiling shift up together so each new loop
             // still opens gently and ramps up the same way — just a
             // little faster start-to-finish than the loop before it,
@@ -613,7 +640,7 @@ public:
             float pitRight = _pool[i].x;
             float mid      = (playerX + playerRight) * 0.5f;
             if (mid < pitLeft || mid >= pitRight) continue;
-            if (playerBottom >= groundLevel() - 4) return true;
+            if (playerBottom >= _pool[i].y - 4) return true;   // the far side's level, as is the near
         }
         return false;
     }
@@ -709,7 +736,7 @@ public:
             if (_pool[i].firePitBefore) {
                 int fireX = (int)(_pool[i].x - _pool[i].firePitGapWidth);
                 int fireW = (int)_pool[i].firePitGapWidth;
-                int fireY = _pool[i].y; // == groundLevel() by construction (see spawnGroundSegment)
+                int fireY = _pool[i].y; // both sides are level (see spawnGroundSegment)
                 bool flicker = (millis() / 100) % 2 == 0;
                 uint16_t fireColor = flicker ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_RED;
                 // Fill the whole pit, floor to bottom of screen — no thin
