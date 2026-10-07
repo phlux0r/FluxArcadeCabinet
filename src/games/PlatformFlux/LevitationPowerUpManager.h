@@ -5,7 +5,6 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
-#include "../../cabinet/AudioEngine.h"
 #include "PlayerRunner.h"
 #include "PlatformManager.h"
 
@@ -73,8 +72,9 @@ public:
         }
     }
 
-    void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
-                AudioEngine &audio, bool &uiNeedsUpdate, const PlatformManager &platforms) {
+    // True the frame the runner picks it up (the game plays the sound).
+    bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
+                bool &uiNeedsUpdate, const PlatformManager &platforms) {
         // Trigger the pending fire-pit-ahead spawn once it's close enough to
         // place comfortably in front of the pit rather than off-screen.
         if (_pendingFirePitSpawn && !_active) {
@@ -94,10 +94,10 @@ public:
             }
         }
 
-        if (!_active) return;
+        if (!_active) return false;
 
         _x -= scrollSpeed;
-        if (_x < -10) { _active = false; return; }
+        if (_x < -10) { _active = false; return false; }
 
         if (millis() >= _nextHaloTick) {
             particles.spawnExplosion(_x, _y, ArcadeConfig::COLOR_ION_BLUE, 3, 250);
@@ -109,11 +109,12 @@ public:
         float dy = _y - (py + RUNNER_HEIGHT / 2.0f);
         if ((dx * dx + dy * dy) < 100.0f) {
             player.activateLevitation(ArcadeConfig::RUNNER_LEVITATE_MS);
-            audio.playSound(1400, 100);
             uiNeedsUpdate  = true;
             _active        = false;
             _cooldownUntil = millis() + 10000UL;
+            return true;
         }
+        return false;
     }
 
     void render(GFXcanvas16 &canvas) {

@@ -5,7 +5,6 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
-#include "../../cabinet/AudioEngine.h"
 #include "PlayerRunner.h"
 
 // =============================================================================
@@ -119,8 +118,9 @@ public:
         _activeEnemies = 1;
     }
 
-    void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
-                AudioEngine &audio, bool &playerHit) {
+    // True if a rock hit the runner this frame (the game plays the sound).
+    bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles, bool &playerHit) {
+        bool rockHit = false;
         for (int i = 0; i < _activeEnemies; i++) {
             if (!_enemies[i].active) continue;
 
@@ -165,11 +165,12 @@ public:
 
             if (distSq < (_rocks[i].radius * _rocks[i].radius) && !player.isInvincible()) {
                 particles.spawnExplosion(_rocks[i].x, _rocks[i].y, ArcadeConfig::COLOR_GREY, 8);
-                audio.playSound(300, 60);
                 _rocks[i].active = false;
                 playerHit = true;
+                rockHit = true;
             }
         }
+        return rockHit;
     }
 
     // Would a falling rock touch this player box `t` frames from now?

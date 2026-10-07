@@ -5,7 +5,6 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
-#include "../../cabinet/AudioEngine.h"
 #include "PlatformManager.h"
 #include "PlayerRunner.h"
 
@@ -75,9 +74,10 @@ public:
 
     // groundYAt supplies the current ground surface under the boulder's X so
     // it rolls along stairs at the correct height instead of a fixed line.
-    void update(int tier, float scrollSpeed, const PlatformManager &platforms,
-                PlayerRunner &player, ParticleManager &particles, AudioEngine &audio,
-                bool &playerHit) {
+    // True if a boulder hit the runner this frame (the game plays the sound).
+    bool update(int tier, float scrollSpeed, const PlatformManager &platforms,
+                PlayerRunner &player, ParticleManager &particles, bool &playerHit) {
+        bool hit = false;
         if (tier >= ArcadeConfig::RUNNER_BOULDER_TIER && millis() >= _nextSpawnAt) {
             for (int i = 0; i < MAX_BOULDERS; i++) {
                 if (_boulders[i].active) continue;
@@ -114,11 +114,12 @@ public:
 
             if (distSq < (_boulders[i].radius * _boulders[i].radius) && !player.isInvincible()) {
                 particles.spawnExplosion(_boulders[i].x, cy, ArcadeConfig::COLOR_AMBER, 8);
-                audio.playSound(220, 80);
                 _boulders[i].active = false;
                 playerHit = true;
+                hit = true;
             }
         }
+        return hit;
     }
 
     // A boulder the runner has got past (all of it behind playerX) and

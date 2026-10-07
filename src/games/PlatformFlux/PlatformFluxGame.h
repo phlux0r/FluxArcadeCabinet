@@ -73,6 +73,61 @@ private:
     // The cabinet's table for this game; _highScore is its top score.
     hiscore::ScoreBoard _scores;
 
+    // Sounds: each one's own WAV if it's on the card, else a shared WAV
+    // if it has one and that's there, else a tone or melody (what Runner
+    // played before it had optional sounds). Checked once, in init().
+    enum Sfx { SFX_TITLE, SFX_JUMP, SFX_POINTS, SFX_STAR, SFX_FLY, SFX_ROCK, SFX_BOULDER,
+               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_COUNT };
+    struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
+    static constexpr int TITLE_N[] = { 523, 659, 784, 1047 }, TITLE_D[] = { 80, 80, 80, 150 };
+    static constexpr int JUMP_N[]  = { 700, 1050 },           JUMP_D[]  = { 35, 45 };
+    static constexpr int STAGE_N[] = { 784, 988, 1175 },      STAGE_D[] = { 60, 60, 140 };
+    static constexpr int LIFE_N[]  = { 880, 1175, 1568, 2093 }, LIFE_D[] = { 70, 70, 70, 200 };
+    static constexpr int DEATH_N[] = { 500, 350, 220 },       DEATH_D[] = { 100, 100, 200 };
+    static constexpr int OVER_N[]  = { 392, 330, 262, 196 },  OVER_D[]  = { 150, 150, 150, 350 };
+    static constexpr SfxDef SFX[SFX_COUNT] = {
+        { "/audio/runner_title.wav",   "/audio/lander_start.wav", 0, 0, TITLE_N, TITLE_D, 4 },  // SFX_TITLE
+        { "/audio/jump.wav",           nullptr, 0, 0, JUMP_N, JUMP_D, 2 },                       // SFX_JUMP
+        { "/audio/runner_points.wav",  nullptr, 1500, 20, nullptr, nullptr, 0 },                 // SFX_POINTS
+        { "/audio/runner_star.wav",    "/audio/powerup.wav", 1000, 80, nullptr, nullptr, 0 },    // SFX_STAR
+        { "/audio/runner_fly.wav",     "/audio/powerup.wav", 1400, 100, nullptr, nullptr, 0 },   // SFX_FLY
+        { "/audio/runner_rock.wav",    nullptr, 300, 60, nullptr, nullptr, 0 },                  // SFX_ROCK
+        { "/audio/runner_boulder.wav", nullptr, 220, 80, nullptr, nullptr, 0 },                  // SFX_BOULDER
+        { "/audio/runner_stage.wav",   nullptr, 0, 0, STAGE_N, STAGE_D, 3 },                     // SFX_STAGE
+        { "/audio/runner_life.wav",    nullptr, 0, 0, LIFE_N, LIFE_D, 4 },                       // SFX_LIFE
+        { "/audio/death.wav",          nullptr, 0, 0, DEATH_N, DEATH_D, 3 },                     // SFX_DEATH
+        { "/audio/gameend.wav",        nullptr, 0, 0, OVER_N, OVER_D, 4 },                       // SFX_OVER
+    };
+    static constexpr const char* MUSIC = "/audio/flux-runner.wav";
+    AudioEngine* _audio = nullptr;
+    bool _sfxOnCard[SFX_COUNT] = {}, _fallbackOnCard[SFX_COUNT] = {}, _musicOnCard = false;
+    const char* _lastSfx = "";           // what the last sfx() played, for the harness
+    unsigned _sfxPlayed = 0;             // a bit per Sfx asked for, for the harness
+
+    // A missing file would otherwise cost an SD open every time it's asked
+    // for; what will play is decoded into the mixer's cache now, so the
+    // first jump isn't late.
+    void findSounds(AudioEngine &audio) {
+        for (int i = 0; i < SFX_COUNT; ++i) {
+            _sfxOnCard[i] = audio.exists(SFX[i].path);
+            _fallbackOnCard[i] = !_sfxOnCard[i] && SFX[i].fallback && audio.exists(SFX[i].fallback);
+            if (_sfxOnCard[i]) audio.preload(SFX[i].path);
+            else if (_fallbackOnCard[i]) audio.preload(SFX[i].fallback);
+        }
+        _musicOnCard = audio.exists(MUSIC);
+    }
+
+    // Nothing plays in a demo (the Silence guard drops it anyway).
+    void sfx(Sfx s) {
+        if (!_audio || _demo) return;
+        const SfxDef &d = SFX[s];
+        _sfxPlayed |= 1u << s;
+        if (_sfxOnCard[s])           { _audio->playWAV(d.path); _lastSfx = d.path; }
+        else if (_fallbackOnCard[s]) { _audio->playWAV(d.fallback); _lastSfx = d.fallback; }
+        else if (d.notes)            { _audio->playMelody(d.notes, d.durs, d.len); _lastSfx = "melody"; }
+        else                         { _audio->playTone(d.hz, d.ms); _lastSfx = "tone"; }
+    }
+
     void loadHighScore() {
         _scores.begin("runner");
         _highScore = (int)_scores.best();
@@ -113,14 +168,14 @@ private:
     }
 
     // Points for every hazard got past this frame, each with its popup.
-    void scoreClearedHazards(AudioEngine &audio) {
+    void scoreClearedHazards() {
         const float px = _player.getX();
         float x, y;
         int pts;
         while ((pts = _platforms.takeCleared(px, x, y)) > 0 || (pts = _boulders.takeCleared(px, x, y)) > 0) {
             _score += pts;
             addPopup(x, y, pts);
-            if (!_demo) audio.playSound(1500, 20);
+            sfx(SFX_POINTS);
         }
     }
 
@@ -260,7 +315,7 @@ private:
         startStage(1);
         // Music plays during a game only, not on the attract screen; it
         // carries on through lost lives and stops at game over.
-        audio.loopWAV("/audio/flux-runner.wav");
+        if (_musicOnCard) audio.loopWAV(MUSIC);
     }
 
     // (Re)starts the world at `stage`: its terrain, hazards and speed, on a
@@ -287,7 +342,7 @@ private:
     }
 
     // Called each frame: a new stage reached means the last one was cleared.
-    void checkStageProgress(AudioEngine &audio) {
+    void checkStageProgress() {
         int now = _platforms.stageNumber();
         if (now <= _stage) return;
         bool perfect = !_diedThisStage;
@@ -309,21 +364,17 @@ private:
                 _lives++;
                 snprintf(sub, sizeof(sub), "EXTRA LIFE +%d", bonus);
                 showBanner(title, sub, ArcadeConfig::COLOR_ORANGE);
-                static const int n[] = { 880, 1175, 1568, 2093 };
-                static const int d[] = {  70,   70,   70,  200 };
-                audio.playMelody(n, d, 4);
+                sfx(SFX_LIFE);
                 return;
             }
         }
-        static const int n[] = { 784, 988, 1175 };
-        static const int d[] = {  60,  60,  140 };
-        audio.playMelody(n, d, 3);
+        sfx(SFX_STAGE);
     }
 
-    void triggerPlayerDeath(AudioEngine &audio) {
+    void triggerPlayerDeath() {
         _particles.triggerExplosion(_player.getX() + RUNNER_WIDTH / 2.0f,
                                      _player.getY() + RUNNER_HEIGHT / 2.0f);
-        audio.playDeathSound();
+        sfx(SFX_DEATH);
     }
 
     // ---- Attract demo --------------------------------------------------------
@@ -482,12 +533,14 @@ public:
     PlatformFluxGame() {}
 
     void init(AudioEngine &audio) override {
+        _audio = &audio;
         loadHighScore();
+        findSounds(audio);
         _phase              = PHASE_ATTRACT;
         _attractSlide       = SLIDE_SPLASH;
         _attractSlideTimer  = millis();
         _demo               = false;
-        audio.playLanderStartSound(); // shared game-select jingle, same as Lander/Maze
+        sfx(SFX_TITLE);   // the shared game-select jingle unless Runner has its own
     }
 
     void setTFT(Adafruit_ST7735 &tft) override { _tft = &tft; }
@@ -536,7 +589,7 @@ public:
             _backdrop.update(_platforms.getScrollSpeed());
             updatePopups(_platforms.getScrollSpeed());
             _platforms.advanceDifficulty();
-            checkStageProgress(audio);
+            checkStageProgress();
 
             // Terrain/hazard progression (see PlatformManager class comment
             // and ArcadeConfig's RUNNER_*_TIER constants for the full map):
@@ -558,7 +611,7 @@ public:
                     _jumpPressedAt = 0;
                 } else if (_player.jump()) {
                     _jumpPressedAt = 0;
-                    audio.playJumpSound();
+                    sfx(SFX_JUMP);
                 }
             }
 
@@ -596,16 +649,16 @@ public:
             _player.updateInvincibility();
 
             _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms);
-            _powerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate);
+            if (_powerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate)) sfx(SFX_STAR);
 
             float firePitX;
             bool hasFirePitAhead = _platforms.upcomingFirePitX(firePitX);
             _levitationPowerUp.maybeSpawn(tier, _platforms.getLoop(), ArcadeConfig::LANDSCAPE_WIDTH, _platforms,
                                           hasFirePitAhead, firePitX);
-            _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate, _platforms);
+            if (_levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate, _platforms)) sfx(SFX_FLY);
 
-            _enemies.update(_platforms.getScrollSpeed(), _player, _particles, audio, playerHit);
-            _boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, audio, playerHit);
+            if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit)) sfx(SFX_ROCK);
+            if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit)) sfx(SFX_BOULDER);
 
             // Spike traps: contact damage, same invincibility rules as
             // enemies/boulders (levitating above one is naturally safe —
@@ -641,7 +694,7 @@ public:
             }
 
             if (fellOffScreen || (playerHit && !_player.isInvincible())) {
-                triggerPlayerDeath(audio);
+                triggerPlayerDeath();
                 _bannerUntil = 0;
                 if (!_demo) {                // a demo death just ends the demo
                     _lives--;
@@ -657,7 +710,7 @@ public:
                 return true;
             }
 
-            scoreClearedHazards(audio);
+            scoreClearedHazards();
             _backdrop.render(canvas, 11, _platforms.getLoop());
             _platforms.render(canvas);
             _particles.render(canvas, 11);
@@ -709,7 +762,7 @@ public:
                 _phase             = _scores.offer(_score) ? PHASE_NAME : PHASE_GAMEOVER;
                 _gameOverEnteredMs = millis();
                 audio.stopLoop();
-                audio.playGameOverToneSound();
+                sfx(SFX_OVER);
             }
             return true;
         }

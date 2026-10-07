@@ -5,7 +5,6 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
-#include "../../cabinet/AudioEngine.h"
 #include "PlayerRunner.h"
 #include "PlatformManager.h"
 
@@ -49,12 +48,12 @@ public:
         }
     }
 
-    void update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles,
-                AudioEngine &audio, bool &uiNeedsUpdate) {
-        if (!_active) return;
+    // True the frame the runner picks it up (the game plays the sound).
+    bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles, bool &uiNeedsUpdate) {
+        if (!_active) return false;
 
         _x -= scrollSpeed;
-        if (_x < -10) { _active = false; return; }
+        if (_x < -10) { _active = false; return false; }
 
         if (millis() >= _nextHaloTick) {
             particles.spawnExplosion(_x, _y, ArcadeConfig::COLOR_YELLOW, 3, 250);
@@ -66,10 +65,11 @@ public:
         float dy = _y - (py + RUNNER_HEIGHT / 2.0f);
         if ((dx * dx + dy * dy) < 100.0f) {
             player.activateInvincibility(ArcadeConfig::RUNNER_INVINCIBLE_MS);
-            audio.playSound(1000, 80);
             uiNeedsUpdate = true;
             _active = false;
+            return true;
         }
+        return false;
     }
 
     void render(GFXcanvas16 &canvas) {

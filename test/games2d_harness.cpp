@@ -383,6 +383,247 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnersounds")) {
+        // Runner's optional sounds: with no card, each event's tone or
+        // melody; a shared file if that's all there is; its own file once
+        // that's on the card. Then each event in play asks for its sound,
+        // and a demo asks for none.
+        using G = PlatformFluxGame;
+        static G g;
+        g = G();
+        AudioEngine audio;
+        g.init(audio);
+        auto plays = [&](G::Sfx s, const char* want) { g.sfx(s); return !strcmp(g._lastSfx, want); };
+        bool noCard = plays(G::SFX_TITLE, "melody") && plays(G::SFX_JUMP, "melody") && plays(G::SFX_POINTS, "tone") &&
+                      plays(G::SFX_STAR, "tone") && plays(G::SFX_FLY, "tone") && plays(G::SFX_ROCK, "tone") &&
+                      plays(G::SFX_BOULDER, "tone") && plays(G::SFX_STAGE, "melody") && plays(G::SFX_LIFE, "melody") &&
+                      plays(G::SFX_DEATH, "melody") && plays(G::SFX_OVER, "melody");
+        g._fallbackOnCard[G::SFX_STAR] = g._fallbackOnCard[G::SFX_TITLE] = true;
+        bool shared = plays(G::SFX_STAR, "/audio/powerup.wav") && plays(G::SFX_TITLE, "/audio/lander_start.wav");
+        for (int i = 0; i < G::SFX_COUNT; ++i) g._sfxOnCard[i] = true;
+        bool own = plays(G::SFX_STAR, "/audio/runner_star.wav") && plays(G::SFX_JUMP, "/audio/jump.wav") &&
+                   plays(G::SFX_DEATH, "/audio/death.wav");
+        printf("runnersounds files: no card %d, shared fallback %d, own file %d\n", (int)noCard, (int)shared, (int)own);
+
+        // In play: each event, set up on the spot, asks for its sound.
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+        auto heard = [&](G::Sfx s, auto setUp, int frames) {
+            g._sfxPlayed = 0;
+            setUp();
+            for (int f = 0; f < frames && !(g._sfxPlayed & (1u << s)); ++f) step();
+            return (g._sfxPlayed & (1u << s)) != 0;
+        };
+        g.startNewGame(audio);
+        for (int f = 0; f < 30; ++f) step();
+        const float cx = g._player.getX() + RUNNER_WIDTH / 2.0f, cy = g._player.getY() + RUNNER_HEIGHT / 2.0f;
+        g._sfxPlayed = 0;
+        InputState a{}; a.btnA = a.btnAPressed = true;
+        step(a);
+        bool jump = g._sfxPlayed & (1u << G::SFX_JUMP);
+        for (int f = 0; f < 60; ++f) step();
+        bool star = heard(G::SFX_STAR, [&] {
+            g._powerUp._active = true; g._powerUp._x = cx; g._powerUp._y = cy;
+            g._player._y = cy - RUNNER_HEIGHT / 2.0f; }, 3);
+        bool fly = heard(G::SFX_FLY, [&] {
+            g._levitationPowerUp._active = true; g._levitationPowerUp._x = g._player.getX() + RUNNER_WIDTH / 2.0f;
+            g._levitationPowerUp._y = g._player.getY() + RUNNER_HEIGHT / 2.0f; }, 3);
+        g._player._levitating = false;
+        bool stage = heard(G::SFX_STAGE, [&] { g._stage = g._platforms.stageNumber() - 1; }, 2);
+        bool life = heard(G::SFX_LIFE, [&] {
+            g._platforms.initGame(9); g._stage = 8; g._loopsSeen = 0; g._lives = 3; }, 2);
+        g._player._invincible = false;
+        bool points = heard(G::SFX_POINTS, [&] {
+            auto &p = g._platforms._pool[1];
+            p.firePitBefore = true; p.pitScored = false; p.firePitGapWidth = 10; p.x = g._player.getX() - 1; }, 2);
+        g.startStage(1);
+        g._player._invincible = false;
+        bool rock = heard(G::SFX_ROCK, [&] {
+            auto &r = g._enemies._rocks[0];
+            r = {}; r.active = true; r.radius = 4; r.vy = 0;
+            r.x = g._player.getX() + RUNNER_WIDTH / 2.0f; r.y = g._player.getY() + RUNNER_HEIGHT / 2.0f; }, 2);
+        bool death = g._sfxPlayed & (1u << G::SFX_DEATH);
+        for (int f = 0; f < 200 && g._phase != G::PHASE_PLAYING; ++f) step();
+        g._player._invincible = false;
+        bool boulder = heard(G::SFX_BOULDER, [&] {
+            auto &b = g._boulders._boulders[0];
+            b = {}; b.active = true; b.radius = 4.5f; b.x = g._player.getX() + RUNNER_WIDTH / 2.0f;
+            g._player._invincible = false; }, 2);
+        for (int f = 0; f < 200 && g._phase != G::PHASE_PLAYING; ++f) step();
+        bool over = heard(G::SFX_OVER, [&] { g._lives = 1; g._player._y = 200; }, 200);
+        printf("runnersounds in play: jump %d star %d fly %d stage %d life %d points %d rock %d death %d boulder %d over %d\n",
+               (int)jump, (int)star, (int)fly, (int)stage, (int)life, (int)points, (int)rock, (int)death, (int)boulder, (int)over);
+
+        // A demo: nothing asked for.
+        static G d;
+        d = G();
+        d.init(audio);
+        d._sfxPlayed = 0;
+        int demoFrames = 0;
+        for (long f = 0; f < 20000 && demoFrames < 3000; ++f) {
+            InputState n{}; d.update(canvas, n, audio); g_fakeMillis += STEP_MS;
+            demoFrames += d._demo;
+        }
+        printf("runnersounds demo: %d frames of demo, sounds asked for %x\n", demoFrames, d._sfxPlayed);
+        bool pass = noCard && shared && own && jump && star && fly && stage && life && points && rock && death &&
+                    boulder && over && demoFrames >= 3000 && d._sfxPlayed == 0;
+        printf("runnersounds -> %s\n", pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerplay")) {
+        // Real games played by the autopilot (as a player's input, not a
+        // demo): how far it gets, and the rules on the way. A lost life
+        // restarts the stage it was lost in, score kept; a cleared stage
+        // scores 100 if no life went in it, else 50; a whole loop gives a
+        // life, up to 5; the last life lost ends in game over.
+        using G = PlatformFluxGame;
+        bool rules = true;
+        int bestStage = 0, loops = 0, overs = 0;
+        for (int seed = 1; seed <= 5; ++seed) {
+            g_rng = (uint32_t)seed;
+            static G g;
+            g = G();
+            AudioEngine audio;
+            g.init(audio);
+            g.startNewGame(audio);
+            int deaths = 0, clears = 0, extra = 0;
+            long f = 0;
+            for (; f < 40000 && g._phase != G::PHASE_NAME && g._phase != G::PHASE_GAMEOVER; ++f) {
+                const G::GamePhase phase = g._phase;
+                const int stage = g._stage, score = g._score, lives = g._lives;
+                const bool died = g._diedThisStage;
+                const int loopsDone = g._platforms.loopsCompleted();
+                InputState in = phase == G::PHASE_PLAYING ? g.demoPilot() : InputState{};
+                g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                if (phase == G::PHASE_PLAYING && g._phase == G::PHASE_DEATH) {
+                    ++deaths;
+                    rules &= g._lives == lives - 1;
+                }
+                if (phase == G::PHASE_DEATH && g._phase == G::PHASE_PLAYING) {
+                    const bool good = g._stage == stage && g._score == score && g._diedThisStage &&
+                                      g._player.isInvincible() && g._platforms.stageNumber() == stage;
+                    if (!good) printf("  seed %d: respawn at stage %d (was %d), score %d (was %d)\n", seed, g._stage, stage, g._score, score);
+                    rules &= good;
+                }
+                if (phase == G::PHASE_PLAYING && g._phase == G::PHASE_PLAYING && g._stage == stage + 1) {
+                    ++clears;
+                    const int bonus = ArcadeConfig::RUNNER_STAGE_BONUS * (died ? 1 : 2);
+                    const int gained = g._score - score;
+                    bool good = gained >= bonus && gained < bonus + 2 * ArcadeConfig::RUNNER_BOULDER_POINTS;
+                    if (g._platforms.loopsCompleted() > loopsDone) {
+                        ++extra;
+                        good &= g._lives == min(lives + 1, (int)ArcadeConfig::RUNNER_MAX_LIVES);
+                    } else {
+                        good &= g._lives == lives;
+                    }
+                    if (!good) printf("  seed %d: stage %d cleared, +%d (bonus %d), lives %d -> %d\n", seed, stage, gained, bonus, lives, g._lives);
+                    rules &= good;
+                }
+            }
+            const bool ended = g._phase == G::PHASE_NAME || g._phase == G::PHASE_GAMEOVER;
+            overs += ended;
+            if (ended) rules &= g._lives == 0;
+            bestStage = max(bestStage, g._stage);
+            loops += extra;
+            printf("runnerplay seed %d: stage %d, score %d, %d stages cleared, %d lives lost, %d loops, %s after %ld frames\n",
+                   seed, g._stage, g._score, clears, deaths, extra, ended ? "game over" : "still going", f);
+        }
+        bool pass = rules && bestStage >= 9 && loops > 0;
+        printf("runnerplay: rules held %d, furthest stage %d, %d loops finished, %d games over -> %s\n",
+               (int)rules, bestStage, loops, overs, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerstages")) {
+        // Starting at a stage (after a lost life) puts the world where a
+        // run from stage 1 would have it when that stage begins: its
+        // tier, its loop and its speed, the progress rule empty.
+        int bad = 0;
+        for (int stage = 1; stage <= 25; ++stage) {
+            g_rng = 99;
+            PlatformManager run;
+            run.initGame(1);
+            for (long f = 0; f < 200000 && run.stageNumber() < stage; ++f) { run.update(); run.advanceDifficulty(); }
+            PlatformManager at;
+            at.initGame(stage);
+            const bool good = at.stageNumber() == stage && run.stageNumber() == stage &&
+                              at.getTier() == (stage - 1) % PlatformManager::TIERS_PER_LOOP &&
+                              at.getLoop() == (stage - 1) / PlatformManager::TIERS_PER_LOOP &&
+                              fabsf(at.getScrollSpeed() - run.getScrollSpeed()) < 0.005f &&
+                              at.stageProgress() < 0.01f;
+            if (!good) {
+                ++bad;
+                printf("  stage %d: started at tier %d loop %d speed %.2f progress %.2f; a run got there at speed %.2f\n",
+                       stage, at.getTier(), at.getLoop(), at.getScrollSpeed(), at.stageProgress(), run.getScrollSpeed());
+            }
+        }
+        // The extra life for a loop stops at 5.
+        static PlatformFluxGame g;
+        g = PlatformFluxGame();
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto loopDone = [&](int lives) {
+            g._platforms.initGame(9); g._stage = 8; g._loopsSeen = 0; g._lives = lives;
+            g.checkStageProgress();
+            return g._lives;
+        };
+        const int from3 = loopDone(3), from5 = loopDone((int)ArcadeConfig::RUNNER_MAX_LIVES);
+        bool pass = bad == 0 && from3 == 4 && from5 == ArcadeConfig::RUNNER_MAX_LIVES;
+        printf("runnerstages: %d of 25 stage starts off; a loop's life from 3 -> %d, from 5 -> %d -> %s\n",
+               bad, from3, from5, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnername")) {
+        // The last life lost with a score for the table: name entry, the
+        // stick changing the letter (landscape: up is the stick's left),
+        // A through the three letters, then game over with the score on
+        // the table and on the HUD's best. Back mid-game records the score;
+        // in a demo it doesn't.
+        using G = PlatformFluxGame;
+        static G g;
+        g = G();
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+        for (int f = 0; f < 10; ++f) step();
+        const long big = 900000 + g_fakeMillis % 1000;
+        g._score = (int)big;
+        g._lives = 1;
+        g._player._invincible = false;
+        g._player._y = 200;
+        for (int f = 0; f < 200 && g._phase != G::PHASE_NAME; ++f) step();
+        const bool naming = g._phase == G::PHASE_NAME;
+        const char before = g._scores._name[0];
+        InputState up{}; up.joyX = -1.0f; up.joyLeft = true;
+        step(up); step();
+        const char after = g._scores._name[0];
+        for (int k = 0; k < 3; ++k) { InputState a{}; a.btnA = a.btnAPressed = true; step(a); step(); }
+        const auto &t = g._scores.table();
+        const bool onTable = t.e[0].score == big && t.e[0].name[0] == after;
+        const bool over = g._phase == G::PHASE_GAMEOVER && g._highScore == (int)big && g._scores.lastRank() == 0;
+
+        // Back mid-game: the score goes on the table; in a demo, nothing.
+        g.startNewGame(audio);
+        for (int f = 0; f < 10; ++f) step();
+        g._score = (int)big + 1;
+        g.onQuit(audio);
+        const bool quitRecorded = g._scores.table().e[0].score == big + 1;
+        static G d;
+        d = G();
+        d.init(audio);
+        d.startDemo();
+        d._score = (int)big + 2;
+        d.onQuit(audio);
+        const bool demoKept = d._scores.table().e[0].score != big + 2;
+        bool pass = naming && after != before && onTable && over && quitRecorded && demoKept;
+        printf("runnername: entry %d, letter %c -> %c, on the table %d, game over %d, quit recorded %d, demo left out %d -> %s\n",
+               (int)naming, before, after, (int)onTable, (int)over, (int)quitRecorded, (int)demoKept, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;

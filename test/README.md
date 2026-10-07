@@ -231,7 +231,17 @@ being freed on exit to the launcher).
   diamond (`runnerdiamond`: none on stages 1-2, placed before fire pits on
   stages 9-10) and spike traps (`runnerspikes`: a retracted trap shows,
   and passing one scores only if it rose or stood while the runner was
-  over it);
+  over it), its sounds (`runnersounds`: each event's tone or melody with
+  no card, a shared file such as `powerup.wav` when that's all there is,
+  its own file when that's there; each event in play asking for its
+  sound; a demo asking for none), real games played by the autopilot
+  (`runnerplay`: five seeded games to game over; a lost life restarts its
+  stage with the score kept and a shield, a cleared stage scores 100 or
+  50 after a lost life, a loop gives a life up to 5; it has to finish a
+  loop), stage starts (`runnerstages`: stages 1-25 started directly match
+  a run from stage 1 in tier, loop and speed) and the end of a game
+  (`runnername`: name entry, the stick changing a letter, the score on the
+  table; Back mid-game records it, a demo's doesn't);
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -266,7 +276,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

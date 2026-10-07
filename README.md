@@ -696,7 +696,7 @@ fetches the real files into an existing clone.
 | `gameend.wav`, `explosion.wav` | Shared across games |
 | `lander_start.wav`, `land_success.wav`, `pickup.wav` (fuel pickup) | Lander Flux |
 | `powerup.wav` (any pickup); optional, else a tone: `tube_shot.wav` (a Fire shot), `shot.wav` (a shot asteroid) | Asteroid Flux |
-| `jump.wav`, `death.wav` | Platform Flux (Runner) |
+| `jump.wav`, `death.wav`, `gameend.wav`, else melodies; `lander_start.wav` (title, if no `runner_title.wav`), `powerup.wav` (star and diamond, if no own files); optional sounds below | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |
 | `tube_shot.wav` (lasers), `tube_bump.wav` (hit), `explosion.wav` (shot down); optional sounds below | Star Flux |
@@ -790,6 +790,22 @@ don't muddle the notes.
 | `res_chord_warn.wav` | a Chord's wave starts | ~1s | three low beeps |
 | `res_chord_hit.wav` | a Chord's layer stripped | ~0.3s | a tone |
 | `res_chord_down.wav` | a Chord brought down | ~2s | `star_boss_die.wav`, else a falling run of notes |
+
+Runner's optional sounds, the same again (none on the card yet). Each is
+checked once when the game's launched and preloaded, so a missing file
+costs nothing during play; `jump.wav`, `death.wav` and `gameend.wav` work
+the same way.
+
+| File | When | Length | Otherwise |
+|---|---|---|---|
+| `runner_title.wav` | the game's launched | ~0.6s | `lander_start.wav`, else four rising notes |
+| `runner_points.wav` | a fire pit, live spike trap or boulder got past | ~50ms | a short high tone |
+| `runner_star.wav` | the star picked up | ~0.3s | `powerup.wav`, else a tone |
+| `runner_fly.wav` | the diamond picked up | ~0.3s | `powerup.wav`, else a tone |
+| `runner_rock.wav` | hit by a falling rock | ~0.1s | a low tone |
+| `runner_boulder.wav` | hit by a boulder | ~0.1s | a low tone |
+| `runner_stage.wav` | a stage cleared | ~0.3s | three rising notes |
+| `runner_life.wav` | a loop finished: an extra life | ~0.5s | four rising notes |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

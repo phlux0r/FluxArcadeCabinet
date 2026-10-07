@@ -78,10 +78,19 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   Needs the board: how the short pits look and feel at stages 1-2, and the
   wide ones from stage 9; whether the dim spike tips read on each loop's
   colours; the title strip.
-  Still open from the review, in the proposed order: optional WAVs (`jump.wav` and
-  `death.wav` are opened per play, not `exists()`-checked or preloaded, so
-  a missing one's blip comes 300ms late) and harness scenarios of its own
-  (bot play-through, stage transitions, name entry); then a stage select;
+  - Sounds: every Runner sound is an entry in its own table, the file
+    checked once with `exists()` and preloaded, else a shared file, else
+    the tone or melody it played before (`jump.wav` and `death.wav` were
+    opened per play, so a missing one's blip came 300ms late). New
+    optional files: `runner_title/points/star/fly/rock/boulder/stage/
+    life.wav` (README's audio section); the managers now report a pickup
+    or hit and the game plays it (`runnersounds`).
+  - Harness scenarios of its own: `runnerplay` (the autopilot playing
+    five real games to game over, checking respawn, stage bonuses and the
+    loop's life; it reaches stages 8-50, which says the stages hold up
+    for a perfect-reaction player, not how they feel), `runnerstages`,
+    `runnername`.
+  Still open from the review, in the proposed order: a stage select;
   the terrain vanishing during the 0.8s death; the score ticking by real
   time (a function `static`) not distance; particle trails; per-frame
   movement with no `_frameScale` (like the other 2D games).
