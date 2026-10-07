@@ -417,7 +417,14 @@ before landing still jumps, and so does one just after running off an edge.
 Fire pits burn when the runner's middle is over them. On the first loop
 (stages 1 and 2) they're short enough for a plain jump; each loop after,
 they're wider, until the widest need the stick pushed forward through the
-jump (best from as far back as you can stand). Getting past a fire pit or spike trap scores 10, and jumping a boulder 20,
+jump (best from as far back as you can stand). Spike traps show dim tips
+while retracted, rise (a thin yellow nub) and then stand up for a moment;
+only the standing spikes hurt. The star makes you invincible for 6s; the
+diamond gives 10s of flight (the stick moves you up and down, never into
+the ground; the runner flashes red as it runs out). The diamond turns up
+from stage 3, and from the second loop also just before fire pits.
+Getting past a fire pit scores 10, a spike trap 10 if it rose while you
+were over it, and jumping a boulder 20,
 with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
 slow stars, a far mountain range and nearer hills, their colours changing
 each loop.

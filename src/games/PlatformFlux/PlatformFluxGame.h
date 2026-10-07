@@ -191,17 +191,13 @@ private:
                              i / FLUX_RUNNER_128X160_WIDTH, px);
         }
 
-        // The art's bottom 16px is a dark strip reserved for HUD-style text —
-        // best distance on the left, start prompt on the right, both
-        // vertically centered in that strip.
+        // The art's bottom 16px is a dark strip reserved for text: the best
+        // score over the start prompt, each centred (side by side, a long
+        // best ran into the prompt).
         int stripY = ArcadeConfig::LANDSCAPE_HEIGHT - 16;
-        canvas.setTextSize(1);
-        canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(4, stripY + 4);
         char hiBuf[24];
-        canvas.print(_scores.bestLine(hiBuf, sizeof(hiBuf), "BEST:"));
-        canvas.setCursor(ArcadeConfig::LANDSCAPE_WIDTH - 80, stripY + 4);
-        canvas.print("[BTN A] START");
+        hiscore::printCentred(canvas, _scores.bestLine(hiBuf, sizeof(hiBuf), "BEST: "), stripY, ArcadeConfig::COLOR_CYAN);
+        hiscore::printCentred(canvas, "[BTN A] START", stripY + 8, ArcadeConfig::COLOR_CYAN);
     }
 
     void renderInfoScreen(GFXcanvas16 &canvas) {
@@ -579,6 +575,7 @@ public:
             // free vertical movement instead of gravity/ground collision.
             if (_player.isLevitating()) {
                 _player.moveVertical(in.joyX * ArcadeConfig::RUNNER_LEVITATE_SPEED);
+                _player.keepAbove((float)_platforms.surfaceYNear(_player.getX(), _player.getX() + RUNNER_WIDTH));
                 if (millis() % 120 < 20) {
                     _particles.spawnFire(_player.getX() + RUNNER_WIDTH / 2.0f,
                                          _player.getY() + RUNNER_HEIGHT,
@@ -603,7 +600,7 @@ public:
 
             float firePitX;
             bool hasFirePitAhead = _platforms.upcomingFirePitX(firePitX);
-            _levitationPowerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms,
+            _levitationPowerUp.maybeSpawn(tier, _platforms.getLoop(), ArcadeConfig::LANDSCAPE_WIDTH, _platforms,
                                           hasFirePitAhead, firePitX);
             _levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, audio, uiNeedsUpdate, _platforms);
 

@@ -280,6 +280,109 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnerlevitate")) {
+        // Levitating with the stick held down: the runner can't sink into
+        // the ground (it went down to the screen's edge, inside the stone,
+        // and fell to its death when the flight ran out). Shielded, so only
+        // a fall can end it.
+        int sunk = 0, deaths = 0;
+        for (int seed = 1; seed <= 10; ++seed) {
+            g_rng = (uint32_t)seed;
+            static PlatformFluxGame g;
+            g = PlatformFluxGame();
+            AudioEngine audio;
+            g.init(audio);
+            g.startNewGame(audio);
+            g.startStage(6);
+            g._player.activateInvincibility(60000);
+            g._player.activateLevitation(ArcadeConfig::RUNNER_LEVITATE_MS);
+            const unsigned long until = millis() + ArcadeConfig::RUNNER_LEVITATE_MS + 1500;
+            while (millis() < until && g._phase == PlatformFluxGame::PHASE_PLAYING) {
+                InputState in{}; in.joyX = 1.0f;
+                g._player._invincibleEndTime = millis() + 60000;   // a star would cut it short
+                g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                const float px = g._player.getX();
+                if (g._player.isLevitating() &&
+                    g._player.getY() + RUNNER_HEIGHT > g._platforms.surfaceYNear(px, px + RUNNER_WIDTH) + 0.5f) ++sunk;
+            }
+            deaths += g._phase != PlatformFluxGame::PHASE_PLAYING;
+        }
+        bool pass = sunk == 0 && deaths == 0;
+        printf("runnerlevitate: 10 flights held down, %d frames inside the ground, %d deaths -> %s\n",
+               sunk, deaths, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerdiamond")) {
+        // The diamond (levitation) turns up just before a fire pit: from
+        // the second loop, where pits are wide, not on the first loop's
+        // stages 1-2, whose pits a plain jump clears. (It was only ever
+        // allowed from stage 3, after the pits, so the placement never ran.)
+        auto run = [&](int stage, int &placed, int &any) {
+            placed = any = 0;
+            for (int seed = 1; seed <= 12; ++seed) {
+                g_rng = (uint32_t)seed;
+                static PlatformFluxGame g;
+                g = PlatformFluxGame();
+                AudioEngine audio;
+                g.init(audio);
+                g.startNewGame(audio);
+                g.startStage(stage);
+                g._player.activateInvincibility(600000);
+                auto &lv = g._levitationPowerUp;
+                for (int f = 0; f < 800 && g._phase == PlatformFluxGame::PHASE_PLAYING; ++f) {
+                    const bool pending = lv._pendingFirePitSpawn, active = lv._active;
+                    InputState in = g.demoPilot();
+                    g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                    if (!active && lv._active) ++any;
+                    if (pending && !lv._pendingFirePitSpawn && lv._active) ++placed;
+                    if (g._player.isLevitating()) g._player._levitationEndTime = 0;   // keep the cooldown off
+                    lv._cooldownUntil = 0;
+                }
+            }
+        };
+        int placed1, any1, placed9, any9;
+        run(1, placed1, any1);
+        run(9, placed9, any9);
+        bool pass = any1 == 0 && placed9 >= 6;
+        printf("runnerdiamond: stages 1-2 %d diamonds; stages 9-10 %d before a pit (%d in all), 12 runs each -> %s\n",
+               any1, placed9, any9, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerspikes")) {
+        // Spike traps: a retracted one still shows (it was invisible until
+        // its warning), and getting past one only scores if it was rising
+        // or up while the runner was over it.
+        PlatformManager pm;
+        auto &p = pm._pool[0];
+        p = {};
+        p.active = true; p.isGroundSegment = true; p.width = 60; p.x = 40;
+        p.y = ArcadeConfig::LANDSCAPE_HEIGHT - 8; p.baseY = (float)p.y;
+        p.hasSpike = true; p.spikeOffsetX = 30;
+        p.spikePhaseEnd = ~0UL;
+        const int sx = (int)(p.x + p.spikeOffsetX);
+        p.spikePhase = PlatformManager::SPIKE_SAFE;
+        canvas.fillScreen(0);
+        pm.render(canvas);
+        int shown = 0;
+        for (int x = sx - 6; x <= sx + 7; ++x) shown += canvas.getBuffer()[(p.y - 1) * canvas.width() + x] != 0;
+        auto pass1 = [&](PlatformManager::SpikePhase ph) {
+            p.spikePhase = ph; p.spikeScored = false;
+            p.spikeLive = false;
+            int pts = 0; float x, y;
+            for (float px = 0; px < 120; px += 1.0f) pts += pm.takeCleared(px, x, y);
+            return pts;
+        };
+        const int safe = pass1(PlatformManager::SPIKE_SAFE), warn = pass1(PlatformManager::SPIKE_WARN),
+                  up = pass1(PlatformManager::SPIKE_DANGER);
+        bool pass = shown > 0 && safe == 0 && warn == ArcadeConfig::RUNNER_SPIKE_POINTS &&
+                    up == ArcadeConfig::RUNNER_SPIKE_POINTS;
+        printf("runnerspikes: retracted trap %d px showing; passed retracted +%d, rising +%d, up +%d -> %s\n",
+               shown, safe, warn, up, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;

@@ -14,7 +14,8 @@
 // A diamond pickup granting 10s of free vertical flight (see
 // PlayerRunner::activateLevitation). Rarer than the star, and biased to
 // appear just ahead of an upcoming fire pit when one is queued in the
-// platform pool, rather than spawning at a purely random moment.
+// platform pool (from the second loop, see maybeSpawn), rather than
+// spawning at a purely random moment.
 // =============================================================================
 class LevitationPowerUpManager {
 private:
@@ -38,11 +39,14 @@ public:
 
     // hasFirePitAhead/firePitX come from PlatformManager::upcomingFirePitX —
     // when a fire pit is queued just off-screen, spawn a bit ahead of it
-    // instead of rolling purely at random.
-    void maybeSpawn(int tier, float rightEdgeX, const PlatformManager &platforms,
+    // instead of rolling purely at random. Pits are only in the first two
+    // stages of each loop: on the first loop they're short and the diamond
+    // stays away (from stage 3); from the second, where they're wide, it
+    // turns up in front of them too.
+    void maybeSpawn(int tier, int loop, float rightEdgeX, const PlatformManager &platforms,
                     bool hasFirePitAhead, float firePitX) {
         if (_active || millis() < _cooldownUntil) return;
-        if (tier < 2) return;
+        if (tier < 2 && loop == 0) return;
 
         if (hasFirePitAhead) {
             if (!_pendingFirePitSpawn) {

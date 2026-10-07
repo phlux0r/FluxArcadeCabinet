@@ -226,7 +226,12 @@ being freed on exit to the launcher).
   200 runs through stages 5-6, the first ground block never more than a
   stair step, 8px, above the slab before it) and the game-over timeout
   (`runnerover`: back to the title, not straight into the demo, even when
-  the game was started from the scores screen);
+  the game was started from the scores screen), levitation held down
+  (`runnerlevitate`: never inside the ground, no fall when it ends), the
+  diamond (`runnerdiamond`: none on stages 1-2, placed before fire pits on
+  stages 9-10) and spike traps (`runnerspikes`: a retracted trap shows,
+  and passing one scores only if it rose or stood while the runner was
+  over it);
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -261,7 +266,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

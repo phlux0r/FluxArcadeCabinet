@@ -123,6 +123,13 @@ public:
                        (float)ArcadeConfig::RUNNER_LEVITATE_Y_MAX);
     }
 
+    // While levitating, the feet stay on or above `surfaceY` (the ground
+    // or slab under the runner): no flying down into the stone, and so no
+    // falling through it when the flight runs out.
+    void keepAbove(float surfaceY) {
+        if (_levitating && _y + RUNNER_HEIGHT > surfaceY) _y = surfaceY - RUNNER_HEIGHT;
+    }
+
     bool isLevitating() const { return _levitating; }
 
     void updateAnimation() {

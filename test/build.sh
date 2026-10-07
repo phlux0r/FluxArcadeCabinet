@@ -8,7 +8,7 @@
 #   test/build.sh roll god        # one Roll Flux scenario
 #   test/build.sh audio            # just the audio mixer tests
 #   test/build.sh games2d runner 60000   # one 2D game's attract demo checks
-#   test/build.sh games2d runnerpits     # one games2d scenario (runnerwall, runnerover, fire, ...)
+#   test/build.sh games2d runnerpits     # one games2d scenario (runnerwall, runnerspikes, fire, ...)
 #   test/build.sh brick play 20000       # one Brick Flux scenario
 #   test/build.sh resonance match        # one Resonance Flux scenario
 #   test/build.sh maze play 60000        # one Maze Flux scenario
@@ -132,7 +132,7 @@ else
   ./hiscore_test | tail -1
   echo "=== cabinet (main.cpp: launch and quit every game, menu scrolling, high-score cycle)"
   ./cabinet_sim
-  echo "=== games2d (Runner, Asteroid, Lander attract demos; Runner pits, wall, game over; Asteroid, Lander, trails)"
+  echo "=== games2d (Runner, Asteroid, Lander attract demos; Runner pits, wall, game over, levitation, diamond, spikes; Asteroid, Lander, trails)"
   ./games2d_harness all 30000
   for s in physics rules courses guardians god "play 20000" idle demoexit menus pick ticks; do
     echo "=== roll $s"

@@ -50,6 +50,7 @@ private:
         float firePitGapWidth; // gap width — region [x - firePitGapWidth, x) scrolls with x
         bool       hasSpike;
         bool       pitScored, spikeScored;  // cleared by the runner: points given
+        bool       spikeLive;    // rising or up while the runner was over it
         float      spikeOffsetX; // offset from x, scrolls with the segment
         SpikePhase spikePhase;
         unsigned long spikePhaseEnd;
@@ -301,6 +302,7 @@ private:
         _pool[index].hasSpike      = false;
         _pool[index].pitScored     = false;
         _pool[index].spikeScored   = false;
+        _pool[index].spikeLive     = false;
 
         if (_introPlatformsLeft > 0) {
             // Flat, contiguous run — no gap, no height change, no hazards.
@@ -651,7 +653,9 @@ public:
 
     // A fire pit or spike trap the runner has got past (its right edge
     // behind playerX) and hasn't been scored yet: marks it, gives where to
-    // show the points, and returns them; 0 when there's none. Call until 0.
+    // show the points, and returns them; 0 when there's none. Call until 0,
+    // every frame: a spike only scores if it was rising or up at some
+    // point while the runner was over it, which this watches for.
     int takeCleared(float playerX, float &popX, float &popY) {
         for (int i = 0; i < POOL_SIZE; i++) {
             Platform &p = _pool[i];
@@ -662,11 +666,16 @@ public:
                 popY = (float)(p.y - 10);
                 return ArcadeConfig::RUNNER_PIT_POINTS;
             }
-            if (p.hasSpike && !p.spikeScored && p.x + p.spikeOffsetX + 7.0f < playerX) {
-                p.spikeScored = true;
-                popX = p.x + p.spikeOffsetX;
-                popY = (float)(p.y - 16);
-                return ArcadeConfig::RUNNER_SPIKE_POINTS;
+            if (p.hasSpike && !p.spikeScored) {
+                const float sx = p.x + p.spikeOffsetX;
+                if (p.spikePhase != SPIKE_SAFE && playerX + RUNNER_WIDTH > sx - 6 && playerX < sx + 6) p.spikeLive = true;
+                if (sx + 7.0f < playerX) {
+                    p.spikeScored = true;
+                    if (!p.spikeLive) continue;   // never fired at the runner: nothing dodged
+                    popX = sx;
+                    popY = (float)(p.y - 16);
+                    return ArcadeConfig::RUNNER_SPIKE_POINTS;
+                }
             }
         }
         return 0;
@@ -715,6 +724,13 @@ public:
             if (_pool[i].hasSpike) {
                 int sx = (int)(_pool[i].x + _pool[i].spikeOffsetX);
                 int baseY = _pool[i].y;
+                if (_pool[i].spikePhase != SPIKE_DANGER) {
+                    // Retracted (or rising): just the tips showing, dim, so
+                    // the trap can be seen coming.
+                    uint16_t dim = darken(spikeDangerColor());
+                    canvas.fillTriangle(sx - 6, baseY, sx + 2, baseY, sx - 2, baseY - 2, dim);
+                    canvas.fillTriangle(sx - 1, baseY, sx + 7, baseY, sx + 3, baseY - 2, dim);
+                }
                 if (_pool[i].spikePhase == SPIKE_WARN) {
                     // Telegraph: a thin rising nub, not yet dangerous.
                     canvas.drawFastVLine(sx, baseY - 3, 3, ArcadeConfig::COLOR_YELLOW);

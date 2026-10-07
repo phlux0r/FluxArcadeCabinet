@@ -63,13 +63,22 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   - The game-over timeout went straight into the demo when the game had
     been started from the scores screen; now back to the title
     (`runnerover`).
+  - Levitating with the stick down sank the runner into the stone, and it
+    fell through and died when the flight ended; now its feet stay on or
+    above the surface under it (`runnerlevitate`).
+  - The diamond's "just before a fire pit" placement never ran (pits only
+    in stages 1-2, the diamond only from 3). It now also turns up in
+    stages 1-2 from the second loop, where pits are wide; the first loop's
+    stay diamond-free (`runnerdiamond`).
+  - Spike traps were invisible while retracted and scored 10 even if they
+    never rose. Retracted ones show dim tips; points only if the trap rose
+    or stood while the runner was over it (`runnerspikes`).
+  - The title's best score and start prompt overlapped side by side; now
+    two centred lines in the art's bottom strip.
   Needs the board: how the short pits look and feel at stages 1-2, and the
-  wide ones from stage 9.
-  Still open from the review, in the proposed order: levitation lets the
-  runner sink into the ground and die when it ends; the diamond's "just
-  before a fire pit" placement almost never runs (pits only in stages
-  1-2, the diamond only from 3); spike traps are invisible while safe and
-  score 10 even if they never fired; then optional WAVs (`jump.wav` and
+  wide ones from stage 9; whether the dim spike tips read on each loop's
+  colours; the title strip.
+  Still open from the review, in the proposed order: optional WAVs (`jump.wav` and
   `death.wav` are opened per play, not `exists()`-checked or preloaded, so
   a missing one's blip comes 300ms late) and harness scenarios of its own
   (bot play-through, stage transitions, name entry); then a stage select;
