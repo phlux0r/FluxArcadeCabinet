@@ -112,24 +112,12 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
     `_frameScale`, like the other 2D games.
   The review is done. Needs the board: the death frame and the trails'
   look and cost, and everything listed above.
-- **Runner: longer play (owner's request, to plan next).** Stages repeat
-  the same eight hazards each loop, only faster and recoloured. Ideas to
-  propose, for the owner to pick from:
-  - B is unused in Runner: a slide or duck under low beams and swooping
-    ships, or a Moon Patrol gun (perhaps as a pickup) for ships and
-    boulders.
-  - Fire pits back in the later ground stages (6-8), mixed with spikes and
-    boulders, so the wide pits have a home.
-  - Crumbling slabs in the floating stages that drop a beat after you
-    land, and springs that launch to a high route.
-  - A high route with gem chains along jump arcs (a combo multiplier for
-    taking the risky line) over a safe low one.
-  - From the second loop, mixed stages: hazards from different tiers
-    together (spikes on slabs, boulders under ships).
-  - A boss stretch ending each loop: a big ship dropping rock patterns,
-    survived for a set distance or shot down.
-  - Conveyor or wind sections that push the runner's position, and a
-    darker stage where only what's near the runner is lit.
+- **Runner: new stages (planned, docs/design/RunnerFlux.md).** The owner
+  chose a world per loop (loop 2 Night, 3 Ruins, 4 Storm, then the
+  worlds again, faster), B to duck under low obstacles only (low beams,
+  burning ropes, darts; not ships), and a boss stretch to survive at the
+  end of each loop. Night first; its details are waiting on the owner's
+  confirmation before any code.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the
