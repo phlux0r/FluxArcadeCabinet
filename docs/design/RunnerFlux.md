@@ -281,4 +281,4 @@ darts, the Ruins' cracks, Storm's gust.
   bot clears them); the boss's patterns survivable.
 - README and test/README up to date; HANDOVER says where it stands.
 - `pio run`'s size line checked (a sprite frame is ~720 bytes; flash was
-  at 39.3% with the Ruins).
+  at 39.4% with Storm).

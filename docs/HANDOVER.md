@@ -181,9 +181,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   maze_door/switch/teleport files).
 - **Needs the board:** the frame rate of Maze (its textured walls doubled
   the host cost), Asteroid (exhaust and Fire bolts) and Lander. The last
-  `pio run` size line seen was 39.3% flash (1,236,469 of 3,145,728
-  bytes), 22.2% RAM, on the Runner branch with Night, the boss and the
-  Ruins.
+  `pio run` size line seen was 39.4% flash (1,238,857 of 3,145,728
+  bytes), 22.2% RAM, on main with all four Runner worlds.
 - **Particle trails** (merged):
   `ParticleManager`'s spawn calls take an optional trail length (0-4);
   a particle with one keeps its last positions, and how bright it was at
