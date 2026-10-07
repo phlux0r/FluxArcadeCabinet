@@ -160,22 +160,23 @@ life. A life lost restarts it.
   one at a time, never the same twice running; the next starts only once
   the last one's rocks and darts are gone, after a breather (16 frames, 3
   less a loop, at least 8):
-  - LINE: the bay flashes (14 frames), then rocks fall every 13px across
+  - LINE: the bay flashes (24 frames), then rocks fall every 13px across
     the reach, none within 18px of the gap's centre (a 26px clear gap for
-    the 18px runner). The gap is within 32px of the runner, so it can
-    always get there before they land (they fall in about 47 frames).
+    the 18px runner). The gap is within 40px of the runner, so it can
+    always get there before they land (they fall in about 72 frames).
   - TRACK: 3 rocks (more on later loops, to 5), 24 frames apart, each
     aimed at the runner but never within 16px of either end of its reach,
     so a runner at an end can always stand clear.
-  - ROLL: a rock lands ahead and rolls at the runner, 1px a frame faster
-    than the scroll: jump it (20 points, like a boulder).
+  - ROLL: a rock lands ahead and rolls at the runner, 0.6px a frame
+    faster than the scroll: jump it (20 points, like a boulder).
   - DART (Night's boss only): two darts at head height, 40 frames apart:
     duck.
-- **Rocks** fall from under the ship, from 0.5px a frame with 0.05 of
-  pull (slower than the flying enemy's, so a spread can be read), and
-  shatter on the ground.
+- **Rocks** fall from under the ship, from 0.3px a frame with 0.024 of
+  pull, about 72 frames to the ground (the owner found the first, 47
+  frames, too quick to dodge), and shatter on the ground. About 5
+  patterns fit in a stretch.
 - **Fair**: the harness bot (as a player) gets through 20 runs each of
-  the bosses at 9, 18 and 27 with no lives lost, meeting about 6 patterns a
+  the bosses at 9, 18 and 27 with no lives lost, meeting about 5 patterns a
   run. Each rule above was found by it dying without it.
 - The look: a long hull (magenta; steel at Night) with a canopy, engine
   glows, portholes, and the red bay that flashes white before a spread.

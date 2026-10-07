@@ -30,13 +30,14 @@ public:
     enum Pattern { P_LINE, P_TRACK, P_ROLL, P_DART, P_COUNT };
 
     // Rocks fall from just under the ship at ROCK_TOP with this pull,
-    // slower than the flying enemy's so a spread can be read and dodged.
+    // slow (about 70 frames to the ground) so a spread can be read and
+    // dodged: the owner found 47 frames too quick.
     static constexpr float ROCK_TOP = 32.0f;
-    static constexpr float ROCK_VY0 = 0.5f;
-    static constexpr float ROCK_G   = 0.05f;
+    static constexpr float ROCK_VY0 = 0.3f;
+    static constexpr float ROCK_G   = 0.024f;
     static const int ROCK_R = 5;
     static const int ENTER_FRAMES = 75;     // flying in, nothing dropped
-    static const int TELEGRAPH    = 14;     // the bay flashes before a line drops
+    static const int TELEGRAPH    = 24;     // the bay flashes before a line drops
     static const int LEAVE_BEFORE = 100;    // no new pattern this close to the end
 
 private:
@@ -93,8 +94,8 @@ private:
     static float reachHi() { return ArcadeConfig::RUNNER_BASE_X + ArcadeConfig::RUNNER_BOSS_MAX_OFFSET + RUNNER_WIDTH / 2.0f; }
 
     // LINE's gap is never further than this from the runner: it can get
-    // there between the flash and the rocks landing (about 60 frames).
-    static const int GAP_REACH = 32;
+    // there between the flash and the rocks landing (about 90 frames).
+    static const int GAP_REACH = 40;
 
     void choosePattern(float runnerCentre) {
         const int kinds = _night ? 4 : 3;
@@ -243,7 +244,7 @@ public:
         return _dropped;
     }
 
-    static constexpr float ROLL_EXTRA = 1.0f;   // a roller's speed over the scroll
+    static constexpr float ROLL_EXTRA = 0.6f;   // a roller's speed over the scroll
 
     // Would a rock touch this box `t` frames from now? Exact, from each
     // rock's fall and roll; for the demo's autopilot, with a pixel to spare.

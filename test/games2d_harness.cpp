@@ -1225,7 +1225,7 @@ int main(int argc, char** argv) {
             char what[96];
             snprintf(what, sizeof(what), "stage %d: %d/20 through, %d lives lost, %.1f patterns a run, gaps out of reach %d",
                      stage, through, died, patterns / 20.0, farGaps);
-            check(what, through == 20 && died == 0 && patterns >= 20 * 5 && farGaps == 0 &&
+            check(what, through == 20 && died == 0 && patterns >= 20 * 4 && farGaps == 0 &&
                         kinds[0] && kinds[1] && kinds[2] && (night ? kinds[3] > 0 : kinds[3] == 0));
         }
         printf("runnerboss -> %s\n", pass ? "PASS" : "FAIL");

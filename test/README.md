@@ -271,7 +271,7 @@ being freed on exit to the launcher).
   diamond comes once it's in; the runner reaches offset 60 and walks back
   a pixel a frame after; clearing it gives the stage bonus, 250 and a
   life; the autopilot gets through 20 runs each of 9, 18 and 27 with no
-  lives lost, about 6 patterns a run, every pattern met, each line's gap
+  lives lost, at least 4 patterns a run, every pattern met, each line's gap
   in reach). `runnerplay` has to get through Night and its boss (to stage 19) and
   prints the lives lost by stage; `runnerpits` ducks at Night;
   `runnerdiamond` checks the diamond stays away from Night;

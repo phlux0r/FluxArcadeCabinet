@@ -142,6 +142,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   and in Night's pit stages beams at the front of their blocks with a
   pit allowed after (30px to stand and jump). Needs the board: the boss's
   look and fairness by hand, the slower speeds, the wider reach's feel.
+  The owner found the rocks too quick: they now take about 72 frames to
+  fall (were 47), the spread's flash 24 frames, the roller slower.
   Next: Ruins (docs/design/RunnerFlux.md section 3).
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
