@@ -1201,7 +1201,7 @@ int main(int argc, char** argv) {
 
         // Fair: the autopilot, as a player, 20 runs of each boss.
         for (int stage : { 9, 18, 27, 36 }) {
-            int died = 0, through = 0, kinds[RunnerBoss::P_COUNT] = {}, farGaps = 0, patterns = 0;
+            int died = 0, through = 0, kinds[RunnerBoss::P_COUNT] = {}, farGaps = 0, patterns = 0, overHoles = 0;
             for (int seed = 1; seed <= 20; ++seed) {
                 g = G(); g_rng = (uint32_t)seed; g.init(audio);
                 g.startNewGame(audio, stage, true);
@@ -1216,6 +1216,8 @@ int main(int argc, char** argv) {
                     if (g._boss.phase() == RunnerBoss::FIGHT && g._boss._stepAt == g._boss._frame && g._boss._stepAt != lastStepAt) {
                         lastStepAt = g._boss._stepAt;
                         ++patterns; ++kinds[g._boss.pattern()];
+                        // Only the roller while a crack or hole is still ahead.
+                        if (g._boss.pattern() != RunnerBoss::P_ROLL && g._platforms.ruins().holesAhead(g._player.getX())) ++overHoles;
                         if (g._boss.pattern() == RunnerBoss::P_LINE &&
                             fabsf(g._boss.gapX() - centre) > RunnerBoss::GAP_REACH + 1.5f) ++farGaps;
                     }
@@ -1224,9 +1226,9 @@ int main(int argc, char** argv) {
             }
             const int world = PM::worldOf((stage - 1) / PM::TIERS_PER_LOOP);
             char what[96];
-            snprintf(what, sizeof(what), "stage %d: %d/20 through, %d lives lost, %.1f patterns a run, gaps out of reach %d",
-                     stage, through, died, patterns / 20.0, farGaps);
-            check(what, through == 20 && died == 0 && patterns >= 20 * 4 && farGaps == 0 &&
+            snprintf(what, sizeof(what), "stage %d: %d/20 through, %d lives lost, %.1f patterns a run, gaps out of reach %d%s",
+                     stage, through, died, patterns / 20.0, farGaps, overHoles ? ", rocks over holes" : "");
+            check(what, through == 20 && died == 0 && patterns >= 20 * 4 && farGaps == 0 && overHoles == 0 &&
                         kinds[0] && kinds[1] && kinds[2] &&
                         (kinds[RunnerBoss::P_DART] > 0) == (world == 1) && (kinds[RunnerBoss::P_CRACK] > 0) == (world == 2) &&
                         (kinds[RunnerBoss::P_GUST] > 0) == (world == 3));
@@ -1575,6 +1577,32 @@ int main(int argc, char** argv) {
             char what[96];
             snprintf(what, sizeof(what), "stage %d's widest pit (%dpx) in a headwind: %d frames to jump in", stage, gap, window);
             check(what, window >= 2);
+        }
+
+        // The ship's rocks and the boss's are orange in Storm (grey was lost
+        // in the rain), grey elsewhere.
+        {
+            auto rockColour = [&](int loop, bool boss) {
+                canvas.fillScreen(0);
+                if (boss) {
+                    RunnerBoss b; b.start(loop); b._phase = RunnerBoss::IDLE;
+                    b._rocks[0] = { 80.0f, 60.0f, 0.0f, 120.0f, true, false, false, false, false };
+                    b.render(canvas);
+                } else {
+                    FlyingEnemyManager e; e.initGame();
+                    auto &r = e._rocks[0];
+                    r.active = true; r.x = 80; r.y = 60; r.angle = 0;
+                    for (int j = 0; j < 6; j++) { r.xOffsets[j] = 4 * cosf(j * PI / 3); r.yOffsets[j] = 4 * sinf(j * PI / 3); }
+                    e.render(canvas, loop);
+                }
+                for (int i = 0; i < canvas.width() * canvas.height(); i++)
+                    if (canvas.getBuffer()[i]) return canvas.getBuffer()[i];
+                return (uint16_t)0;
+            };
+            const bool ok = rockColour(3, false) == ArcadeConfig::COLOR_ORANGE && rockColour(7, false) == ArcadeConfig::COLOR_ORANGE &&
+                            rockColour(2, false) == ArcadeConfig::COLOR_GREY && rockColour(3, true) == ArcadeConfig::COLOR_ORANGE &&
+                            rockColour(2, true) == ArcadeConfig::COLOR_GREY;
+            check("rocks orange in Storm (the ship's and the boss's), grey elsewhere", ok);
         }
 
         // The autopilot, as a player, through Storm and its boss. (Its weak

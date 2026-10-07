@@ -273,7 +273,8 @@ being freed on exit to the launcher).
   life; the autopilot gets through 20 runs each of 9, 18, 27 and 36 with no
   lives lost, at least 4 patterns a run, every pattern met, each line's gap
   in reach; each world's boss meets its own pattern and no other's: darts
-  at 18, cracks at 27, the gust at 36), the Ruins
+  at 18, cracks at 27, the gust at 36; at 27 nothing but the roller starts
+  while a crack or hole is still ahead), the Ruins
   (`runnerruins`: the worlds in turn; 100 runs from stage 19: a spring in
   19 and 20, each just before a pit, crumbling slabs in 21-23, pillars in
   24-26, none of them anywhere else, pits still exact; a crumbling slab
@@ -291,7 +292,8 @@ being freed on exit to the launcher).
   pushed jump into a headwind blowing throughout, 2 or more frames to
   jump in; the autopilot through all 20 runs of Storm and its boss, 50
   lives lost at most, its weak spot being the platforms-and-ship stage as
-  in every loop).
+  in every loop; the ship's and the boss's rocks orange in Storm, grey
+  elsewhere).
   `runnerplay` has to get through all four worlds and their bosses (to stage 37) and
   prints the lives lost by stage; `runnerpits` ducks at Night, and tries
 stage 28 (Storm's gusts about) and 37 too;

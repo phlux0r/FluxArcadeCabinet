@@ -71,7 +71,7 @@ private:
         }
     }
 
-    void drawJaggedRock(GFXcanvas16 &canvas, Rock &r) {
+    void drawJaggedRock(GFXcanvas16 &canvas, Rock &r, uint16_t colour) {
         float rad = r.angle * (PI / 180.0f);
         float cosA = cos(rad), sinA = sin(rad);
         int rx[6], ry[6];
@@ -81,7 +81,7 @@ private:
         }
         for (int i = 0; i < 6; i++) {
             int n = (i + 1) % 6;
-            canvas.drawLine(rx[i], ry[i], rx[n], ry[n], ArcadeConfig::COLOR_GREY);
+            canvas.drawLine(rx[i], ry[i], rx[n], ry[n], colour);
         }
     }
 
@@ -213,9 +213,13 @@ public:
             canvas.drawLine(ex - 6, ey - 2, ex - 2, ey, shipColor);
             canvas.drawLine(ex + 6, ey - 2, ex + 2, ey, shipColor);
         }
+        // Rocks grey, but orange in Storm (the fourth world): grey ones
+        // were lost in the rain.
+        const uint16_t rockColour = loopIndex % ArcadeConfig::RUNNER_WORLDS == 3 ? ArcadeConfig::COLOR_ORANGE
+                                                                                 : ArcadeConfig::COLOR_GREY;
         for (int i = 0; i < MAX_ROCKS; i++) {
             if (!_rocks[i].active) continue;
-            drawJaggedRock(canvas, _rocks[i]);
+            drawJaggedRock(canvas, _rocks[i], rockColour);
         }
     }
 };

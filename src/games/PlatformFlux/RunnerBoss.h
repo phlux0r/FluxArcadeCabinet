@@ -22,7 +22,9 @@
 //   ROLL   a rock lands ahead and rolls at the runner: jump it.
 //   DART   (Night's boss) darts fired at head height: duck.
 //   CRACK  (the Ruins' boss) two rocks land ahead and crack the ground:
-//          holes coming at the runner, to jump.
+//          holes coming at the runner, to jump. Till they're behind it,
+//          only ROLL may start (rocks falling into the jumps over the
+//          holes were all but unbeatable).
 //   GUST   (Storm's boss) a gust, warned of, then three aimed rocks while
 //          it blows: fight the wind to dodge them.
 // Everything runs in frames, like the scroll, so the demo's autopilot can
@@ -108,16 +110,22 @@ private:
     // there between the flash and the rocks landing (about 90 frames).
     static const int GAP_REACH = 40;
 
-    void choosePattern(float runnerCentre) {
+    // Starts the next pattern; with `onlyRoll` (holes ahead) only ROLL,
+    // and nothing if ROLL was the last. False if nothing started.
+    bool choosePattern(float runnerCentre, bool onlyRoll) {
         // The world's patterns: the three, and Night's darts, the Ruins'
         // cracks or Storm's gusts.
         const int kinds = _world == 0 ? 3 : 4;
-        Pattern p;
-        do {
-            p = (Pattern)random(0, kinds);
-            if (p == P_DART && _world == 2) p = P_CRACK;
-            if (p == P_DART && _world == 3) p = P_GUST;
-        } while (p == _last);
+        Pattern p = P_ROLL;
+        if (onlyRoll) {
+            if (_last == P_ROLL) return false;
+        } else {
+            do {
+                p = (Pattern)random(0, kinds);
+                if (p == P_DART && _world == 2) p = P_CRACK;
+                if (p == P_DART && _world == 3) p = P_GUST;
+            } while (p == _last);
+        }
         _pattern = _last = p;
         _step = 0;
         _stepAt = _frame;
@@ -127,6 +135,7 @@ private:
             _gapX = (float)random((long)lo, (long)hi + 1);
             _flashUntil = _frame + TELEGRAPH;
         }
+        return true;
     }
 
     // One frame of the current pattern.
@@ -243,8 +252,8 @@ public:
             if (!patternDone() || rocksFalling() || platforms.dartsFlying() || platforms.storm().gusting())
                 _nextAt = _frame + breather();
             if (framesLeft <= LEAVE_BEFORE) _phase = LEAVE;
-            else if (_frame >= _nextAt) choosePattern(centre);
-            if (_phase == FIGHT) runPattern(centre, platforms);
+            else if (_frame >= _nextAt) choosePattern(centre, platforms.ruins().holesAhead(player.getX()));
+            if (_phase == FIGHT) runPattern(centre, platforms);   // (a finished one does nothing)
         } else if (_phase == LEAVE) {
             _shipX += 1.5f;
         }
@@ -355,7 +364,9 @@ public:
             const Rock &r = _rocks[i];
             if (!r.active) continue;
             const int cx = (int)r.x, cy = (int)r.y;
-            const uint16_t c = r.roller ? ArcadeConfig::COLOR_AMBER : ArcadeConfig::COLOR_GREY;
+            // (Orange in Storm: grey ones were lost in the rain.)
+            const uint16_t c = r.roller ? ArcadeConfig::COLOR_AMBER
+                             : _world == 3 ? ArcadeConfig::COLOR_ORANGE : ArcadeConfig::COLOR_GREY;
             canvas.drawLine(cx - 2, cy - ROCK_R, cx + 3, cy - ROCK_R + 1, c);
             canvas.drawLine(cx + 3, cy - ROCK_R + 1, cx + ROCK_R, cy + 2, c);
             canvas.drawLine(cx + ROCK_R, cy + 2, cx + 1, cy + ROCK_R, c);

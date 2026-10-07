@@ -164,7 +164,11 @@ with a chain bonus, and the boss cracking the ground.
   4 frames). Boulders and the flying ship's rocks hold while one's ahead
   (rocks falling into the jump over a log were too much).
 - **The boss's CRACK** pattern: two rocks land 60 and 110px ahead; each
-  cracks the ground (20 frames) then opens a 14px hole.
+  cracks the ground (20 frames) then opens a 14px hole. Till both are
+  behind the runner the boss starts nothing but ROLL: the owner found the
+  next pattern's rocks falling into the jumps over the holes all but
+  unbeatable (the harness bot, seeing every rock's landing exactly, never
+  noticed).
 - **The boss's ground** now drops to the base level (a stair left high by
   the stage before gave the rocks less room and put jumps up into them).
 - **Fair**: the harness autopilot gets through all 20 runs of the Ruins
@@ -211,7 +215,8 @@ always wins, slowly.
   and ship stage costs the bot about a life a run; stage 5 too.)
 - **The look:** grey-green cloud, no stars, rain slanting down and back,
   the sky lit for a few frames every 7s; weathered green stone, yellow
-  spikes.
+  spikes. The ship's rocks and the boss's are orange in Storm (the owner
+  found grey ones lost in the rain).
 - **The boss's GUST** pattern: a gust (90 frames) and three rocks aimed
   as TRACK's, dropped 20 frames apart from 10 frames in, landing while it
   blows.

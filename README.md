@@ -468,7 +468,8 @@ broken columns on the skyline.
   path as a log: jump it (20 points). The flying ship holds its rocks
   while a pillar's ahead.
 - **The boss** (27) adds a pattern: two rocks land ahead and crack the
-  ground; the cracks open into holes coming at you, to jump.
+  ground; the cracks open into holes coming at you, to jump. Till they're
+  behind you it sends nothing but, at most, a rolling rock.
 
 Storm (stages 28-35, then its boss at 36): weathered green stone under
 grey cloud, rain, and now and then lightning.
@@ -478,7 +479,8 @@ grey cloud, rain, and now and then lightning.
   in the air too, for about a second, at half the stick's speed: push
   against it to hold your place. The fire pits are sized for a jump made
   into one. The flying ship holds its rocks while a gust is coming or
-  blowing.
+  blowing, and its rocks (and the boss's) are orange here, to show in the
+  rain.
 - **Conveyors:** in the later ground stages (33-35), half the blocks are
   belts (yellow chevrons running the way they go) carrying you forward or
   back while you stand on them, at half the stick's speed too.

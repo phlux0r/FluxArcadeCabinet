@@ -259,6 +259,13 @@ public:
         return 0;
     }
 
+    // A crack or hole the runner (its left edge at runnerX) hasn't got past
+    // yet: the boss starts nothing but its roller while one is.
+    bool holesAhead(float runnerX) const {
+        for (const auto &h : _holes) if (h.active && h.x + HOLE_W > runnerX) return true;
+        return false;
+    }
+
     // A pillar or a high slab ahead (no boulder sent while one is).
     bool ahead(float runnerX) const {
         for (const auto &p : _pillars) if (p.active && p.x > runnerX - 10 && p.x < ArcadeConfig::LANDSCAPE_WIDTH + 80) return true;

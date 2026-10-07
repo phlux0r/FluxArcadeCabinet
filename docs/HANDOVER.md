@@ -170,6 +170,11 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   and belts feel, and Storm's frame rate (rain is 40 short lines a frame,
   the streaks up to 18). The harness bot's weak spot is every loop's
   platforms-and-ship stage (5, 14, 32, 41 cost it about a life a run).
+  After playing: the Ruins boss's cracks were near unbeatable (the next
+  pattern's rocks fell into the jumps over the holes), so only its roller
+  may start while a hole's ahead; Storm's rocks are orange (grey was lost
+  in the rain). The harness bot is a poor judge of what a person can
+  dodge: it knows every rock's landing to the frame.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the
