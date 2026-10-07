@@ -218,6 +218,15 @@ being freed on exit to the launcher).
   the Runner, Asteroid and Lander attract demos are covered
   (`games2d_harness.cpp`: every demo silent, high score untouched, A
   mid-demo starts a clean game), not their gameplay; besides those it
+  checks Runner's fire pits (`runnerpits`: every jump frame tried on a
+  copy of the game; on stages 1 and 2 a plain jump clears every first pit
+  with 4 or more frames to choose from, and on stages 9, 17 and 25 the
+  pits are wider than the first loop's and a jump pushed forward still
+  clears them), the ground after the floating platforms (`runnerwall`:
+  200 runs through stages 5-6, the first ground block never more than a
+  stair step, 8px, above the slab before it) and the game-over timeout
+  (`runnerover`: back to the title, not straight into the demo, even when
+  the game was started from the scores screen);
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -252,7 +261,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

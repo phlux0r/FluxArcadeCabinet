@@ -143,6 +143,143 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnerpits")) {
+        // Runner's fire pits: on the first loop (stages 1-2) a plain jump,
+        // stick left alone, clears every one with a few frames to spare;
+        // from the second loop they're wider, and the forward push through
+        // a jump (back on the ground, forward in the air) still clears them.
+        // Each case: the first pit after `stage` starts, every jump frame
+        // tried on a copy of the game.
+        AudioEngine audio;
+        auto tryPit = [&](int seed, int stage, bool push, int &gap, int &window) {
+            g_rng = (uint32_t)seed;
+            static PlatformFluxGame g;
+            g = PlatformFluxGame();
+            g.init(audio);
+            g.startNewGame(audio);
+            if (stage > 1) g.startStage(stage);
+            g._player.activateInvincibility(0);
+            auto stick = [&](const PlatformFluxGame &s) { return push ? (s._player.isOnGround() ? -1.0f : 1.0f) : 0.0f; };
+            int pit = -1;
+            for (int f = 0; f < 3000 && pit < 0 && g._phase == PlatformFluxGame::PHASE_PLAYING; ++f) {
+                for (int i = 0; i < 6; ++i) {
+                    const auto &p = g._platforms._pool[i];
+                    if (!p.active || !p.firePitBefore || p.pitScored) continue;
+                    const float l = p.x - p.firePitGapWidth;
+                    if (l > g._player.getX() + RUNNER_WIDTH + 2 && l < g._player.getX() + RUNNER_WIDTH + 40) pit = i;
+                }
+                if (pit >= 0) break;
+                InputState in{}; in.joyY = push ? -1.0f : 0.0f;
+                g.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+            }
+            if (pit < 0) return false;
+            gap = (int)g._platforms._pool[pit].firePitGapWidth;
+            window = 0;
+            static PlatformFluxGame h;
+            for (int k = 0; k < 60; ++k) {
+                h = g;
+                const uint32_t r = g_rng; const unsigned long m = g_fakeMillis;
+                bool alive = true;
+                for (int f = 0; f < 150 && !h._platforms._pool[pit].pitScored; ++f) {
+                    InputState in{}; in.joyY = stick(h); in.btnAPressed = f == k;
+                    h.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                    if (h._phase != PlatformFluxGame::PHASE_PLAYING) { alive = false; break; }
+                }
+                // Over and landed: a few frames on, still alive.
+                for (int f = 0; f < 15 && alive; ++f) {
+                    InputState in{}; in.joyY = stick(h);
+                    h.update(canvas, in, audio); g_fakeMillis += STEP_MS;
+                    alive = h._phase == PlatformFluxGame::PHASE_PLAYING;
+                }
+                window += alive && h._platforms._pool[pit].pitScored;
+                g_rng = r; g_fakeMillis = m;
+            }
+            return true;
+        };
+        struct Case { int stage; bool push; int minWindow; const char* what; };
+        const Case cases[] = {
+            { 1,  false, 4, "stage 1, plain jump" },
+            { 2,  false, 4, "stage 2, plain jump" },
+            { 9,  true,  2, "stage 9, pushed jump" },
+            { 17, true,  2, "stage 17, pushed jump" },
+            { 25, true,  2, "stage 25, pushed jump" },
+        };
+        int firstLoopMax = 0;
+        for (const Case &c : cases) {
+            int n = 0, good = 0, gapLo = 999, gapHi = 0, winLo = 999;
+            for (int seed = 1; seed <= 15; ++seed) {
+                int gap, window;
+                if (!tryPit(seed, c.stage, c.push, gap, window)) continue;
+                ++n; good += window >= c.minWindow;
+                gapLo = min(gapLo, gap); gapHi = max(gapHi, gap); winLo = min(winLo, window);
+            }
+            if (c.stage <= 2) firstLoopMax = max(firstLoopMax, gapHi);
+            bool pass = n >= 10 && good == n && (c.stage <= 8 || gapHi > firstLoopMax);
+            printf("runnerpits %s: %d/%d clear with %d+ frames to jump in (fewest %d), gaps %d-%dpx -> %s\n",
+                   c.what, good, n, c.minWindow, winLo, gapLo, gapHi, pass ? "PASS" : "FAIL");
+            ok &= pass;
+        }
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerwall")) {
+        // Where the floating platforms give way to ground again (stage 5
+        // into 6), the first ground block mustn't stand more than a stair
+        // step (8px, groundYAt's tolerance) above the slab before it: it
+        // can't be walked up, and the runner sank through it.
+        int runs = 0, walls = 0, worst = 0;
+        for (int seed = 1; seed <= 200; ++seed) {
+            g_rng = (uint32_t)seed;
+            PlatformManager pm;
+            pm.initGame(5);
+            bool wall = false;
+            for (int f = 0; f < 1400; ++f) {
+                pm.update(); pm.advanceDifficulty();
+                for (const auto &p : pm._pool) {
+                    if (!p.active || !p.isGroundSegment || p.firePitBefore) continue;
+                    for (const auto &q : pm._pool) {
+                        if (!q.active || &q == &p || fabsf(q.x + q.width - p.x) > 0.5f) continue;
+                        if (q.y - p.y > 8) { wall = true; worst = max(worst, q.y - p.y); }
+                    }
+                }
+            }
+            ++runs; walls += wall;
+        }
+        bool pass = walls == 0;
+        printf("runnerwall: %d of %d runs through stage 5-6 had a step up over 8px (worst %dpx) -> %s\n",
+               walls, runs, worst, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerover")) {
+        // Game over left alone times out to the title, whichever attract
+        // screen the game was started from (from the scores screen it went
+        // straight into the demo).
+        static PlatformFluxGame g;
+        AudioEngine audio;
+        g_rng = 7;
+        g.init(audio);
+        g._attractSlide = PlatformFluxGame::SLIDE_SCORES;
+        InputState a{}; a.btnA = a.btnAPressed = true;
+        g.update(canvas, a, audio); g_fakeMillis += STEP_MS;
+        bool started = g._phase == PlatformFluxGame::PHASE_PLAYING;
+        g._lives = 1;
+        g._player.reset(30, 200);   // off the bottom: the last life goes
+        for (int f = 0; f < 2000 && g._phase != PlatformFluxGame::PHASE_GAMEOVER; ++f) {
+            if (g._phase == PlatformFluxGame::PHASE_NAME) g._scores.finishNow();
+            InputState n{}; g.update(canvas, n, audio); g_fakeMillis += STEP_MS;
+            if (g._phase == PlatformFluxGame::PHASE_NAME) { g._scores.finishNow(); g._phase = PlatformFluxGame::PHASE_GAMEOVER; g._gameOverEnteredMs = millis(); }
+        }
+        for (long f = 0; f < 3000 && g._phase == PlatformFluxGame::PHASE_GAMEOVER; ++f) {
+            InputState n{}; g.update(canvas, n, audio); g_fakeMillis += STEP_MS;
+        }
+        for (int f = 0; f < 5; ++f) { InputState n{}; g.update(canvas, n, audio); g_fakeMillis += STEP_MS; }
+        bool pass = started && g._phase == PlatformFluxGame::PHASE_ATTRACT &&
+                    g._attractSlide == PlatformFluxGame::SLIDE_SPLASH && !g._demo;
+        printf("runnerover: after the game-over timeout phase %d slide %d demo %d -> %s\n",
+               (int)g._phase, (int)g._attractSlide, (int)g._demo, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;

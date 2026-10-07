@@ -67,6 +67,7 @@ private:
     int      _loop;              // how many full tier 1-7 cycles have completed
     unsigned long _cycleDistance; // _distance wrapped to the current loop
     float    _scrollSpeedCap;    // per-loop scroll speed ceiling, rises each loop
+    bool     _afterSlabs;        // floating platforms last: the next ground block starts level
 
     // Ground/spike palettes rotate each loop so a repeat trip through the
     // tiers reads as visually distinct, not just "the same run again."
@@ -161,12 +162,49 @@ private:
         }
     }
 
+    // Frames a jump keeps the runner's feet clear of a pit's flames (more
+    // than firePitHitsPlayer's 4px up), on the runner's own physics.
+    static int jumpFramesClear() {
+        float y = 0.0f, vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
+        int n = 0;
+        while (true) {
+            vy += ArcadeConfig::RUNNER_GRAVITY;
+            y  += vy;
+            if (y > -4.0f) return n;
+            ++n;
+        }
+    }
+
+    // A new fire pit's width at today's speed (see ArcadeConfig's
+    // RUNNER_PIT_* block): what a plain jump clears with a comfortable
+    // window on the first loop; wider each loop after, up to what a jump
+    // pushed forward clears (the stick adds RUNNER_X_MOVE_SPEED a frame
+    // in the air, from as far back as the runner goes).
+    float pitGapWidth() const {
+        const int air = jumpFramesClear();
+        const float minGap = (float)ArcadeConfig::RUNNER_PIT_MIN_GAP;
+        float hi = _scrollSpeed * (float)(air - ArcadeConfig::RUNNER_PIT_EASY_WINDOW);
+        float lo = minGap;
+        if (_loop > 0) {
+            const int pushFrames = air - ArcadeConfig::RUNNER_PIT_HARD_WINDOW;
+            const float push = min((float)pushFrames * ArcadeConfig::RUNNER_X_MOVE_SPEED,
+                                   (float)(ArcadeConfig::RUNNER_X_MAX_OFFSET - ArcadeConfig::RUNNER_X_MIN_OFFSET));
+            const float pushed = _scrollSpeed * (float)pushFrames + push;
+            const float widen = (float)(ArcadeConfig::RUNNER_PIT_WIDEN_PX * _loop);
+            hi = min(hi + widen, pushed);
+            lo = min(minGap + widen, hi);
+        }
+        if (hi < minGap) hi = minGap;
+        return (float)random((long)lo, (long)hi + 1);
+    }
+
     // Solid-ground segment: contiguous with the previous one (no gap) unless
-    // this segment is chosen to carry a fire pit, in which case a real,
-    // anti-bridge-safe gap is inserted before it (same fall-through death
-    // as a platform-mode gap, just a ground-mode re-skin). Elevation steps
-    // by a small amount each segment — always within the player's ground
-    // tolerance, so stairs are walkable without ever requiring a jump.
+    // this segment is chosen to carry a fire pit, in which case the pit's
+    // gap is inserted before it (sized by pitGapWidth; the flames kill
+    // under the runner's middle, and a pit wider than the runner can be
+    // fallen into as well). Elevation steps by a small amount each
+    // segment — always within the player's ground tolerance, so stairs are
+    // walkable without ever requiring a jump.
     void spawnGroundSegment(int index, float startX) {
         int width = random(35, 60);
 
@@ -217,14 +255,17 @@ private:
                            (random(0, 4) == 0);
         if (wantSpike) _distanceSinceLastSpike = 0.0f;
 
+        // Back down from the floating platforms: level with the ground, so
+        // this block never stands taller than a stair step above the last
+        // slab (a slab sits at most a bob below ground level).
+        if (_afterSlabs) {
+            newY = groundLevel();
+            _afterSlabs = false;
+        }
+
         if (wantFirePit) {
             _firePitsPlaced++;
-            // Same jump-range-derived gap sizing as platform-mode gaps.
-            float airtimeFrames = 2.0f * ArcadeConfig::RUNNER_JUMP_VELOCITY / ArcadeConfig::RUNNER_GRAVITY;
-            int   safeReach      = (int)(_scrollSpeed * airtimeFrames * 0.85f);
-            int   minGap = ArcadeConfig::PLATFORM_MIN_GAP;
-            int   maxGap = minGap + max(3, safeReach - minGap);
-            float gapWidth = (float)random(minGap, maxGap);
+            float gapWidth = pitGapWidth();
 
             _pool[index].x               = startX + gapWidth;
             _pool[index].firePitBefore   = true;
@@ -317,6 +358,7 @@ private:
 
         _pool[index].isMoving = landingIsMoving;
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
+        _afterSlabs = true;
     }
 
 public:
@@ -325,7 +367,8 @@ public:
                          _lastGroundY(0), _firePitsPlaced(0),
                          _distanceSinceLastSpike(9999.0f), _loop(0),
                          _cycleDistance(0),
-                         _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED) {
+                         _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED),
+                         _afterSlabs(false) {
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
@@ -377,6 +420,7 @@ public:
         _lastGroundY        = groundLevel();
         _firePitsPlaced     = 0;
         _distanceSinceLastSpike = 9999.0f;
+        _afterSlabs         = false;
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -552,21 +596,21 @@ public:
     // finding valid ground under the player's whole footprint; a jump that
     // landed straddling the edge (half on solid ground, half over the pit)
     // could still register as grounded on the solid half and survive. This
-    // kills on contact with the pit's true span any time the player's feet
-    // are down near ground level, however they got there — walking in, or
-    // a mistimed jump landing on the edge.
+    // kills when the runner's middle is over the pit and its feet are down
+    // near ground level, however it got there — walking in, or a mistimed
+    // jump landing on the edge. A pit shorter than the runner can't be
+    // fallen into at all, so for those it's the only test.
     bool firePitHitsPlayer(float playerX, float playerRight, float playerBottom) const {
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active || !_pool[i].firePitBefore) continue;
-            // Inset 2px on both sides — the sprite's actual silhouette sits
-            // about 2px in from the drawn edge of its bounding box on
-            // either side (transparent padding), so the raw box would read
-            // as touching the fire slightly before the visible character
-            // actually does. This forgiveness matches what's visually true,
-            // not a gameplay concession.
-            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth + 2.0f;
-            float pitRight = _pool[i].x - 2.0f;
-            if (playerRight <= pitLeft || playerX >= pitRight) continue;
+            // In the flames when the runner's middle is over them: its feet
+            // are the sprite's middle ten pixels, so that's most of them.
+            // (The whole box, as it was, made even a short pit need the
+            // stick pushed forward through the jump.)
+            float pitLeft  = _pool[i].x - _pool[i].firePitGapWidth;
+            float pitRight = _pool[i].x;
+            float mid      = (playerX + playerRight) * 0.5f;
+            if (mid < pitLeft || mid >= pitRight) continue;
             if (playerBottom >= groundLevel() - 4) return true;
         }
         return false;

@@ -774,7 +774,11 @@ public:
             if (inputOk && input.btnAPressed) { startNewGame(audio); return true; }
 
             if (elapsed > GAMEOVER_TIMEOUT_MS) {
-                _phase       = PHASE_ATTRACT;
+                // Back to the title, from the start of the attract cycle
+                // (whichever screen the game was started from).
+                _phase             = PHASE_ATTRACT;
+                _attractSlide      = SLIDE_SPLASH;
+                _attractSlideTimer = millis();
             }
             return true;
         }

@@ -47,15 +47,53 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   the fallback tones are good enough for now and the owner will make the
   WAVs another time. README.md's audio section lists every file each game
   looks for.
-- **Next up: a critical review of Runner (Platform Flux)**, the one older
-  2D game not yet reviewed, the way Maze's went: read all of it, list
-  what's broken (features that look present but don't work), what's weak
-  in the design, and what it lacks against the newer games (optional WAVs
-  checked with `audio.exists()` and preloaded, a stage select, its own
-  harness scenarios beyond games2d's demo checks, particle trails), then
-  propose in order and ask before changing anything. Maze's review found
-  half-working features that only a harness bot playing through exposed;
-  expect the same.
+- **Runner (Platform Flux) review**, on `claude/nice-carson-z0uxjl`, not
+  merged. Fixed so far, each with a games2d scenario seen failing first:
+  - Fire pits needed a trick nobody was told: only back-on-the-ground,
+    forward-in-the-air cleared one (1 of 40 first pits with the stick
+    left alone). The flames now burn under the runner's middle rather
+    than its whole 18px box, and `PlatformManager::pitGapWidth` sizes
+    them from the jump's own airtime: on the first loop a plain jump
+    clears them (12-21px, 7+ frames to choose from), each later loop 8px
+    wider, capped at what a pushed jump clears (`runnerpits`).
+  - Where the floating platforms end (stage 5 into 6), the first ground
+    block could stand up to 28px over the last slab with no gap; walked
+    into, the runner sank through it and died (21 of 200 runs). It now
+    starts level with the ground (`runnerwall`).
+  - The game-over timeout went straight into the demo when the game had
+    been started from the scores screen; now back to the title
+    (`runnerover`).
+  Needs the board: how the short pits look and feel at stages 1-2, and the
+  wide ones from stage 9.
+  Still open from the review, in the proposed order: levitation lets the
+  runner sink into the ground and die when it ends; the diamond's "just
+  before a fire pit" placement almost never runs (pits only in stages
+  1-2, the diamond only from 3); spike traps are invisible while safe and
+  score 10 even if they never fired; then optional WAVs (`jump.wav` and
+  `death.wav` are opened per play, not `exists()`-checked or preloaded, so
+  a missing one's blip comes 300ms late) and harness scenarios of its own
+  (bot play-through, stage transitions, name entry); then a stage select;
+  the terrain vanishing during the 0.8s death; the score ticking by real
+  time (a function `static`) not distance; particle trails; per-frame
+  movement with no `_frameScale` (like the other 2D games).
+- **Runner: longer play (owner's request, to plan next).** Stages repeat
+  the same eight hazards each loop, only faster and recoloured. Ideas to
+  propose, for the owner to pick from:
+  - B is unused in Runner: a slide or duck under low beams and swooping
+    ships, or a Moon Patrol gun (perhaps as a pickup) for ships and
+    boulders.
+  - Fire pits back in the later ground stages (6-8), mixed with spikes and
+    boulders, so the wide pits have a home.
+  - Crumbling slabs in the floating stages that drop a beat after you
+    land, and springs that launch to a high route.
+  - A high route with gem chains along jump arcs (a combo multiplier for
+    taking the risky line) over a safe low one.
+  - From the second loop, mixed stages: hazards from different tiers
+    together (spikes on slabs, boulders under ships).
+  - A boss stretch ending each loop: a big ship dropping rock patterns,
+    survived for a set distance or shot down.
+  - Conveyor or wind sections that push the runner's position, and a
+    darker stage where only what's near the runner is lit.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the

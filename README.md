@@ -414,7 +414,10 @@ were on (score kept) with 2s of blinking protection. Clearing a stage
 scores 50, or 100 if you didn't die in it, and finishing a full loop of 8
 stages gives an extra life (up to 5). Jumps are forgiving: A pressed just
 before landing still jumps, and so does one just after running off an edge.
-Getting past a fire pit or spike trap scores 10, and jumping a boulder 20,
+Fire pits burn when the runner's middle is over them. On the first loop
+(stages 1 and 2) they're short enough for a plain jump; each loop after,
+they're wider, until the widest need the stick pushed forward through the
+jump (best from as far back as you can stand). Getting past a fire pit or spike trap scores 10, and jumping a boulder 20,
 with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
 slow stars, a far mountain range and nearer hills, their colours changing
 each loop.

@@ -272,6 +272,16 @@ struct ArcadeConfig {
     // Max gap is derived dynamically from jump range in
     // PlatformManager::spawnPlatform (depends on current scroll speed),
     // not a fixed constant here.
+    // Fire pits (PlatformManager::pitGapWidth). The flames hurt under the
+    // runner's middle, so a jump clears a pit if the ground scrolls its
+    // width past while the feet are up. On the first loop (stages 1-2) a
+    // plain jump clears every pit with EASY_WINDOW frames to choose from;
+    // each later loop widens them by WIDEN_PX, up to what a jump pushed
+    // forward through the air clears with HARD_WINDOW frames to spare.
+    static const int   RUNNER_PIT_MIN_GAP      = 12;
+    static const int   RUNNER_PIT_EASY_WINDOW  = 6;
+    static const int   RUNNER_PIT_HARD_WINDOW  = 6;
+    static const int   RUNNER_PIT_WIDEN_PX     = 8;
     static const int   PLATFORM_THICKNESS      = 8;    // fixed slab height (not drawn to floor)
     static constexpr float PLATFORM_BOB_AMPLITUDE = 6.0f;
 
