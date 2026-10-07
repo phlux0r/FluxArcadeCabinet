@@ -131,11 +131,6 @@ private:
         };
         return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : isRuins(_loop) ? ArcadeConfig::COLOR_WHITE : palette[(_loop / 3) % 3];
     }
-    static const uint16_t SANDSTONE      = 0xC56E;   // rgb(196, 172, 112): the Ruins' stone
-    static const uint16_t SANDSTONE_DARK = 0x7B47;   // rgb(120, 104, 56)
-    static const uint16_t NIGHT_STONE = 0x3A90;   // rgb(60, 80, 130)
-    static const uint16_t STEEL       = 0x4A8C;   // rgb(72, 80, 100): Night's gantries
-    static const uint16_t STEEL_LIGHT = 0x9D17;   // rgb(150, 160, 184)
 
     // A colour at a lantern's reach: full up to litTo, half for 30px past
     // it, a quarter beyond (Night only; litTo is off the screen otherwise).
@@ -573,6 +568,13 @@ private:
     }
 
 public:
+    // The worlds' own colours (the game's how-to screen and explosions use them).
+    static const uint16_t SANDSTONE      = 0xC56E;   // rgb(196, 172, 112): the Ruins' stone
+    static const uint16_t SANDSTONE_DARK = 0x7B47;   // rgb(120, 104, 56)
+    static const uint16_t NIGHT_STONE = 0x3A90;   // rgb(60, 80, 130)
+    static const uint16_t STEEL       = 0x4A8C;   // rgb(72, 80, 100): Night's gantries
+    static const uint16_t STEEL_LIGHT = 0x9D17;   // rgb(150, 160, 184)
+
     PlatformManager() : _scrollSpeed(ArcadeConfig::RUNNER_BASE_SCROLL_SPEED),
                          _tier(0), _distance(0), _introPlatformsLeft(0),
                          _lastGroundY(0), _pitStage(0), _pitsDone(0), _beamsDone(0), _lastPitAt(0),
