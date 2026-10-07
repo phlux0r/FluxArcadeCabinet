@@ -21,13 +21,15 @@
 //          moving.
 //   ROLL   a rock lands ahead and rolls at the runner: jump it.
 //   DART   (Night's boss) darts fired at head height: duck.
+//   CRACK  (the Ruins' boss) two rocks land ahead and crack the ground:
+//          holes coming at the runner, to jump.
 // Everything runs in frames, like the scroll, so the demo's autopilot can
 // predict it exactly (wouldHit).
 // =============================================================================
 class RunnerBoss {
 public:
     enum Phase { IDLE, ENTER, FIGHT, LEAVE };
-    enum Pattern { P_LINE, P_TRACK, P_ROLL, P_DART, P_COUNT };
+    enum Pattern { P_LINE, P_TRACK, P_ROLL, P_DART, P_CRACK, P_COUNT };
 
     // Rocks fall from just under the ship at ROCK_TOP with this pull,
     // slow (about 70 frames to the ground) so a spread can be read and
@@ -45,12 +47,14 @@ private:
         float x, y, vy;
         float landY;       // the ground's top under it
         bool  active, roller, rolling, scored;
+        bool  cracks;      // lands cracking the ground (the Ruins' boss)
     };
     static const int ROCKS = 10;
     Rock _rocks[ROCKS];
 
     Phase _phase = IDLE;
     bool  _night = false;
+    int   _world = 0;          // 0 Outpost, 1 Night, 2 Ruins
     int   _loop = 0;
     long  _frame = 0;          // frames since it began
     long  _nextAt = 0;         // frame the next pattern starts
@@ -72,6 +76,7 @@ private:
             case P_TRACK: return _step >= 3 + min(_loop, 2);
             case P_ROLL:  return _step >= 1;
             case P_DART:  return _step >= 2;
+            case P_CRACK: return _step >= 1;
             default:      return true;
         }
     }
@@ -80,13 +85,15 @@ private:
         return false;
     }
 
-    void spawnRock(float x, const PlatformManager &platforms, bool roller) {
+    // A rock at x under the ship; the rock, or nullptr if all are falling.
+    Rock* spawnRock(float x, const PlatformManager &platforms, bool roller) {
         for (int i = 0; i < ROCKS; i++) {
             if (_rocks[i].active) continue;
             const int ground = platforms.surfaceYNear(x - ROCK_R, x + ROCK_R);
-            _rocks[i] = Rock{ x, ROCK_TOP, ROCK_VY0, (float)ground, true, roller, false, false };
-            return;
+            _rocks[i] = Rock{ x, ROCK_TOP, ROCK_VY0, (float)ground, true, roller, false, false, false };
+            return &_rocks[i];
         }
+        return nullptr;
     }
 
     // The runner's centre can be anywhere from here to there on screen.
@@ -98,9 +105,13 @@ private:
     static const int GAP_REACH = 40;
 
     void choosePattern(float runnerCentre) {
-        const int kinds = _night ? 4 : 3;
+        // The world's patterns: the three, and Night's darts or the Ruins' cracks.
+        const int kinds = _world == 0 ? 3 : 4;
         Pattern p;
-        do { p = (Pattern)random(0, kinds); } while (p == _last);
+        do {
+            p = (Pattern)random(0, kinds);
+            if (p == P_DART && _world == 2) p = P_CRACK;
+        } while (p == _last);
         _pattern = _last = p;
         _step = 0;
         _stepAt = _frame;
@@ -146,6 +157,16 @@ private:
                     _dropped = true;
                 }
                 break;
+            case P_CRACK:
+                // Two rocks well ahead, 50px apart: where they land the ground
+                // cracks, then opens.
+                if (_step == 0) {
+                    for (int k = 0; k < 2; k++)
+                        if (Rock* r = spawnRock(runnerCentre + 60.0f + 50.0f * k, platforms, false)) r->cracks = true;
+                    _step = 1;
+                    _dropped = true;
+                }
+                break;
             case P_DART:
                 if (_step < 2 && since >= (long)_step * 40) {
                     platforms.spawnDart(ArcadeConfig::LANDSCAPE_WIDTH + 4.0f);
@@ -173,6 +194,7 @@ public:
         _phase = ENTER;
         _loop = loop;
         _night = PlatformManager::isNight(loop);
+        _world = PlatformManager::worldOf(loop);
         _frame = 0;
         _nextAt = ENTER_FRAMES;
         _last = P_COUNT;
@@ -226,6 +248,7 @@ public:
                 if (r.y + ROCK_R >= r.landY) {
                     if (r.roller) { r.rolling = true; r.y = r.landY - ROCK_R; }
                     else {
+                        if (r.cracks) platforms.ruins().addHole(r.x, (int)r.landY, RuinsLayer::HOLE_CRACK);
                         particles.spawnExplosion(r.x, r.landY - 2, ArcadeConfig::COLOR_GREY, 5, 350);
                         r.active = false;
                         continue;

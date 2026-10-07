@@ -89,7 +89,8 @@ private:
     // if it has one and that's there, else a tone or melody (what Runner
     // played before it had optional sounds). Checked once, in init().
     enum Sfx { SFX_TITLE, SFX_JUMP, SFX_POINTS, SFX_STAR, SFX_FLY, SFX_ROCK, SFX_BOULDER,
-               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_BOSS, SFX_DROP, SFX_COUNT };
+               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_BOSS, SFX_DROP,
+               SFX_SPRING, SFX_GEM, SFX_CHAIN, SFX_CRUMBLE, SFX_TOPPLE, SFX_COUNT };
     struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
     static constexpr int TITLE_N[] = { 523, 659, 784, 1047 }, TITLE_D[] = { 80, 80, 80, 150 };
     static constexpr int JUMP_N[]  = { 700, 1050 },           JUMP_D[]  = { 35, 45 };
@@ -98,6 +99,8 @@ private:
     static constexpr int DEATH_N[] = { 500, 350, 220 },       DEATH_D[] = { 100, 100, 200 };
     static constexpr int OVER_N[]  = { 392, 330, 262, 196 },  OVER_D[]  = { 150, 150, 150, 350 };
     static constexpr int BOSS_N[]  = { 220, 0, 220, 0, 165 }, BOSS_D[]  = { 120, 60, 120, 60, 300 };
+    static constexpr int SPRING_N[] = { 392, 784 },           SPRING_D[] = { 30, 60 };
+    static constexpr int CHAIN_N[]  = { 1047, 1319, 1568, 2093 }, CHAIN_D[] = { 50, 50, 50, 120 };
     static constexpr SfxDef SFX[SFX_COUNT] = {
         { "/audio/runner_title.wav",   "/audio/lander_start.wav", 0, 0, TITLE_N, TITLE_D, 4 },  // SFX_TITLE
         { "/audio/jump.wav",           nullptr, 0, 0, JUMP_N, JUMP_D, 2 },                       // SFX_JUMP
@@ -115,6 +118,11 @@ private:
         { "/audio/runner_jet.wav",     nullptr, 160, 90, nullptr, nullptr, 0 },                  // SFX_JET
         { "/audio/runner_boss.wav",    nullptr, 0, 0, BOSS_N, BOSS_D, 5 },                       // SFX_BOSS
         { "/audio/runner_drop.wav",    nullptr, 260, 50, nullptr, nullptr, 0 },                  // SFX_DROP
+        { "/audio/runner_spring.wav",  nullptr, 0, 0, SPRING_N, SPRING_D, 2 },                   // SFX_SPRING
+        { "/audio/runner_gem.wav",     "/audio/pickup.wav", 1900, 15, nullptr, nullptr, 0 },     // SFX_GEM
+        { "/audio/runner_chain.wav",   nullptr, 0, 0, CHAIN_N, CHAIN_D, 4 },                     // SFX_CHAIN
+        { "/audio/runner_crumble.wav", nullptr, 140, 60, nullptr, nullptr, 0 },                  // SFX_CRUMBLE
+        { "/audio/runner_topple.wav",  nullptr, 90, 140, nullptr, nullptr, 0 },                  // SFX_TOPPLE
     };
     static constexpr const char* MUSIC = "/audio/flux-runner.wav";
     AudioEngine* _audio = nullptr;
@@ -320,12 +328,15 @@ private:
         canvas.setCursor(10, 95);
         canvas.print(" BEAMS, JETS, DARTS");
 
+        canvas.setTextColor(PlatformManager::SANDSTONE);
+        canvas.setCursor(10, 104);
+        canvas.print("RUINS: SPRINGS, PILLARS");
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(6, 104);
-        canvas.print("STAR: INVINCIBLE");
-        canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
         canvas.setCursor(6, 112);
-        canvas.print("DIAMOND: FLY 10s");
+        canvas.print("STAR:SHIELD");
+        canvas.setTextColor(ArcadeConfig::COLOR_ION_BLUE);
+        canvas.setCursor(78, 112);
+        canvas.print("DIAMOND:FLY");
 
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
         canvas.setCursor(24, 120);
@@ -478,8 +489,13 @@ private:
             "PITS, BEAMS", "PITS, STAIRS, BEAMS", "PLATFORMS", "MOVING PLATFORMS",
             "PLATFORMS + SHIP", "SPIKES, FLAME JETS", "BOULDERS, DARTS", "ALL + SHIPS", "BOSS SHIP + DARTS",
         };
+        static const char* const ruins[PlatformManager::TIERS_PER_LOOP] = {
+            "PITS, SPRING, GEMS", "PITS, SPRING, GEMS", "CRUMBLING SLABS", "MOVING, CRUMBLING",
+            "MORE CRUMBLING", "SPIKES, PILLARS", "BOULDERS, PILLARS", "ALL + SHIPS", "BOSS SHIP + CRACKS",
+        };
         const int tier = (stage - 1) % PlatformManager::TIERS_PER_LOOP;
-        return PlatformManager::isNight((stage - 1) / PlatformManager::TIERS_PER_LOOP) ? night[tier] : what[tier];
+        const int loop = (stage - 1) / PlatformManager::TIERS_PER_LOOP;
+        return PlatformManager::isNight(loop) ? night[tier] : PlatformManager::isRuins(loop) ? ruins[tier] : what[tier];
     }
 
     // The stage's terrain as it starts, behind its number and hazards.
@@ -518,7 +534,7 @@ private:
     static constexpr float DEMO_BACK = (float)ArcadeConfig::RUNNER_X_MIN_OFFSET;
 
     // The runner as the autopilot's prediction sees it.
-    struct DemoState { float off, y, vy; bool onGround, canJump; };
+    struct DemoState { float off, y, vy; bool onGround, canJump; short touched[6]; };
     // Predicted frames the autopilot may spend deciding one frame's input:
     // a hopeless spot can otherwise try hundreds of two-jump plans, which
     // on the ESP32 would stall a frame. Out of budget counts as "no".
@@ -557,7 +573,8 @@ private:
             // a dart coming (as demoPilot will), and every jet is taken as lit.
             const bool duck = st.onGround && _platforms.duckWanted(x, x + RUNNER_WIDTH, t);
             if (_platforms.nightHits(x, x + RUNNER_WIDTH, st.y + (duck ? RUNNER_DUCK_DROP : 0), pb, t)) return false;
-            int g = _platforms.groundYAt(px, pr, st.y, pb, t);
+            int gIdx = -1;
+            int g = _platforms.groundYAt(px, pr, st.y, pb, t, st.touched, &gIdx);
             float gy = (g == -1) ? (float)(ArcadeConfig::LANDSCAPE_HEIGHT + 40) : (float)g;
             st.vy += ArcadeConfig::RUNNER_GRAVITY;
             st.y += st.vy;
@@ -565,6 +582,12 @@ private:
                 st.y = gy - RUNNER_HEIGHT;
                 st.vy = 0.0f;
                 st.onGround = true;
+                // The Ruins: a crumbling slab starts to go; a spring throws it up.
+                if (_platforms.isCrumbly(gIdx) && st.touched[gIdx] < 0) st.touched[gIdx] = (short)t;
+                if (_platforms.ruins().springUnder(px, pr, st.y + RUNNER_HEIGHT)) {
+                    st.vy = -ArcadeConfig::RUINS_SPRING_VY;
+                    st.onGround = false;
+                }
             } else {
                 st.onGround = false;
             }
@@ -574,6 +597,7 @@ private:
             if (_boulders.wouldHit(t, s, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT, _platforms)) return false;
             if (_enemies.rockWouldHit(t, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT)) return false;
             if (_boss.wouldHit(t, s, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT)) return false;   // after it moved, as in play
+            if (_platforms.ruins().hits(px, pr, st.y, st.y + RUNNER_HEIGHT, t, _player.getX() + RUNNER_WIDTH, s)) return false;
             if (jumped && st.onGround && ++landed >= 4) {
                 if (depth <= 0) return true;
                 if (demoSurvives(st, t, -1, horizon, depth - 1)) return true;
@@ -588,7 +612,7 @@ private:
 
     bool demoSurvives(int jumpAt, int horizon, float target = DEMO_BACK) const {
         DemoState st{ _playerXOffset, _player.getY(), _player.getVy(),
-                      _player.isOnGround(), _player.canJump() };
+                      _player.isOnGround(), _player.canJump(), { -1, -1, -1, -1, -1, -1 } };
         return demoSurvives(st, 0, jumpAt, horizon, 1, target);
     }
 
@@ -767,7 +791,9 @@ public:
             bool playerHit     = false;
 
             _particles.update();
+            _platforms.setRunnerRight(_player.getX() + RUNNER_WIDTH);
             _platforms.update();
+            if (_platforms.takeRuinsEvents() & 1) sfx(SFX_TOPPLE);
             const int nightEvents = _platforms.updateNight(_player.getX());
             if (nightEvents & 1) sfx(SFX_DART);
             if (nightEvents & 2) sfx(SFX_JET);
@@ -786,7 +812,10 @@ public:
             // than unlocking once, so it can step aside for tiers 5-6.
             int tier = _platforms.getTier();
             const bool bossTier = tier == PlatformManager::BOSS_TIER;   // the boss has the sky to itself
-            bool shipsActive = (tier == ArcadeConfig::RUNNER_EARLY_SHIP_TIER) ||
+            // (The Ruins' crumbling stage has no ship: rocks over slabs that
+            // drop away were too much at once.)
+            const bool ruins = PlatformManager::isRuins(_platforms.getLoop());
+            bool shipsActive = (tier == ArcadeConfig::RUNNER_EARLY_SHIP_TIER && !ruins) ||
                                (tier >= ArcadeConfig::RUNNER_ENEMY_TIER && !bossTier);
             _enemies.setActive(shipsActive);
 
@@ -834,6 +863,17 @@ public:
             float groundTarget = (ground == -1) ? (float)(ArcadeConfig::LANDSCAPE_HEIGHT + 40) : (float)ground;
 
             _player.updatePhysics(groundTarget);
+            // The Ruins: a crumbling slab landed on starts to go; a spring
+            // landed on throws the runner up.
+            if (_player.isOnGround()) {
+                const float nb = _player.getY() + RUNNER_HEIGHT;
+                if (_platforms.standOn(px, pRight, nb)) sfx(SFX_CRUMBLE);
+                if (_platforms.ruins().springUnder(px, pRight, nb)) {
+                    _platforms.ruins().springFired(px, pRight);
+                    _player.launch(ArcadeConfig::RUINS_SPRING_VY);
+                    sfx(SFX_SPRING);
+                }
+            }
             _player.updateAnimation();
             _player.updateInvincibility();
 
@@ -846,13 +886,29 @@ public:
                                           hasFirePitAhead, firePitX);
             if (_levitationPowerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate, _platforms)) sfx(SFX_FLY);
 
-            if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit)) sfx(SFX_ROCK);
+            if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit,
+                                _platforms.ruins().ahead(_player.getX()))) sfx(SFX_ROCK);
             if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit,
-                                 _platforms.nightAhead(_player.getX()) || bossTier)) sfx(SFX_BOULDER);
+                                 _platforms.nightAhead(_player.getX()) || _platforms.ruins().ahead(_player.getX()) ||
+                                 bossTier)) sfx(SFX_BOULDER);
 
             // The boss stretch: its ship and its rocks.
             if (_boss.update(_platforms.getScrollSpeed(), _platforms.framesLeftInStage(), _player, _platforms,
                              _particles, playerHit)) sfx(SFX_DROP);
+
+            // The Ruins: gems taken (a whole chain counts twice), pillars and
+            // the boss's holes.
+            {
+                int chain = 0; float cx = 0, cy = 0;
+                const int gems = _platforms.ruins().collect(px, pRight, _player.hitTop(), _player.getY() + RUNNER_HEIGHT, chain, cx, cy);
+                if (gems) { _score += gems; sfx(SFX_GEM); }
+                if (chain) { _score += chain; addPopup(cx, cy, chain); sfx(SFX_CHAIN); }
+                if (_platforms.ruins().hits(px, pRight, _player.hitTop(), _player.getY() + RUNNER_HEIGHT, 0,
+                                            pRight, _platforms.getScrollSpeed()) && !_player.isInvincible()) {
+                    _particles.spawnExplosion(px + RUNNER_WIDTH / 2.0f, pBottom, PlatformManager::SANDSTONE, 6);
+                    playerHit = true;
+                }
+            }
 
             // Night's beams, jets and darts: duck under them.
             if (_platforms.nightHits(px, pRight, pTop, pBottom) && !_player.isInvincible()) {

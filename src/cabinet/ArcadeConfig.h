@@ -373,6 +373,20 @@ struct ArcadeConfig {
     static const int   RUNNER_JET_POINTS  = 10;
     static const int   RUNNER_DART_POINTS = 20;
 
+    // Ruins (every third loop, docs/design/RunnerFlux.md; RuinsLayer.h).
+    // A spring throws the runner up at SPRING_VY (about 74px up) onto a
+    // high slab ROUTE_RISE above the ground, with a gem every 12px (GEM
+    // points each; a whole chain counts twice). A crumbling slab (no wider
+    // than SLAB_MAX_W) drops CRUMBLE_FRAMES after the runner lands on it.
+    // A pillar cracks once the runner is PILLAR_RANGE px short of it.
+    static constexpr float RUINS_SPRING_VY   = 7.2f;
+    static const int   RUINS_ROUTE_RISE      = 58;
+    static const int   RUINS_GEM_POINTS      = 5;
+    static const int   RUINS_CRUMBLE_FRAMES  = 24;
+    static const int   RUINS_SLAB_MAX_W      = 26;
+    static const int   RUINS_PILLAR_RANGE    = 115;
+    static const int   RUINS_PILLAR_SPACING  = 110;
+
     // Highest a ground pickup can be placed above a platform surface and
     // still be reachable by a jump. True apex (V^2/2g) is ~42px with the
     // current jump velocity; this stays comfortably under that so a pickup

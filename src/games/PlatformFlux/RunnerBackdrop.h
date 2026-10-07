@@ -12,8 +12,9 @@
 // ground's speed. All dark, so platforms and hazards stay the brightest
 // things on screen, and the hills stop short of the ground line so a
 // platform-tier gap still reads as a black drop. Colours rotate with the
-// loop, like the ground's; Night (every second loop) has its own, darker,
-// with brighter stars and a moon.
+// loop, like the ground's; Night has its own, darker, with brighter
+// stars and a moon, and the Ruins a warm dusk with broken columns on the
+// far skyline (the worlds come a loop each: Outpost, Night, Ruins).
 //
 // The skylines are sums of sines over a 256px repeat, fixed at compile
 // time: nothing here calls random(), so the game's own random sequence
@@ -62,7 +63,7 @@ public:
         const int W = ArcadeConfig::LANDSCAPE_WIDTH, H = ArcadeConfig::LANDSCAPE_HEIGHT;
         canvas.fillRect(0, top, W, H - top, ArcadeConfig::COLOR_BLACK);
 
-        const bool night = loop % 2 == 1;
+        const bool night = loop % 3 == 1, ruins = loop % 3 == 2;
 
         // Stars: dim, a few brighter; two twinkle. Brighter at Night.
         const int so = (int)_stars;
@@ -82,10 +83,11 @@ public:
             canvas.fillCircle(129, top + 18, 1, rgb(170, 170, 150));
         }
 
-        // The Outpost's loops rotate through the first four; Night is the fifth.
-        const int l = night ? 4 : (loop / 2) & 3;
-        static const uint8_t FAR[5][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 }, { 14, 18, 42 } };
-        static const uint8_t NEAR[5][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 }, { 8, 12, 26 } };
+        // The Outpost's loops rotate through the first four; Night is the
+        // fifth, the Ruins the sixth.
+        const int l = night ? 4 : ruins ? 5 : (loop / 3) & 3;
+        static const uint8_t FAR[6][3]  = { { 34, 36, 78 }, { 70, 38, 30 }, { 22, 56, 60 }, { 60, 28, 72 }, { 14, 18, 42 }, { 92, 48, 44 } };
+        static const uint8_t NEAR[6][3] = { { 20, 44, 40 }, { 44, 30, 22 }, { 18, 34, 56 }, { 40, 20, 44 }, { 8, 12, 26 }, { 62, 40, 26 } };
         const uint16_t farC  = rgb(FAR[l][0], FAR[l][1], FAR[l][2]);
         const uint16_t farTop = rgb(FAR[l][0] * 3 / 2, FAR[l][1] * 3 / 2, FAR[l][2] * 3 / 2);
         const uint16_t nearC = rgb(NEAR[l][0], NEAR[l][1], NEAR[l][2]);
@@ -97,6 +99,14 @@ public:
             int fy = FAR_HORIZON - fh;
             canvas.drawPixel(x, fy, farTop);
             canvas.drawFastVLine(x, fy + 1, NEAR_HORIZON - fy - 1, farC);   // down behind the hills
+            // The Ruins: a broken column every 64px of the far range.
+            if (ruins) {
+                const int u = (x + fo) & 255, k = u >> 6, c = u & 63;
+                if (c < 5) {
+                    const int colTop = fy - 14 - (k % 3) * 5 + (c == 4 ? 3 : 0);   // a broken top
+                    canvas.drawFastVLine(x, colTop, fy - colTop, c == 0 || c == 4 ? farC : farTop);
+                }
+            }
             int nh = _near[(x + no) & 255];
             int ny = NEAR_HORIZON - nh;
             canvas.drawPixel(x, ny, nearTop);

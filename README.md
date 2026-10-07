@@ -11,7 +11,7 @@ the cabinet's display, audio, input and particle subsystems.
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
 | Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
-| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies; every second loop is Night (duck under beams, jets and darts) |
+| Platform Flux | Runner | Landscape | Side-scrolling runner in stages: 3 lives, platforms, boulders, flying enemies; then Night (duck under beams, jets and darts) and the Ruins (springs, gems, crumbling slabs, pillars), a loop each, round again |
 | Star Flux | Star | Landscape | 3D on-rails space shooter: five stages of fighter waves, hazards and bosses (see below) |
 | Tank Flux | Tank | Landscape | First-person 3D tank battle (see below) |
 | Tube Flux | Tube | Landscape | 3D tunnel runner: roll round the wall to dodge blocks |
@@ -307,7 +307,7 @@ an autopilot, and back to the title. A starts a real game straight from a demo; 
 | Game | The demo |
 |---|---|
 | Brick | a random level 2-12, or one time in four the Warden; predicts where the ball comes down, tilts to send it at the lowest brick (or the core) in that brick's colour, absorbs or dodges bolts, detours for capsules and sparks, and smashes (mostly Perfect) |
-| Runner | a random stage 2-17 (the boss at 9, Night from 10); the autopilot predicts on the game's own rules, jumps at the best moment, ducks under Night's obstacles and steps into the boss's gaps |
+| Runner | a random stage 2-17 (the boss at 9, Night from 10; the Ruins aren't in it); the autopilot predicts on the game's own rules, jumps at the best moment, ducks under Night's obstacles and steps into the boss's gaps |
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
@@ -437,8 +437,10 @@ the ground; the runner flashes red as it runs out). The diamond turns up
 from stage 3, and from the second loop also just before fire pits; never
 at Night, in a boss stretch, or the stage before Night's loop.
 
-Every second loop is Night (stages 10-17, then its boss at 18; 28-35, ...;
-docs/design/RunnerFlux.md):
+The worlds come a loop each, round again faster: the Outpost (stages 1-9),
+Night (10-18), the Ruins (19-27), the Outpost again (28-36), and so on
+(docs/design/RunnerFlux.md; Storm will be the fourth). Night (stages 10-17,
+then its boss at 18):
 dark, a moon, and the ground and gantries past the runner's lantern
 (about 100px ahead) drawn dimmer, flames and lamps still bright. **B held
 on the ground ducks** (in the air it does nothing; A from a duck jumps;
@@ -450,6 +452,23 @@ lights, timed like the spikes: sputter, then lit for a moment) and darts
 Beams go round the pits in stages 10-11, jets come in 15, darts in 16,
 all three in 17; the platform stages (12-14) have only the dark. Passing
 a beam scores 10, a jet 10 if it was lit over you, a dart 20.
+
+The Ruins (stages 19-26, then its boss at 27): sandstone under a warm dusk,
+broken columns on the skyline.
+- **Springs:** in each of the two pit stages (19, 20) the first pit has a
+  spring just before it. Run over it and it throws you up onto a long high
+  slab across the pit, with a chain of gems along it (5 each; take the
+  whole chain and it counts twice). Jump the spring to stay low and jump
+  the pit as usual.
+- **Crumbling slabs:** in the platform stages (21-23; no ship in 23),
+  darker cracked slabs shake when you land on them and drop away about
+  0.8s later. Never more than two plain slabs in a row.
+- **Falling pillars:** in the later ground stages (24-26), a broken
+  column cracks as you near it, topples towards you and lies across the
+  path as a log: jump it (20 points). The flying ship holds its rocks
+  while a pillar's ahead.
+- **The boss** (27) adds a pattern: two rocks land ahead and crack the
+  ground; the cracks open into holes coming at you, to jump.
 
 Distance scores a point every 3 frames (about 10 a second). Getting past
 a fire pit scores 10, a spike trap 10 if it rose while you
@@ -845,6 +864,11 @@ the same way.
 | `runner_jet.wav` | a flame jet on screen lights | ~0.4s | a low tone |
 | `runner_boss.wav` | the boss ship arrives | ~1s | two low beeps and a lower one |
 | `runner_drop.wav` | the boss drops rocks or fires | ~0.2s | a low tone |
+| `runner_spring.wav` | a spring throws the runner up | ~0.2s | two rising notes |
+| `runner_gem.wav` | a gem taken | ~50ms | `pickup.wav`, else a high tone |
+| `runner_chain.wav` | a whole chain of gems taken | ~0.4s | four rising notes |
+| `runner_crumble.wav` | a crumbling slab starts to go | ~0.2s | a low tone |
+| `runner_topple.wav` | a pillar topples | ~0.4s | a low tone |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

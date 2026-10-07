@@ -5,6 +5,7 @@
 #include <Adafruit_GFX.h>
 #include "../../cabinet/ArcadeConfig.h"
 #include "PlayerRunner.h"
+#include "RuinsLayer.h"
 
 // =============================================================================
 // PLATFORM MANAGER
@@ -66,7 +67,21 @@ private:
         bool       jetLive;       // lit while the runner was under it
         unsigned long glintAt;    // the launcher: when it began to glint (0: not yet)
         bool       fired, nightScored;
+        // Ruins: a slab that crumbles RUINS_CRUMBLE_FRAMES after the runner
+        // lands on it (crumbleAt: the frame it did, -1 not yet), then falls.
+        bool       crumbly, falling;
+        long       crumbleAt;
+        float      fallVy;
     };
+
+    RuinsLayer _ruins;
+    int   _ruinsEvents = 0;       // RuinsLayer's sounds due, till the game takes them
+    long  _frames = 0;            // update() calls: the crumbling slabs' clock
+    float _runnerRight = (float)(ArcadeConfig::RUNNER_BASE_X + RUNNER_WIDTH);   // for pillars cracking
+    bool  _prevCrumbly = false;   // the slab before the next gap crumbles: a shorter gap
+    int   _springStage = 0;       // the Ruins pit stage that's had its spring
+    float _sincePillar = 9999.0f; // px built since the last pillar
+    int   _slabsSinceCrumbly = 0;  // still slabs built since the last crumbling one
 
     // Darts in flight: screen space, flying left DART_SPEED faster than
     // the scroll, at a fixed height.
@@ -102,20 +117,22 @@ private:
     // Ground/spike palettes rotate each loop so a repeat trip through the
     // tiers reads as visually distinct, not just "the same run again."
     // Index 0 matches the original colors.
-    // Night has its own: slate stone, pale spikes. The Outpost's loops
-    // (every other one) rotate through the rest.
+    // Night and the Ruins have their own: slate, sandstone. The Outpost's
+    // loops (every third) rotate through the rest.
     uint16_t groundColor() const {
         static const uint16_t palette[3] = {
             ArcadeConfig::COLOR_GREY, ArcadeConfig::COLOR_AMBER, ArcadeConfig::COLOR_MAGENTA
         };
-        return isNight(_loop) ? NIGHT_STONE : palette[(_loop / 2) % 3];
+        return isNight(_loop) ? NIGHT_STONE : isRuins(_loop) ? SANDSTONE : palette[(_loop / 3) % 3];
     }
     uint16_t spikeDangerColor() const {
         static const uint16_t palette[3] = {
             ArcadeConfig::COLOR_WHITE, ArcadeConfig::COLOR_YELLOW, ArcadeConfig::COLOR_ORANGE
         };
-        return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : palette[(_loop / 2) % 3];
+        return isNight(_loop) ? ArcadeConfig::COLOR_CYAN : isRuins(_loop) ? ArcadeConfig::COLOR_WHITE : palette[(_loop / 3) % 3];
     }
+    static const uint16_t SANDSTONE      = 0xC56E;   // rgb(196, 172, 112): the Ruins' stone
+    static const uint16_t SANDSTONE_DARK = 0x7B47;   // rgb(120, 104, 56)
     static const uint16_t NIGHT_STONE = 0x3A90;   // rgb(60, 80, 130)
     static const uint16_t STEEL       = 0x4A8C;   // rgb(72, 80, 100): Night's gantries
     static const uint16_t STEEL_LIGHT = 0x9D17;   // rgb(150, 160, 184)
@@ -337,11 +354,14 @@ private:
         bool spikeSpacingOK = _distanceSinceLastSpike >= RUNNER_WIDTH * 4;
         // (Night's dart stage has none: they'd stand in the darts' way.)
         const bool nightDarts = isNight((passStage - 1) / TIERS_PER_LOOP) && passTier == 6;
-        // The boss stretch's ground is plain and level: the rocks are the
-        // test. (Blocks built during it but reached after are level too;
-        // what's on them goes by where they're reached.)
+        // The boss stretch's ground is plain and level at the bottom (the
+        // rocks are the test, and a stair left high gave them less room to
+        // fall): a step down onto it, never up. (Blocks built during it
+        // but reached after stay level too; what's on them goes by where
+        // they're reached.)
         const bool boss = passTier == BOSS_TIER;
-        if (boss || _tier == BOSS_TIER) newY = prevY;
+        if (boss) newY = groundLevel();
+        else if (_tier == BOSS_TIER) newY = prevY;
         NightKind kind = NIGHT_NONE;
         // Night's obstacle comes first, a spike only where there's none.
         if (night && !boss && !wantFirePit && (passTier > 1 || beamTurn) &&
@@ -369,11 +389,26 @@ private:
             }
         }
 
-        bool wantSpike    = !wantFirePit && !nightDarts && !boss && kind == NIGHT_NONE && passTier > 1 &&
+        // The Ruins' pillars (stages 6-8 of a loop): on a block long enough
+        // for the log to lie on, its foot near the block's end; apart from
+        // each other and from spikes.
+        const bool ruinsGround = isRuins((passStage - 1) / TIERS_PER_LOOP) && !boss &&
+                                 passTier >= ArcadeConfig::RUNNER_GROUND2_TIER_START;
+        _sincePillar += (float)width;
+        bool wantPillar = ruinsGround && !wantFirePit && _sincePillar >= ArcadeConfig::RUINS_PILLAR_SPACING &&
+                          _distanceSinceLastSpike >= ArcadeConfig::NIGHT_CLEAR &&
+                          (_sincePillar >= 2 * ArcadeConfig::RUINS_PILLAR_SPACING || random(0, 2) == 0);
+
+        bool wantSpike    = !wantFirePit && !nightDarts && !boss && kind == NIGHT_NONE && passTier > 1 && !wantPillar &&
                            (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
                            spikeSpacingOK && _sinceNight >= ArcadeConfig::NIGHT_CLEAR &&
+                           _sincePillar >= ArcadeConfig::NIGHT_CLEAR &&
                            (random(0, 4) == 0);
         if (wantSpike) _distanceSinceLastSpike = 0.0f;
+        if (wantPillar) {
+            width = max(width, RuinsLayer::PILLAR_LEN + 16);
+            _sincePillar = 0.0f;
+        }
 
         // Back down from the floating platforms: level with the ground, so
         // this block never stands taller than a stair step above the last
@@ -394,6 +429,20 @@ private:
             _pool[index].x               = startX + gapWidth;
             _pool[index].firePitBefore   = true;
             _pool[index].firePitGapWidth = gapWidth;
+
+            // The Ruins: each pit stage's first pit has a spring just before
+            // it, on the block it starts after, throwing the runner onto a
+            // high slab across it (jump the spring to stay low).
+            if (isRuins((passStage - 1) / TIERS_PER_LOOP) && _springStage != passStage) {
+                for (int k = 0; k < POOL_SIZE; k++) {
+                    const Platform &q = _pool[k];
+                    if (k == index || !q.active || !q.isGroundSegment || fabsf(q.x + q.width - startX) > 0.5f) continue;
+                    if (q.width < 30 || q.y != _lastGroundY) break;
+                    _ruins.addSpringRoute(startX - 12.0f, q.y, startX + gapWidth + 34.0f, ArcadeConfig::RUINS_ROUTE_RISE);
+                    _springStage = passStage;
+                    break;
+                }
+            }
             // Level with the approach, so the pit's no step up or down.
             newY = _lastGroundY;
         } else {
@@ -409,6 +458,8 @@ private:
         _pool[index].baseY          = (float)newY;
         _pool[index].y              = newY;
         _pool[index].bobPhase       = 0.0f;
+
+        if (wantPillar) _ruins.addPillar(startX + width - 6.0f, newY);
 
         _pool[index].night = kind;
         _pool[index].nightScored = _pool[index].fired = _pool[index].jetLive = false;
@@ -441,6 +492,9 @@ private:
 
     void spawnPlatform(int index, float startX) {
         _pool[index].night         = NIGHT_NONE;
+        _pool[index].crumbly = _pool[index].falling = false;
+        _pool[index].crumbleAt     = -1;
+        _pool[index].fallVy        = 0.0f;
         _pool[index].firePitBefore = false;
         _pool[index].hasSpike      = false;
         _pool[index].pitScored     = false;
@@ -481,7 +535,8 @@ private:
         // horizontal reach is airtime * scroll speed (platforms close the
         // gap while the player is airborne, not the other way around).
         float airtimeFrames = 2.0f * ArcadeConfig::RUNNER_JUMP_VELOCITY / ArcadeConfig::RUNNER_GRAVITY;
-        float safetyFactor  = landingIsMoving ? 0.65f : 0.85f;
+        // (Off a crumbling slab the jump may come early: a shorter gap.)
+        float safetyFactor  = (landingIsMoving || _prevCrumbly) ? 0.65f : 0.85f;
         int   safeReach      = (int)(_scrollSpeed * airtimeFrames * safetyFactor);
 
         int minGap = ArcadeConfig::PLATFORM_MIN_GAP;
@@ -503,6 +558,14 @@ private:
 
         _pool[index].isMoving = landingIsMoving;
         _pool[index].bobPhase = random(0, 628) / 100.0f; // 0..2pi
+        // The Ruins: a third of the still slabs crumble (half from the
+        // moving-platform stage on), and those are short.
+        const bool crumbly = isRuins(_loop) && !landingIsMoving &&
+                             (_slabsSinceCrumbly >= 2 || random(0, _tier >= ArcadeConfig::RUNNER_MOVING_TIER ? 2 : 3) == 0);
+        _slabsSinceCrumbly = crumbly ? 0 : _slabsSinceCrumbly + 1;   // never more than two plain in a row
+        _pool[index].crumbly = crumbly;
+        if (crumbly) _pool[index].width = min(width, (int)ArcadeConfig::RUINS_SLAB_MAX_W);
+        _prevCrumbly = crumbly;
         _afterSlabs = true;
         _prevNight = _prevPit = false;
         _flatRunPx = 0;
@@ -593,6 +656,13 @@ public:
         _prevNightRoom      = 0;
         _flatRunPx          = 0;
         for (int i = 0; i < DARTS; i++) _darts[i].active = false;
+        _ruins.reset();
+        _frames = 0;
+        _prevCrumbly = false;
+        _springStage = 0;
+        _sincePillar = 9999.0f;
+        _slabsSinceCrumbly = 0;
+        for (int i = 0; i < POOL_SIZE; i++) { _pool[i].crumbly = _pool[i].falling = false; _pool[i].crumbleAt = -1; }
 
         // First platform is always a safe, wide starting ledge under the player.
         _pool[0].x        = 0;
@@ -659,9 +729,19 @@ public:
         // nowhere and could silently paper over what should have been a
         // real gap.
         float rightmostEdge = 0;
+        ++_frames;
         for (int i = 0; i < POOL_SIZE; i++) {
             if (!_pool[i].active) continue;
             _pool[i].x -= _scrollSpeed;
+
+            // A crumbling slab, its time up: falls away.
+            if (_pool[i].crumbly && _pool[i].crumbleAt >= 0 &&
+                _frames >= _pool[i].crumbleAt + ArcadeConfig::RUINS_CRUMBLE_FRAMES) {
+                _pool[i].falling = true;
+                _pool[i].fallVy += 0.25f;
+                _pool[i].baseY  += _pool[i].fallVy;
+                _pool[i].y = (int)_pool[i].baseY;
+            }
 
             if (_pool[i].isMoving) {
                 _pool[i].bobPhase += 0.04f;
@@ -708,6 +788,7 @@ public:
             _darts[i].x -= _scrollSpeed + ArcadeConfig::NIGHT_DART_SPEED;
             if (_darts[i].x < -10) _darts[i].active = false;
         }
+        _ruinsEvents |= _ruins.update(_scrollSpeed, _runnerRight);
 
         // Second pass: recycle anything that has scrolled fully off-screen,
         // always building off the confirmed global rightmost edge.
@@ -723,11 +804,22 @@ public:
     // `ahead` > 0 asks where moving platforms will have bobbed to that many
     // frames from now (for the attract demo's prediction); positions are
     // the caller's to shift.
-    int groundYAt(float playerX, float playerRight, float playerY, float playerBottom, int ahead = 0) const {
+    // `touched` (the demo's prediction): for each slab, the frame ahead the
+    // predicted runner landed on it, -1 if it hasn't; a crumbling slab is
+    // gone RUINS_CRUMBLE_FRAMES after. `idx` gets the platform stood on
+    // (-1: none, or a Ruins high slab).
+    int groundYAt(float playerX, float playerRight, float playerY, float playerBottom, int ahead = 0,
+                  const short* touched = nullptr, int* idx = nullptr) const {
         int best = -1;
+        if (idx) *idx = -1;
         for (int i = 0; i < POOL_SIZE; i++) {
-            if (!_pool[i].active) continue;
+            if (!_pool[i].active || _pool[i].falling) continue;
             if (playerRight <= _pool[i].x || playerX >= _pool[i].x + _pool[i].width) continue;
+            if (_pool[i].crumbly) {
+                const long C = ArcadeConfig::RUINS_CRUMBLE_FRAMES;
+                if (_pool[i].crumbleAt >= 0 ? _frames + ahead >= _pool[i].crumbleAt + C
+                                            : (touched && touched[i] >= 0 && ahead >= touched[i] + C)) continue;
+            }
             int y = _pool[i].y;
             if (ahead > 0 && _pool[i].isMoving) {
                 y = (int)(_pool[i].baseY + sinf(_pool[i].bobPhase + 0.04f * ahead) * ArcadeConfig::PLATFORM_BOB_AMPLITUDE);
@@ -748,11 +840,14 @@ public:
             int tolerance = (_pool[i].isGroundSegment && !_pool[i].firePitBefore) ? 8 : 2;
 
             if (playerBottom <= y + tolerance) {
-                if (best == -1 || y < best) best = y;
+                if (best == -1 || y < best) { best = y; if (idx) *idx = i; }
             }
         }
+        const int slab = _ruins.slabYAt(playerX, playerRight, playerBottom);
+        if (slab >= 0 && (best == -1 || slab < best)) { best = slab; if (idx) *idx = -1; }
         return best;
     }
+    bool isCrumbly(int i) const { return i >= 0 && i < POOL_SIZE && _pool[i].crumbly && _pool[i].crumbleAt < 0; }
 
     bool isOverPit(float playerX, float playerRight) const {
         return groundYAt(playerX, playerRight, 0, 0) == -1;
@@ -880,6 +975,7 @@ public:
                 }
             }
         }
+        if (const int r = _ruins.takeCleared(playerX, popX, popY)) return r;
         for (int i = 0; i < DARTS; i++) {
             Dart &d = _darts[i];
             if (!d.active || d.scored || d.x + 6.0f >= playerX) continue;
@@ -893,10 +989,34 @@ public:
 
     // ---- Night ------------------------------------------------------------
 
-    // Every second loop is Night (docs/design/RunnerFlux.md; Ruins and
-    // Storm will make it a cycle of four).
-    static bool isNight(int loop) { return loop % 2 == 1; }
-    static const char* worldName(int loop) { return isNight(loop) ? "NIGHT" : "OUTPOST"; }
+    // The worlds come round in turn, a loop each (docs/design/RunnerFlux.md):
+    // the Outpost, Night, the Ruins (Storm will make it four).
+    static const int WORLDS = 3;
+    static int  worldOf(int loop) { return loop % WORLDS; }
+    static bool isNight(int loop) { return worldOf(loop) == 1; }
+    static bool isRuins(int loop) { return worldOf(loop) == 2; }
+    static const char* worldName(int loop) {
+        static const char* const names[WORLDS] = { "OUTPOST", "NIGHT", "RUINS" };
+        return names[worldOf(loop)];
+    }
+
+    RuinsLayer &ruins() { return _ruins; }
+    int takeRuinsEvents() { const int e = _ruinsEvents; _ruinsEvents = 0; return e; }
+    const RuinsLayer &ruins() const { return _ruins; }
+    void setRunnerRight(float x) { _runnerRight = x; }
+
+    // The runner has landed (feet at `bottom`): a crumbling slab under it
+    // starts to go. True the frame one does (for its sound).
+    bool standOn(float px, float pr, float bottom) {
+        for (int i = 0; i < POOL_SIZE; i++) {
+            Platform &p = _pool[i];
+            if (!p.active || !p.crumbly || p.falling || p.crumbleAt >= 0) continue;
+            if (pr <= p.x || px >= p.x + p.width || fabsf(bottom - (float)p.y) > 1.0f) continue;
+            p.crumbleAt = _frames;
+            return true;
+        }
+        return false;
+    }
 
     // Once a frame, with the runner's x: launchers glint as the runner
     // comes within range, then fire. Returns a bit for each sound due:
@@ -1018,6 +1138,9 @@ public:
             if (_pool[i].isGroundSegment) {
                 color      = groundColor();   // stone/earth, distinct from floating platforms; rotates per loop
                 fillHeight = ArcadeConfig::LANDSCAPE_HEIGHT - _pool[i].y;
+            } else if (isRuins(_loop) && !_pool[i].isMoving) {
+                color      = _pool[i].crumbly ? SANDSTONE_DARK : SANDSTONE;   // crumbling: darker, cracked
+                fillHeight = ArcadeConfig::PLATFORM_THICKNESS;
             } else {
                 color      = _pool[i].isMoving ? ArcadeConfig::COLOR_CYAN : ArcadeConfig::COLOR_GREEN;
                 // Fixed-thickness slab, not a pillar down to the screen bottom —
@@ -1026,8 +1149,10 @@ public:
                 fillHeight = ArcadeConfig::PLATFORM_THICKNESS;
             }
 
-            // In up to three parts: lit, half, a quarter.
-            const int x0 = (int)_pool[i].x, x1 = x0 + _pool[i].width;
+            // In up to three parts: lit, half, a quarter. A crumbling slab
+            // shakes once it's going.
+            const bool shaking = _pool[i].crumbly && _pool[i].crumbleAt >= 0 && !_pool[i].falling;
+            const int x0 = (int)_pool[i].x + (shaking && ((_frames / 2) & 1) ? 1 : 0), x1 = x0 + _pool[i].width;
             const int cuts[4] = { x0, constrain(litTo, x0, x1), constrain(litTo + 30, x0, x1), x1 };
             for (int k = 0; k < 3; k++) {
                 if (cuts[k + 1] <= cuts[k]) continue;
@@ -1073,7 +1198,13 @@ public:
             }
 
             if (_pool[i].night != NIGHT_NONE) renderNight(canvas, _pool[i], litTo);
+            if (_pool[i].crumbly) {   // its cracks
+                const int cx = x0 + _pool[i].width / 3, cy = _pool[i].y;
+                canvas.drawLine(cx, cy, cx + 2, cy + 4, ArcadeConfig::COLOR_BLACK);
+                canvas.drawLine(cx + _pool[i].width / 3, cy + 1, cx + _pool[i].width / 3 - 2, cy + 6, ArcadeConfig::COLOR_BLACK);
+            }
         }
+        _ruins.render(canvas, SANDSTONE, SANDSTONE_DARK);
         for (int i = 0; i < DARTS; i++) {
             if (!_darts[i].active) continue;
             const int dx = (int)_darts[i].x, dy = _darts[i].y;

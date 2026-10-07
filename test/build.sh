@@ -132,7 +132,7 @@ else
   ./hiscore_test | tail -1
   echo "=== cabinet (main.cpp: launch and quit every game, menu scrolling, high-score cycle)"
   ./cabinet_sim
-  echo "=== games2d (Runner, Asteroid, Lander attract demos; Runner pits, wall, game over, levitation, diamond, spikes, sounds, play, stages, names, pick, pit counts, stars, death, score, Night, boss; Asteroid, Lander, trails)"
+  echo "=== games2d (Runner, Asteroid, Lander attract demos; Runner pits, wall, game over, levitation, diamond, spikes, sounds, play, stages, names, pick, pit counts, stars, death, score, Night, boss, Ruins; Asteroid, Lander, trails)"
   ./games2d_harness all 30000
   for s in physics rules courses guardians god "play 20000" idle demoexit menus pick ticks; do
     echo "=== roll $s"

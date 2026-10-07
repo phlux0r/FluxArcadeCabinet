@@ -144,7 +144,18 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   look and fairness by hand, the slower speeds, the wider reach's feel.
   The owner found the rocks too quick: they now take about 72 frames to
   fall (were 47), the spread's flash 24 frames, the roller slower.
-  Next: Ruins (docs/design/RunnerFlux.md section 3).
+  **The Ruins are built** (stages 19-27; the worlds now come Outpost,
+  Night, Ruins, round again): springs before each pit stage's first pit
+  onto a high slab with gems (chain bonus), crumbling slabs, falling
+  pillars, and the boss cracking the ground (`RuinsLayer.h`). Fixes the
+  harness found on the way: the pillar's log was unjumpable at the Ruins'
+  speed (now 20 by 6, about 8-10 frames to jump in); the flying ship's
+  rocks over crumbling slabs and logs were too much (no ship in stage 23,
+  rocks held while a pillar's ahead); the boss's ground now drops to the
+  base level. Scenario `runnerruins`; `runnerplay` must reach stage 28.
+  Needs the board: the look (sandstone, dusk, columns, gems), springs'
+  height and feel, how fair crumbling slabs and logs feel by hand.
+  Next: Storm, or more polish on the worlds there are.
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the

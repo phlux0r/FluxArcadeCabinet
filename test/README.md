@@ -272,7 +272,16 @@ being freed on exit to the launcher).
   a pixel a frame after; clearing it gives the stage bonus, 250 and a
   life; the autopilot gets through 20 runs each of 9, 18 and 27 with no
   lives lost, at least 4 patterns a run, every pattern met, each line's gap
-  in reach). `runnerplay` has to get through Night and its boss (to stage 19) and
+  in reach; 27, the Ruins' boss, meets its cracks), the Ruins
+  (`runnerruins`: the worlds in turn; 100 runs from stage 19: a spring in
+  19 and 20, each just before a pit, crumbling slabs in 21-23, pillars in
+  24-26, none of them anywhere else, pits still exact; a crumbling slab
+  drops 24 frames after it's landed on; a spring up onto its high slab,
+  every gem taken, the chain doubled; a pillar topples and its log kills
+  run into; jumped, 5 or more frames to jump in at stage 24's speed and at
+  26's; a crack's hole kills run into and is jumpable; the autopilot
+  through all 20 runs of the Ruins and their boss, 40 lives lost at most).
+  `runnerplay` has to get through the Ruins and their boss (to stage 28) and
   prints the lives lost by stage; `runnerpits` ducks at Night;
   `runnerdiamond` checks the diamond stays away from Night;
   checks Lander's crash debris moves one step a frame and its gravity by
@@ -309,7 +318,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score, Night, boss; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score, Night, boss, Ruins; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

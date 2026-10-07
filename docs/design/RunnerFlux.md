@@ -19,12 +19,12 @@ Night first, then the boss.
 |---|---|---|---|
 | 1 | 1-8, boss 9 | Outpost (today's game) | pits, platforms, spikes, boulders, the ship |
 | 2 | 10-17, boss 18 | Night | B ducks: low beams, flame jets, darts |
-| 3 | 19-26, boss 27 | Ruins | crumbling slabs, springs to a high route with gem chains |
-| 4 | 28-35, boss 36 | Storm | wind gusts and conveyor ground pushing the runner |
-| 5+ | 37- | the worlds again, faster | |
+| 3 | 19-26, boss 27 | Ruins | springs to a high slab with gems, crumbling slabs, falling pillars |
+| 4 | (planned) | Storm | wind gusts and conveyor ground pushing the runner |
+| then | 28- | the worlds again, faster | |
 
-(A loop was 8 stages; the boss made it 9, so the numbers below are as
-built. Until Ruins and Storm exist, the Outpost and Night alternate.)
+(A loop was 8 stages; the boss made it 9, so the numbers are as built.
+Until Storm exists the three come round in turn: Outpost, Night, Ruins.)
 
 Each world keeps the old hazards, mixed with its own, so it's harder,
 not just different. Each loop ends with the boss stretch (section 4) and
@@ -126,14 +126,53 @@ quarter; flames, lamps, the launcher's eye and darts stay bright.
 
 ---
 
-## 3. Ruins (loop 3) and Storm (loop 4), in outline
+## 3. Ruins (loop 3, built)
 
-Detailed when their turn comes.
+`RuinsLayer.h` (springs, the high slabs and gems, pillars, the boss's
+holes, in frames, scrolling with the ground) and crumbling slabs in
+`PlatformManager`'s pool. The owner chose all four ideas, gems as points
+with a chain bonus, and the boss cracking the ground.
 
-- **Ruins:** slabs that crumble a beat after you land (shake, then fall);
-  springs that throw the runner to a high route of slabs with gem chains
-  (points, a combo for collecting a chain unbroken) over the safe low
-  route. Risk for score.
+| Stage | Terrain | The Ruins' addition |
+|---|---|---|
+| 19 | ground, pits (2) | a spring before the first pit |
+| 20 | ground, pits (3), stairs | a spring before the first pit |
+| 21 | floating platforms | crumbling slabs (a third, never 3 plain in a row) |
+| 22 | moving platforms | crumbling slabs (half) |
+| 23 | platforms (no ship) | crumbling slabs (half) |
+| 24 | stairs, spikes | pillars |
+| 25 | boulders | pillars |
+| 26 | all + ships | pillars |
+| 27 | the boss | its cracks |
+
+- **Springs** go by the pit, so the pit counts stay exact: on the block
+  the stage's first pit starts after (level, 30px or more), 12px short of
+  the pit. Running over one throws the runner up at 7.2px a frame (about
+  74px) onto a high slab 58px up from just past it to 34px past the pit,
+  gems every 12px along it (5 each; the whole chain again if none is
+  missed). The ground under the slab is only ever the pit and its
+  landing block, so falling off its end is safe. Jumping the spring keeps
+  the runner low.
+- **Crumbling slabs** (no wider than 26px) shake once landed on and drop
+  24 frames later; the gap after one is sized as for a moving landing
+  (it may be jumped from early).
+- **Pillars**: a broken column 20px tall at the far end of a block long
+  enough for its log, 110px apart, clear of spikes. It cracks once the
+  runner is 115px short of it, falls over 12 frames 22 frames later, and
+  lies as a log 20 by 6 (its ends trimmed 3px): about 8 frames to jump it
+  in at stage 24's speed, 10 at 26's (a 36px column needed the push; 24px,
+  4 frames). Boulders and the flying ship's rocks hold while one's ahead
+  (rocks falling into the jump over a log were too much).
+- **The boss's CRACK** pattern: two rocks land 60 and 110px ahead; each
+  cracks the ground (20 frames) then opens a 14px hole.
+- **The boss's ground** now drops to the base level (a stair left high by
+  the stage before gave the rocks less room and put jumps up into them).
+- **Fair**: the harness autopilot gets through all 20 runs of the Ruins
+  and their boss, about one life lost a run (mostly the ship's rocks in
+  26, as in the other worlds' last stages).
+
+## 3b. Storm (loop 4), in outline
+
 - **Storm:** gusts (telegraphed by blown particles and a sound) push the
   runner's position forward or back for a second; conveyor ground does
   the same while you stand on it. The stick fights them. Rain streaks in

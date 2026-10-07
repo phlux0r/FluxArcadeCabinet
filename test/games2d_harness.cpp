@@ -541,8 +541,8 @@ int main(int argc, char** argv) {
         printf("runnerplay lives lost by stage:");
         for (int st = 1; st < 64; ++st) if (diedAt[st]) printf(" %d:%d", st, diedAt[st]);
         printf("\n");
-        // It has to get through the Outpost and through Night.
-        bool pass = rules && bestStage >= 19 && loops > 0;
+        // It has to get through the Outpost, Night and the Ruins, bosses and all.
+        bool pass = rules && bestStage >= 28 && loops > 0;
         printf("runnerplay: rules held %d, furthest stage %d, %d loops finished, %d games over -> %s\n",
                (int)rules, bestStage, loops, overs, pass ? "PASS" : "FAIL");
         ok &= pass;
@@ -1101,8 +1101,8 @@ int main(int argc, char** argv) {
         // lost life), the runner may range further forward and walks back
         // after; surviving it ends the loop with a life and the bonus. And
         // it's fair: the autopilot (as a player) gets through 20 runs each
-        // of the Outpost's (9), Night's (18) and the next Outpost's (27)
-        // with no lives lost, meeting every pattern, each line's gap within
+        // of the Outpost's (9), Night's (18) and the Ruins' (27) with no
+        // lives lost, meeting every pattern, each line's gap within
         // its reach.
         using G = PlatformFluxGame;
         using PM = PlatformManager;
@@ -1200,7 +1200,7 @@ int main(int argc, char** argv) {
 
         // Fair: the autopilot, as a player, 20 runs of each boss.
         for (int stage : { 9, 18, 27 }) {
-            int died = 0, through = 0, kinds[4] = {}, farGaps = 0, patterns = 0;
+            int died = 0, through = 0, kinds[RunnerBoss::P_COUNT] = {}, farGaps = 0, patterns = 0;
             for (int seed = 1; seed <= 20; ++seed) {
                 g = G(); g_rng = (uint32_t)seed; g.init(audio);
                 g.startNewGame(audio, stage, true);
@@ -1221,14 +1221,215 @@ int main(int argc, char** argv) {
                 }
                 through += g._stage == stage + 1;
             }
-            const bool night = PM::isNight((stage - 1) / PM::TIERS_PER_LOOP);
+            const int world = PM::worldOf((stage - 1) / PM::TIERS_PER_LOOP);
             char what[96];
             snprintf(what, sizeof(what), "stage %d: %d/20 through, %d lives lost, %.1f patterns a run, gaps out of reach %d",
                      stage, through, died, patterns / 20.0, farGaps);
             check(what, through == 20 && died == 0 && patterns >= 20 * 4 && farGaps == 0 &&
-                        kinds[0] && kinds[1] && kinds[2] && (night ? kinds[3] > 0 : kinds[3] == 0));
+                        kinds[0] && kinds[1] && kinds[2] &&
+                        (kinds[RunnerBoss::P_DART] > 0) == (world == 1) && (kinds[RunnerBoss::P_CRACK] > 0) == (world == 2));
         }
         printf("runnerboss -> %s\n", pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerruins")) {
+        // The Ruins, every third loop (stages 19-27, then 46-54, ...).
+        using G = PlatformFluxGame;
+        using PM = PlatformManager;
+        AudioEngine audio;
+        bool pass = true;
+        auto check = [&](const char* what, bool cond) {
+            printf("  %-64s %s\n", what, cond ? "ok" : "BAD");
+            pass &= cond;
+        };
+        printf("runnerruins:\n");
+        check("the worlds in turn: Outpost, Night, Ruins, Outpost",
+              !strcmp(PM::worldName(0), "OUTPOST") && !strcmp(PM::worldName(1), "NIGHT") &&
+              !strcmp(PM::worldName(2), "RUINS") && !strcmp(PM::worldName(3), "OUTPOST") && PM::isRuins(5));
+
+        // What's built where, as the runner reaches it, 100 runs from stage 19 to 29.
+        int springsBy[32] = {}, crumblyBy[32] = {}, pillarsBy[32] = {}, pitsBy[32] = {}, lacking = 0, springNoPit = 0, missBy[10] = {};
+        for (int seed = 1; seed <= 100; ++seed) {
+            g_rng = (uint32_t)seed;
+            PM pm;
+            pm.initGame(19);
+            int mine[32][3] = {}, pits[32] = {};
+            const long frames = (long)(pm.stageStartDistance(30) - pm.stageStartDistance(19));
+            for (long f = 0; f < frames; ++f) {
+                pm.update(); pm.advanceDifficulty();
+                const int st = pm.stageNumber();
+                if (st >= 32) break;
+                const float rx = (float)ArcadeConfig::RUNNER_BASE_X;
+                for (int i = 0; i < 6; ++i) {
+                    auto &p = pm._pool[i];
+                    if (!p.active) continue;
+                    if (p.firePitBefore && !p.pitScored && p.x < rx) { p.pitScored = true; ++pits[st]; }
+                    // A crumbling slab, counted as its front reaches the runner
+                    // (spikeScored is spare on a slab: it marks it counted).
+                    if (p.crumbly && !p.spikeScored && p.x < rx) { p.spikeScored = true; ++mine[st][1]; }
+                }
+                for (auto &s : pm._ruins._springs) {
+                    if (!s.active || s.firedAt == -999 || s.x >= rx) continue;
+                    s.firedAt = -999;   // counted
+                    ++mine[st][0];
+                    // A pit just past it.
+                    bool pit = false;
+                    for (auto &p : pm._pool) pit |= p.active && p.firePitBefore && fabsf(p.x - p.firePitGapWidth - (s.x + 12)) < 1.5f;
+                    springNoPit += !pit;
+                }
+                for (auto &q : pm._ruins._pillars) {
+                    if (!q.active || q.scored || q.x >= rx) continue;
+                    q.scored = true;
+                    ++mine[st][2];
+                }
+            }
+            for (int st = 19; st < 31; ++st) {
+                springsBy[st] += mine[st][0]; crumblyBy[st] += mine[st][1]; pillarsBy[st] += mine[st][2]; pitsBy[st] += pits[st];
+            }
+            const bool miss[10] = { mine[19][0] != 1, mine[20][0] != 1, !mine[21][1], !mine[22][1], !mine[23][1],
+                                    !mine[24][2], !mine[25][2], !mine[26][2], pits[19] != 2, pits[20] != 3 };
+            for (int k = 0; k < 10; ++k) { lacking += miss[k]; missBy[k] += miss[k]; }
+        }
+        printf("  by stage (100 runs): springs/crumbling slabs/pillars/pits\n   ");
+        for (int st = 19; st <= 30; ++st) printf(" %d:%d/%d/%d/%d", st, springsBy[st], crumblyBy[st], pillarsBy[st], pitsBy[st]);
+        printf("\n");
+        printf("  runs without: spring 19 %d, 20 %d; crumbling 21 %d, 22 %d, 23 %d; pillars 24 %d, 25 %d, 26 %d; pits 19 %d, 20 %d\n",
+               missBy[0], missBy[1], missBy[2], missBy[3], missBy[4], missBy[5], missBy[6], missBy[7], missBy[8], missBy[9]);
+        // (Built a screen ahead, a stage's last slabs or pillar can be
+        // reached just into the next: crumbling in 24, a pillar in 27.)
+        bool elsewhere = false;
+        for (int st = 28; st <= 30; ++st) elsewhere |= springsBy[st] || crumblyBy[st] || pillarsBy[st];
+        for (int st = 19; st <= 27; ++st) elsewhere |= (springsBy[st] && st > 20) || (crumblyBy[st] && (st < 21 || st > 24)) ||
+                                                      (pillarsBy[st] && (st < 24));
+        check("every run: a spring in 19 and 20, crumbling in 21-23, pillars in 24-26", lacking == 0);
+        check("each spring just before a pit; none of them anywhere else", springNoPit == 0 && !elsewhere);
+
+        // The pieces, one at a time.
+        static G g;
+        auto fresh = [&](int stage) {
+            g = G(); g_rng = 4; g.init(audio);
+            g.startNewGame(audio, stage, true);
+            g._player._invincible = false;
+            auto &pool = g._platforms._pool;
+            for (int i = 0; i < 6; ++i) {   // flat ground, nothing on it
+                auto &p = pool[i];
+                p.active = true; p.isGroundSegment = true; p.isMoving = false; p.firePitBefore = false;
+                p.hasSpike = false; p.night = PM::NIGHT_NONE; p.crumbly = p.falling = false; p.crumbleAt = -1;
+                p.x = i * 60.0f; p.width = 60; p.y = ArcadeConfig::LANDSCAPE_HEIGHT - 8; p.baseY = (float)p.y;
+            }
+            g._platforms._ruins.reset();
+        };
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += 33; };
+
+        // Crumbling: a slab under the runner goes RUINS_CRUMBLE_FRAMES after it lands.
+        fresh(21);
+        {
+            auto &p = g._platforms._pool[0];
+            p.x = 0; p.width = 160; p.isGroundSegment = false; p.crumbly = true; p.y = 100; p.baseY = 100;
+            for (int i = 1; i < 6; ++i) g._platforms._pool[i].x = 400 + i * 60.0f;
+            g._player._y = 100 - RUNNER_HEIGHT; g._player._onGround = true;
+            g._platforms._scrollSpeed = 0.0f;
+            int held = 0;
+            for (int f = 0; f < 60 && g._phase == G::PHASE_PLAYING && !p.falling; ++f) { step(); held += g._player.isOnGround(); }
+            check("a crumbling slab drops 24 frames after the runner lands on it", p.falling && held >= 23 && held <= 26);
+        }
+
+        // A spring: up onto the high slab, gems taken, the whole chain doubled.
+        fresh(19);
+        g._platforms._ruins.addSpringRoute(70.0f, ArcadeConfig::LANDSCAPE_HEIGHT - 8, 230.0f, ArcadeConfig::RUINS_ROUTE_RISE);
+        {
+            int total = 0;
+            for (auto &gm : g._platforms._ruins._gems) total += gm.active;
+            const int score0 = g._score;
+            bool launched = false, onHigh = false, chain = false;
+            for (int f = 0; f < 260 && g._phase == G::PHASE_PLAYING; ++f) {
+                g._sfxPlayed = 0;
+                step();
+                launched |= (g._sfxPlayed & (1u << G::SFX_SPRING)) != 0;
+                chain |= (g._sfxPlayed & (1u << G::SFX_CHAIN)) != 0;
+                onHigh |= g._player.isOnGround() && g._player.getY() + RUNNER_HEIGHT < ArcadeConfig::LANDSCAPE_HEIGHT - 40;
+            }
+            const int gained = g._score - score0;
+            char what[96];
+            snprintf(what, sizeof(what), "a spring: up onto the high slab, %d gems, chain doubled (+%d)", total, gained);
+            check(what, launched && onHigh && chain && total >= 8 &&
+                        gained >= 2 * total * ArcadeConfig::RUINS_GEM_POINTS);
+        }
+
+        // A pillar: cracks as the runner nears, falls, lies across the path.
+        // Run into, it kills; jumped, at stage 24's speed and stage 26's
+        // (the Ruins' fastest), five or more frames to jump in.
+        {
+            fresh(24);
+            g._platforms._ruins.addPillar(170.0f, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
+            bool toppled = false;
+            for (int f = 0; f < 300 && g._phase == G::PHASE_PLAYING; ++f) {
+                g._sfxPlayed = 0;
+                step();
+                toppled |= (g._sfxPlayed & (1u << G::SFX_TOPPLE)) != 0;
+            }
+            check("a pillar topples, and its log run into kills", toppled && g._phase != G::PHASE_PLAYING);
+        }
+        for (int stage : { 24, 26 }) {
+            int window = 0;
+            for (int jf = 20; jf < 100; ++jf) {
+                fresh(stage);
+                g._platforms._ruins.addPillar(170.0f, ArcadeConfig::LANDSCAPE_HEIGHT - 8);
+                g._enemies.initGame();                  // nothing else about
+                g._boulders.initGame(); g._boulders._nextSpawnAt = ~0UL;
+                // Till it's past this log (more pillars come with the ground).
+                bool scored = false;
+                for (int f = 0; f < 200 && g._phase == G::PHASE_PLAYING && !scored; ++f) {
+                    InputState in{}; in.btnAPressed = f == jf;
+                    step(in);
+                    scored |= g._platforms._ruins._pillars[0].scored;
+                }
+                for (int f = 0; f < 6 && g._phase == G::PHASE_PLAYING; ++f) step();
+                window += g._phase == G::PHASE_PLAYING && scored;
+            }
+            char what[80];
+            snprintf(what, sizeof(what), "its log jumped at stage %d's speed: %d frames to jump in", stage, window);
+            check(what, window >= 5);
+        }
+
+        // A hole (the Ruins boss's): a crack, then a gap to jump.
+        for (int jump = 0; jump <= 1; ++jump) {
+            fresh(27);
+            g._boss.reset();
+            g._platforms._ruins.addHole(110.0f, ArcadeConfig::LANDSCAPE_HEIGHT - 8, RuinsLayer::HOLE_CRACK);
+            for (int f = 0; f < 200 && g._phase == G::PHASE_PLAYING; ++f) {
+                InputState in{};
+                const auto &h = g._platforms._ruins._holes[0];
+                if (jump && g._player.isOnGround() && h.x - (g._player.getX() + RUNNER_WIDTH) < 4) in.btnAPressed = true;
+                step(in);
+            }
+            const bool lived = g._phase == G::PHASE_PLAYING;
+            check(jump ? "a crack's hole, jumped: lives" : "a crack's hole, run into: dies", lived == (jump == 1));
+        }
+
+        // The autopilot, as a player, through the Ruins and their boss.
+        int through = 0, lost = 0;
+        int lostBy[32] = {};
+        for (int seed = 1; seed <= 20; ++seed) {
+            g = G(); g_rng = (uint32_t)seed; g.init(audio);
+            g.startNewGame(audio, 19, true);
+            g._lives = 99;
+            for (int f = 0; f < 12000 && g._stage <= 27; ++f) {
+                const G::GamePhase phase = g._phase;
+                const int st = g._stage;
+                InputState in = phase == G::PHASE_PLAYING ? g.demoPilot() : InputState{};
+                step(in);
+                if (phase == G::PHASE_PLAYING && g._phase == G::PHASE_DEATH) { ++lost; if (st < 32) ++lostBy[st]; }
+            }
+            through += g._stage == 28;
+        }
+        char what[128];
+        int n = snprintf(what, sizeof(what), "autopilot: %d/20 through, %d lives lost (", through, lost);
+        for (int st = 19; st <= 27; ++st) n += snprintf(what + n, sizeof(what) - n, "%s%d", st > 19 ? " " : "", lostBy[st]);
+        snprintf(what + n, sizeof(what) - n, ")");
+        check(what, through == 20 && lost <= 40);
+        printf("runnerruins -> %s\n", pass ? "PASS" : "FAIL");
         ok &= pass;
     }
 

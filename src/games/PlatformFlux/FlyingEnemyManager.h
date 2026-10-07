@@ -119,7 +119,10 @@ public:
     }
 
     // True if a rock hit the runner this frame (the game plays the sound).
-    bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles, bool &playerHit) {
+    // `hold`: no rock dropped now (a Ruins pillar ahead wants a jump, and a
+    // rock falling into it was too much at once).
+    bool update(float scrollSpeed, PlayerRunner &player, ParticleManager &particles, bool &playerHit,
+                bool hold = false) {
         bool rockHit = false;
         for (int i = 0; i < _activeEnemies; i++) {
             if (!_enemies[i].active) continue;
@@ -137,7 +140,7 @@ public:
 
             // Stop dropping new rocks once disabled; existing ones (below)
             // keep falling/colliding until they resolve on their own.
-            if (_enabled && millis() >= _enemies[i].nextDropTime) {
+            if (_enabled && !hold && millis() >= _enemies[i].nextDropTime) {
                 spawnRock(_enemies[i].x, _enemies[i].y + 6);
                 _enemies[i].nextDropTime = millis() + random(1400, 3000);
             }

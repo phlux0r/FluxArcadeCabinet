@@ -73,6 +73,15 @@ public:
         return _ducking && !was;
     }
     bool isDucking() const { return _ducking; }
+
+    // A Ruins spring: thrown up at `vy`, as a jump would (no coyote jump
+    // after it).
+    void launch(float vy) {
+        _vy = -vy;
+        _onGround = false;
+        _jumpedSinceGround = true;
+        _ducking = false;
+    }
     // The top of the runner's box: lower while ducked. Its feet are always
     // getY() + RUNNER_HEIGHT.
     float hitTop() const { return _y + (_ducking ? (float)RUNNER_DUCK_DROP : 0.0f); }
