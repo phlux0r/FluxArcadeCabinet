@@ -127,7 +127,22 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   `runnerobstacles`, `runnernight`, `runnerdark`; `runnerplay` must reach
   stage 17. Needs the board: the look (gantries, flame, darts, the
   lantern's falloff), the duck's feel, and the frame rate at Night (the
-  lattice is a few more lines a column). Next: the boss stretch.
+  lattice is a few more lines a column).
+  **The boss stretch is built**: every loop's ninth stage (9, 18, 27, ...;
+  a loop is 9 stages now, Night 10-17), `RunnerBoss.h`: a gunship over
+  level ground, patterns LINE (step into the gap), TRACK (keep moving),
+  ROLL (jump), and DART at Night; the runner's reach widens to the left
+  half of the screen for it; surviving gives 250, the stage bonus and the
+  loop's life. The autopilot steps to a target offset now (into gaps), so
+  it gets through every boss in the harness (`runnerboss`: 20 runs each
+  of 9, 18, 27, no lives lost). The owner found Night too fast, so the
+  speed-up was eased everywhere (0.08 a stage, 0.15 a loop). Fitting the
+  slower stages' fewer blocks took two placement changes, each found by
+  the harness: a pit's end-of-stage margin by its far side at its widest,
+  and in Night's pit stages beams at the front of their blocks with a
+  pit allowed after (30px to stand and jump). Needs the board: the boss's
+  look and fairness by hand, the slower speeds, the wider reach's feel.
+  Next: Ruins (docs/design/RunnerFlux.md section 3).
 - **Also outstanding:** Lander still has no optional WAVs checked with
   `exists()` and no stage select; trails could go on Runner and Brick;
   the owner's own WAVs for Roll, Brick, Resonance and Maze (the

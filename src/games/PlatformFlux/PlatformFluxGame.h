@@ -14,6 +14,7 @@
 #include "LevitationPowerUpManager.h"
 #include "RollingBoulderManager.h"
 #include "RunnerBackdrop.h"
+#include "RunnerBoss.h"
 #include "assets/TitleScreen.h"
 
 #include <Preferences.h>
@@ -28,6 +29,7 @@ private:
     RollingBoulderManager _boulders;
     ParticleManager       _particles;
     RunnerBackdrop        _backdrop;
+    RunnerBoss            _boss;
 
     // "+10" popups where a hazard was got past: they ride the scroll and rise.
     struct Popup { float x, y; int points; unsigned long at; bool active; };
@@ -67,7 +69,7 @@ private:
 
     // The stage select (a test cheat): B held and A on an attract screen.
     // A test run plays from _testFrom; nothing from it goes on the table.
-    static const int PICK_STAGES = 32;   // four loops
+    static const int PICK_STAGES = 4 * PlatformManager::TIERS_PER_LOOP;   // four loops
     static const unsigned long PICK_TIMEOUT_MS = 20000, PICK_REPEAT_DELAY_MS = 400, PICK_REPEAT_MS = 150;
     bool _test = false;
     int  _testFrom = 1;
@@ -87,7 +89,7 @@ private:
     // if it has one and that's there, else a tone or melody (what Runner
     // played before it had optional sounds). Checked once, in init().
     enum Sfx { SFX_TITLE, SFX_JUMP, SFX_POINTS, SFX_STAR, SFX_FLY, SFX_ROCK, SFX_BOULDER,
-               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_COUNT };
+               SFX_STAGE, SFX_LIFE, SFX_DEATH, SFX_OVER, SFX_DUCK, SFX_DART, SFX_JET, SFX_BOSS, SFX_DROP, SFX_COUNT };
     struct SfxDef { const char *path, *fallback; int hz, ms; const int *notes, *durs; int len; };
     static constexpr int TITLE_N[] = { 523, 659, 784, 1047 }, TITLE_D[] = { 80, 80, 80, 150 };
     static constexpr int JUMP_N[]  = { 700, 1050 },           JUMP_D[]  = { 35, 45 };
@@ -95,6 +97,7 @@ private:
     static constexpr int LIFE_N[]  = { 880, 1175, 1568, 2093 }, LIFE_D[] = { 70, 70, 70, 200 };
     static constexpr int DEATH_N[] = { 500, 350, 220 },       DEATH_D[] = { 100, 100, 200 };
     static constexpr int OVER_N[]  = { 392, 330, 262, 196 },  OVER_D[]  = { 150, 150, 150, 350 };
+    static constexpr int BOSS_N[]  = { 220, 0, 220, 0, 165 }, BOSS_D[]  = { 120, 60, 120, 60, 300 };
     static constexpr SfxDef SFX[SFX_COUNT] = {
         { "/audio/runner_title.wav",   "/audio/lander_start.wav", 0, 0, TITLE_N, TITLE_D, 4 },  // SFX_TITLE
         { "/audio/jump.wav",           nullptr, 0, 0, JUMP_N, JUMP_D, 2 },                       // SFX_JUMP
@@ -110,6 +113,8 @@ private:
         { "/audio/runner_duck.wav",    nullptr, 0, 0, nullptr, nullptr, 0 },                     // SFX_DUCK (card only)
         { "/audio/runner_dart.wav",    nullptr, 1800, 30, nullptr, nullptr, 0 },                 // SFX_DART
         { "/audio/runner_jet.wav",     nullptr, 160, 90, nullptr, nullptr, 0 },                  // SFX_JET
+        { "/audio/runner_boss.wav",    nullptr, 0, 0, BOSS_N, BOSS_D, 5 },                       // SFX_BOSS
+        { "/audio/runner_drop.wav",    nullptr, 260, 50, nullptr, nullptr, 0 },                  // SFX_DROP
     };
     static constexpr const char* MUSIC = "/audio/flux-runner.wav";
     AudioEngine* _audio = nullptr;
@@ -192,7 +197,8 @@ private:
         const float px = _player.getX();
         float x, y;
         int pts;
-        while ((pts = _platforms.takeCleared(px, x, y)) > 0 || (pts = _boulders.takeCleared(px, x, y)) > 0) {
+        while ((pts = _platforms.takeCleared(px, x, y)) > 0 || (pts = _boulders.takeCleared(px, x, y)) > 0 ||
+               (pts = _boss.takeCleared(px, x, y)) > 0) {
             _score += pts;
             addPopup(x, y, pts);
             sfx(SFX_POINTS);
@@ -354,6 +360,8 @@ private:
         _platforms.initGame(stage);
         _enemies.initGame();
         _boulders.initGame();
+        _boss.reset();
+        if (PlatformManager::isBossStage(stage)) _boss.start(_platforms.getLoop());
         _powerUp.reset();
         _levitationPowerUp.reset();
         _playerXOffset = 0.0f;
@@ -363,7 +371,8 @@ private:
         _phaseTimer = millis();
         char title[20];
         snprintf(title, sizeof(title), "STAGE %d", stage);
-        showBanner(title, PlatformManager::worldName(_platforms.getLoop()), ArcadeConfig::COLOR_CYAN);
+        if (PlatformManager::isBossStage(stage)) showBanner(title, "BOSS: SURVIVE IT", ArcadeConfig::COLOR_ORANGE);
+        else showBanner(title, PlatformManager::worldName(_platforms.getLoop()), ArcadeConfig::COLOR_CYAN);
     }
 
     // Called each frame: a new stage reached means the last one was cleared.
@@ -372,17 +381,25 @@ private:
         if (now <= _stage) return;
         bool perfect = !_diedThisStage;
         int bonus = ArcadeConfig::RUNNER_STAGE_BONUS * (perfect ? 2 : 1);
+        if (PlatformManager::isBossStage(_stage)) bonus += ArcadeConfig::RUNNER_BOSS_POINTS;   // the boss survived
         _score += bonus;
         _stage = now;
         _diedThisStage = false;
         _uiDirty = true;
 
         char title[20], sub[24];
-        // A new loop's first stage names its world.
+        // A new loop's first stage names its world; a boss stage says so.
+        _boss.reset();
         if ((_stage - 1) % PlatformManager::TIERS_PER_LOOP == 0)
             snprintf(title, sizeof(title), "STAGE %d: %s", _stage, PlatformManager::worldName(_platforms.getLoop()));
+        else if (PlatformManager::isBossStage(_stage))
+            snprintf(title, sizeof(title), "STAGE %d: BOSS", _stage);
         else
             snprintf(title, sizeof(title), "STAGE %d", _stage);
+        if (PlatformManager::isBossStage(_stage)) {
+            _boss.start(_platforms.getLoop());
+            sfx(SFX_BOSS);
+        }
         snprintf(sub, sizeof(sub), perfect ? "PERFECT +%d" : "CLEAR +%d", bonus);
         showBanner(title, sub, perfect ? ArcadeConfig::COLOR_GREEN : ArcadeConfig::COLOR_WHITE);
 
@@ -398,6 +415,14 @@ private:
             }
         }
         sfx(SFX_STAGE);
+    }
+
+    // How far forward the runner may go: further in a boss stretch; past
+    // it (just after one), back in a step a frame rather than a jump.
+    float offsetCeiling(float offset) const {
+        const float hi = _platforms.getTier() == PlatformManager::BOSS_TIER
+                             ? (float)ArcadeConfig::RUNNER_BOSS_MAX_OFFSET : (float)ArcadeConfig::RUNNER_X_MAX_OFFSET;
+        return max(hi, offset - ArcadeConfig::RUNNER_X_MOVE_SPEED);
     }
 
     // At Night, how far ahead the runner's lantern lights fully (screen x).
@@ -416,6 +441,7 @@ private:
         _levitationPowerUp.render(canvas);
         _enemies.render(canvas, _platforms.getLoop());
         _boulders.render(canvas, _platforms, _platforms.getLoop());
+        _boss.render(canvas);
     }
 
     void triggerPlayerDeath() {
@@ -446,11 +472,11 @@ private:
     static const char* stageHazards(int stage) {
         static const char* const what[PlatformManager::TIERS_PER_LOOP] = {
             "FIRE PITS", "FIRE PITS, STAIRS", "PLATFORMS", "MOVING PLATFORMS",
-            "PLATFORMS + SHIP", "STAIRS, SPIKES", "SPIKES, BOULDERS", "ALL + SHIPS",
+            "PLATFORMS + SHIP", "STAIRS, SPIKES", "SPIKES, BOULDERS", "ALL + SHIPS", "BOSS SHIP",
         };
         static const char* const night[PlatformManager::TIERS_PER_LOOP] = {
             "PITS, BEAMS", "PITS, STAIRS, BEAMS", "PLATFORMS", "MOVING PLATFORMS",
-            "PLATFORMS + SHIP", "SPIKES, FLAME JETS", "BOULDERS, DARTS", "ALL + SHIPS",
+            "PLATFORMS + SHIP", "SPIKES, FLAME JETS", "BOULDERS, DARTS", "ALL + SHIPS", "BOSS SHIP + DARTS",
         };
         const int tier = (stage - 1) % PlatformManager::TIERS_PER_LOOP;
         return PlatformManager::isNight((stage - 1) / PlatformManager::TIERS_PER_LOOP) ? night[tier] : what[tier];
@@ -481,12 +507,15 @@ private:
 
     // ---- Attract demo --------------------------------------------------------
 
-    // The autopilot's stick: forward in the air (a fire pit is wider than a
-    // standing jump carries the runner's whole body, so pushing forward
-    // through a jump is what clears one, for the bot as for a player), and
-    // on the ground `groundStick`: normally back, keeping the most room to
-    // go forward, or forward to step out from under a falling rock.
-    static float demoStick(bool onGround, float groundStick) { return onGround ? groundStick : 1.0f; }
+    // The autopilot's stick: forward in the air (pushing forward through a
+    // jump is what clears a wide fire pit, for the bot as for a player),
+    // and on the ground towards `target`, an offset: normally right back,
+    // keeping the most room to go forward, or wherever steps out from under
+    // a falling rock or into a boss's gap.
+    static float demoStick(bool onGround, float offset, float target) {
+        return onGround ? constrain(target - offset, -1.0f, 1.0f) : 1.0f;
+    }
+    static constexpr float DEMO_BACK = (float)ArcadeConfig::RUNNER_X_MIN_OFFSET;
 
     // The runner as the autopilot's prediction sees it.
     struct DemoState { float off, y, vy; bool onGround, canJump; };
@@ -505,20 +534,20 @@ private:
     // way on: running on, or another jump that works. (Without that it will
     // happily land just in front of a spike it can't then clear.)
     bool demoSurvives(DemoState st, int t0, int jumpAt, int horizon, int depth,
-                      float groundStick = -1.0f) const {
+                      float target = DEMO_BACK) const {
         const float s = _platforms.getScrollSpeed();
         bool jumped = false;
         int landed = 0;
         for (int t = t0 + 1; t <= horizon; ++t) {
             if (--_demoBudget < 0) return false;
-            const float stick = demoStick(st.onGround, groundStick);   // read before this frame's jump, as in play
+            const float stick = demoStick(st.onGround, st.off, target);   // read before this frame's jump, as in play
             if (t - 1 == jumpAt && (t == t0 + 1 ? st.canJump : st.onGround)) {
                 st.vy = -ArcadeConfig::RUNNER_JUMP_VELOCITY;
                 st.onGround = false;
                 jumped = true;
             }
             st.off = constrain(st.off + stick * ArcadeConfig::RUNNER_X_MOVE_SPEED,
-                               (float)ArcadeConfig::RUNNER_X_MIN_OFFSET, (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
+                               (float)ArcadeConfig::RUNNER_X_MIN_OFFSET, offsetCeiling(st.off));
             const float x = (float)ArcadeConfig::RUNNER_BASE_X + st.off;
             const float shift = s * (float)t;
             const float px = x + shift, pr = px + RUNNER_WIDTH, pb = st.y + RUNNER_HEIGHT;
@@ -544,6 +573,7 @@ private:
             // Boulders and rocks move and hit after the runner has, as in play.
             if (_boulders.wouldHit(t, s, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT, _platforms)) return false;
             if (_enemies.rockWouldHit(t, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT)) return false;
+            if (_boss.wouldHit(t, s, x, x + RUNNER_WIDTH, st.y, st.y + RUNNER_HEIGHT)) return false;   // after it moved, as in play
             if (jumped && st.onGround && ++landed >= 4) {
                 if (depth <= 0) return true;
                 if (demoSurvives(st, t, -1, horizon, depth - 1)) return true;
@@ -556,10 +586,10 @@ private:
         return !jumped;
     }
 
-    bool demoSurvives(int jumpAt, int horizon, float groundStick = -1.0f) const {
+    bool demoSurvives(int jumpAt, int horizon, float target = DEMO_BACK) const {
         DemoState st{ _playerXOffset, _player.getY(), _player.getVy(),
                       _player.isOnGround(), _player.canJump() };
-        return demoSurvives(st, 0, jumpAt, horizon, 1, groundStick);
+        return demoSurvives(st, 0, jumpAt, horizon, 1, target);
     }
 
     // The autopilot: keeps running while that's safe (stepping forward
@@ -580,10 +610,21 @@ private:
             in.joyX = constrain((targetY - _player.getY()) / 8.0f, -1.0f, 1.0f);
             return in;
         }
-        in.joyY = demoStick(_player.isOnGround(), -1.0f);
+        in.joyY = demoStick(_player.isOnGround(), _playerXOffset, DEMO_BACK);
         in.btnB = _player.isOnGround() && _platforms.duckWanted(_player.getX(), _player.getX() + RUNNER_WIDTH);
         if (!_player.canJump() || demoSurvives(-1, H)) return in;
-        if (_player.isOnGround() && demoSurvives(-1, H, 1.0f)) { in.joyY = 1.0f; return in; }
+        // Somewhere else on the ground: right forward, or partway (a gap).
+        if (_player.isOnGround()) {
+            static const float targets[] = { (float)ArcadeConfig::RUNNER_X_MAX_OFFSET, 3.0f, -6.0f, 12.0f, -10.0f, 8.0f, 16.0f, -2.0f };
+            static const float bossTargets[] = { 60.0f, 45.0f, 30.0f, 15.0f, 0.0f, 52.0f, 38.0f, 22.0f, 8.0f, -7.0f };
+            const bool boss = _platforms.getTier() == PlatformManager::BOSS_TIER;
+            const float* list = boss ? bossTargets : targets;
+            const int n = boss ? (int)(sizeof(bossTargets) / sizeof(float)) : (int)(sizeof(targets) / sizeof(float));
+            for (int k = 0; k < n; ++k) {
+                const float t = list[k];
+                if (demoSurvives(-1, H, t)) { in.joyY = demoStick(true, _playerXOffset, t); return in; }
+            }
+        }
         const bool now = demoSurvives(0, H);
         if ((now && demoSurvives(2, H)) ||          // early, with a margin
             (now && !demoSurvives(1, H)) ||         // or the last chance
@@ -744,8 +785,9 @@ public:
             // The enemy is capped at 1 and toggles on/off with tier rather
             // than unlocking once, so it can step aside for tiers 5-6.
             int tier = _platforms.getTier();
+            const bool bossTier = tier == PlatformManager::BOSS_TIER;   // the boss has the sky to itself
             bool shipsActive = (tier == ArcadeConfig::RUNNER_EARLY_SHIP_TIER) ||
-                               (tier >= ArcadeConfig::RUNNER_ENEMY_TIER);
+                               (tier >= ArcadeConfig::RUNNER_ENEMY_TIER && !bossTier);
             _enemies.setActive(shipsActive);
 
             // Jump buffer: a press just before landing still jumps on landing.
@@ -764,10 +806,10 @@ public:
             // Joystick nudges the runner forward/back within a bounded range —
             // rotation-1 games read joyY for on-screen horizontal, same swap
             // AsteroidFlux uses for its physical orientation.
+            const float prevOffset = _playerXOffset;
             _playerXOffset += in.joyY * ArcadeConfig::RUNNER_X_MOVE_SPEED;
-            _playerXOffset  = constrain(_playerXOffset,
-                                        (float)ArcadeConfig::RUNNER_X_MIN_OFFSET,
-                                        (float)ArcadeConfig::RUNNER_X_MAX_OFFSET);
+            _playerXOffset  = constrain(_playerXOffset, (float)ArcadeConfig::RUNNER_X_MIN_OFFSET,
+                                        offsetCeiling(prevOffset));
             _player.setX((float)ArcadeConfig::RUNNER_BASE_X + _playerXOffset);
 
             // While levitating, joyX (otherwise unused in this game) drives
@@ -795,7 +837,7 @@ public:
             _player.updateAnimation();
             _player.updateInvincibility();
 
-            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms, _player.isInvincible());
+            _powerUp.maybeSpawn(tier, ArcadeConfig::LANDSCAPE_WIDTH, _platforms, _player.isInvincible() || bossTier);
             if (_powerUp.update(_platforms.getScrollSpeed(), _player, _particles, uiNeedsUpdate)) sfx(SFX_STAR);
 
             float firePitX;
@@ -806,7 +848,11 @@ public:
 
             if (_enemies.update(_platforms.getScrollSpeed(), _player, _particles, playerHit)) sfx(SFX_ROCK);
             if (_boulders.update(tier, _platforms.getScrollSpeed(), _platforms, _player, _particles, playerHit,
-                                 _platforms.nightAhead(_player.getX()))) sfx(SFX_BOULDER);
+                                 _platforms.nightAhead(_player.getX()) || bossTier)) sfx(SFX_BOULDER);
+
+            // The boss stretch: its ship and its rocks.
+            if (_boss.update(_platforms.getScrollSpeed(), _platforms.framesLeftInStage(), _player, _platforms,
+                             _particles, playerHit)) sfx(SFX_DROP);
 
             // Night's beams, jets and darts: duck under them.
             if (_platforms.nightHits(px, pRight, pTop, pBottom) && !_player.isInvincible()) {

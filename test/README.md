@@ -220,7 +220,7 @@ being freed on exit to the launcher).
   mid-demo starts a clean game), not their gameplay; besides those it
   checks Runner's fire pits (`runnerpits`: every jump frame tried on a
   copy of the game; on stages 1 and 2 a plain jump clears every first pit
-  with 4 or more frames to choose from, and on stages 9, 17 and 25 the
+  with 4 or more frames to choose from, and on stages 10, 19 and 28 the
   pits are wider than the first loop's and a jump pushed forward still
   clears them), the ground after the floating platforms (`runnerwall`:
   200 runs through stages 5-6, the first ground block never more than a
@@ -228,8 +228,8 @@ being freed on exit to the launcher).
   (`runnerover`: back to the title, not straight into the demo, even when
   the game was started from the scores screen), levitation held down
   (`runnerlevitate`: never inside the ground, no fall when it ends), the
-  diamond (`runnerdiamond`: none on stages 1-2, placed before fire pits on
-  stages 9-10) and spike traps (`runnerspikes`: a retracted trap shows,
+  diamond (`runnerdiamond`: none on stages 1-2 nor Night's 10-11, placed
+  before fire pits on stages 19-20) and spike traps (`runnerspikes`: a retracted trap shows,
   and passing one scores only if it rose or stood while the runner was
   over it), its sounds (`runnersounds`: each event's tone or melody with
   no card, a shared file such as `powerup.wav` when that's all there is,
@@ -247,7 +247,7 @@ being freed on exit to the launcher).
   over or on Back, A at game over running it again, B or a timeout back
   to the title, A alone still a real game from stage 1), fire pits per
   stage (`runnerpitcount`: 200 runs through two loops, exactly 2 pits in
-  stages 1 and 9 and 3 in stages 2 and 10, none elsewhere or closer than
+  stages 1 and 10 and 3 in stages 2 and 11, none elsewhere or closer than
   60 frames) and the star (`runnerstars`: 30s or more from each wait's
   start, none while invincible; with the wait over, none while shielded
   and one as soon as the shield's gone), a lost life (`runnerdeath`: the
@@ -260,12 +260,19 @@ being freed on exit to the launcher).
   standing or jumping and passes ducked, +10; a jet kills standing when
   lit, passes standing unlit and ducked lit, +10; a dart kills standing,
   passes ducked or jumped, +20), its generation (`runnernight`: 200 runs
-  through loop 2, every run meeting beams in 9 and 10, jets in 14, darts
-  in 15 and something in 16, none in 11-13 or the Outpost, every column
+  through loop 2, every run meeting beams in 10 and 11, jets in 15, darts
+  in 16 and something in 17, none in 12-14, its boss or the Outpost, every column
   with the runner's width of its own block either side, none on a pit's
   block, pits still exact) and the lantern (`runnerdark`: the ground at
   full, half and a quarter brightness past it, a far flame bright, the
-  Outpost even). `runnerplay` has to get through Night (to stage 17) and
+  Outpost even), and the boss (`runnerboss`: stages 9, 18, 27 are bosses;
+  its ground level with nothing on it over 100 runs; it flies in at the
+  stage's start and again after a lost life; no ship, boulder, star or
+  diamond comes once it's in; the runner reaches offset 60 and walks back
+  a pixel a frame after; clearing it gives the stage bonus, 250 and a
+  life; the autopilot gets through 20 runs each of 9, 18 and 27 with no
+  lives lost, about 6 patterns a run, every pattern met, each line's gap
+  in reach). `runnerplay` has to get through Night and its boss (to stage 19) and
   prints the lives lost by stage; `runnerpits` ducks at Night;
   `runnerdiamond` checks the diamond stays away from Night;
   checks Lander's crash debris moves one step a frame and its gravity by
@@ -302,7 +309,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score, Night; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score, Night, boss; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

@@ -87,7 +87,7 @@ private:
     int      _beamsDone;         // Night: the gaps round the pits filled with a beam so far
     unsigned long _lastPitAt;    // distance at which the runner reaches the last pit
     static const unsigned long PIT_SPACING = 75;      // frames, at least, from one pit to the next
-    static const unsigned long PIT_END_MARGIN = 20;   // and from a pit to its stage's end
+    static const unsigned long PIT_END_MARGIN = 6;    // and from a pit's far side to its stage's end
     static const unsigned long NIGHT_END_MARGIN = 40; // and a Night obstacle, so it's met in its own stage
     float    _distanceSinceLastSpike; // px generated since the last spike, enforces min spacing
     int      _loop;              // how many full tier 1-7 cycles have completed
@@ -96,6 +96,7 @@ private:
     bool     _afterSlabs;        // floating platforms last: the next ground block starts level
     float    _sinceNight;        // px generated since the last Night obstacle
     bool     _prevNight, _prevPit;   // the block before this one carried one / a pit before it
+    int      _prevNightRoom;     // px left on that block after its column
     int      _flatRunPx;         // px of level ground (no step, no pit) up to the last block
 
     // Ground/spike palettes rotate each loop so a repeat trip through the
@@ -139,7 +140,9 @@ private:
     // Tier boundaries, in cycle-relative distance frames. Tier 4 (the early
     // ship preview) runs twice as long as the others — it was only getting
     // ~2 ships' worth of screen time before handing off to tier 5.
-    void computeThresholds(unsigned long thresholds[7]) const {
+    // Where tiers 1-8 start; tier 8, the boss stretch, runs
+    // RUNNER_BOSS_DISTANCE to the loop's end.
+    void computeThresholds(unsigned long thresholds[8]) const {
         unsigned long base = ArcadeConfig::RUNNER_TIER_DISTANCE;
         thresholds[0] = base * 1; // tier 1
         thresholds[1] = base * 2; // tier 2
@@ -148,13 +151,14 @@ private:
         thresholds[4] = thresholds[3] + base * 2; // tier 5 (tier 4 doubled)
         thresholds[5] = thresholds[4] + base;     // tier 6
         thresholds[6] = thresholds[5] + base;     // tier 7
+        thresholds[7] = thresholds[6] + base;     // tier 8: the boss
     }
 
     int tierForDistance(unsigned long distance) const {
-        unsigned long thresholds[7];
+        unsigned long thresholds[8];
         computeThresholds(thresholds);
         int tier = 0;
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 8; i++) {
             if (distance >= thresholds[i]) tier = i + 1;
             else break;
         }
@@ -165,9 +169,9 @@ private:
     // after this many frames the run wraps back to tier 1 (see
     // advanceDifficulty), rather than sitting at tier 7 forever.
     unsigned long cycleLength() const {
-        unsigned long thresholds[7];
+        unsigned long thresholds[8];
         computeThresholds(thresholds);
-        return thresholds[6] + ArcadeConfig::RUNNER_TIER_DISTANCE;
+        return thresholds[7] + ArcadeConfig::RUNNER_BOSS_DISTANCE;
     }
 
     // Darkens a RGB565 color for mortar lines — same base hue, roughly
@@ -232,11 +236,11 @@ private:
     // window on the first loop; wider each loop after, up to what a jump
     // pushed forward clears (the stick adds RUNNER_X_MOVE_SPEED a frame
     // in the air, from as far back as the runner goes).
-    float pitGapWidth(float speed, int loop) const {
+    void pitGapRange(float speed, int loop, float &lo, float &hi) const {
         const int air = jumpFramesClear();
         const float minGap = (float)ArcadeConfig::RUNNER_PIT_MIN_GAP;
-        float hi = speed * (float)(air - ArcadeConfig::RUNNER_PIT_EASY_WINDOW);
-        float lo = minGap;
+        hi = speed * (float)(air - ArcadeConfig::RUNNER_PIT_EASY_WINDOW);
+        lo = minGap;
         if (loop > 0) {
             const int pushFrames = air - ArcadeConfig::RUNNER_PIT_HARD_WINDOW;
             const float push = min((float)pushFrames * ArcadeConfig::RUNNER_X_MOVE_SPEED,
@@ -247,6 +251,10 @@ private:
             lo = min(minGap + widen, hi);
         }
         if (hi < minGap) hi = minGap;
+    }
+    float pitGapWidth(float speed, int loop) const {
+        float lo, hi;
+        pitGapRange(speed, loop, lo, hi);
         return (float)random((long)lo, (long)hi + 1);
     }
 
@@ -289,14 +297,19 @@ private:
             const unsigned long start = stageStartDistance(passStage);
             const unsigned long len = stageStartDistance(passStage + 1) - start;
             const unsigned long due = start + len * (unsigned long)(2 * _pitsDone + 1) / (unsigned long)(2 * n + 1);
+            // Its far side reached in the stage too, at its widest.
+            const float speed = passStage == stageNumber() ? _scrollSpeed : speedAtStageStart(passStage);
+            float gapLo, gapHi;
+            pitGapRange(speed, (passStage - 1) / TIERS_PER_LOOP, gapLo, gapHi);
+            const unsigned long farAt = passAt + (unsigned long)(gapHi / speed) + PIT_END_MARGIN;
             wantFirePit = _pitsDone < n && passAt >= due && passAt >= _lastPitAt + PIT_SPACING &&
-                          passAt + PIT_END_MARGIN <= start + len && !_prevNight;
+                          farAt <= start + len && (!_prevNight || _prevNightRoom >= 30);
             // Night's beams go in the gaps around the pits, one each: before
             // the first, then halfway between each pit's mark and the next's
             // (2g (2n+1)ths), giving way once the next pit's is due.
             // _beamsDone is the gaps filled (the current gap is _pitsDone).
             const int gap = _pitsDone;
-            const unsigned long beamDue = gap == 0 ? start + 20
+            const unsigned long beamDue = gap == 0 ? start
                                         : start + len * (unsigned long)(2 * gap) / (unsigned long)(2 * n + 1);
             const unsigned long nextPit = start + len * (unsigned long)(2 * gap + 1) / (unsigned long)(2 * n + 1);
             beamTurn = !wantFirePit && _beamsDone <= gap && passAt >= beamDue &&
@@ -309,8 +322,9 @@ private:
         // the dark. A dart stage keeps its ground level, so a dart flies
         // at head height all the way. In the pit stages a beam
         // follows each pit, on its own mark (above); never on a pit's
-        // block, and no pit on the block after one (a duck then a jump at
-        // once); kept apart
+        // landing block (the one after is fine: there's that whole block to
+        // land and duck in), and a pit after one only with 30px or more of
+        // its block left past the column (a duck, then a jump); kept apart
         // from each other and from spikes, and clear of the stage's end.
         const int passLoop = (passStage - 1) / TIERS_PER_LOOP;
         const bool night = isNight(passLoop);
@@ -323,15 +337,15 @@ private:
         bool spikeSpacingOK = _distanceSinceLastSpike >= RUNNER_WIDTH * 4;
         // (Night's dart stage has none: they'd stand in the darts' way.)
         const bool nightDarts = isNight((passStage - 1) / TIERS_PER_LOOP) && passTier == 6;
-        bool wantSpike    = !wantFirePit && !nightDarts &&
-                           (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
-                           spikeSpacingOK && _sinceNight >= ArcadeConfig::NIGHT_CLEAR &&
-                           (random(0, 4) == 0);
-        if (wantSpike) _distanceSinceLastSpike = 0.0f;
-
+        // The boss stretch's ground is plain and level: the rocks are the
+        // test. (Blocks built during it but reached after are level too;
+        // what's on them goes by where they're reached.)
+        const bool boss = passTier == BOSS_TIER;
+        if (boss || _tier == BOSS_TIER) newY = prevY;
         NightKind kind = NIGHT_NONE;
-        if (night && !wantFirePit && (passTier > 1 || beamTurn) && !wantSpike && !_prevPit &&
-            _sinceNight >= (passTier <= 1 ? 60 : ArcadeConfig::NIGHT_SPACING) &&   // pits part the beams
+        // Night's obstacle comes first, a spike only where there's none.
+        if (night && !boss && !wantFirePit && (passTier > 1 || beamTurn) &&
+            _sinceNight >= (passTier <= 1 ? 40 : ArcadeConfig::NIGHT_SPACING) &&   // pits part the beams; a duck can stay down for two
             _distanceSinceLastSpike >= ArcadeConfig::NIGHT_CLEAR &&
             passAt + NIGHT_END_MARGIN <= stageStartDistance(passStage + 1)) {
             if (passTier <= 1) { kind = NIGHT_BEAM; _beamsDone = _pitsDone + 1; }
@@ -349,10 +363,17 @@ private:
             // falls, and it can't duck in the air.
             if (kind == NIGHT_BEAM || kind == NIGHT_JET) {
                 width = max(width, 2 * RUNNER_WIDTH + ArcadeConfig::NIGHT_COLUMN_W + 8);
+                if (passTier <= 1) width = max(width, RUNNER_WIDTH + 2 + ArcadeConfig::NIGHT_COLUMN_W + 30);
                 newY = prevY;
                 if (_afterSlabs) kind = NIGHT_NONE;   // the block steps level after slabs: not here
             }
         }
+
+        bool wantSpike    = !wantFirePit && !nightDarts && !boss && kind == NIGHT_NONE && passTier > 1 &&
+                           (_tier >= ArcadeConfig::RUNNER_SPIKE_TIER) &&
+                           spikeSpacingOK && _sinceNight >= ArcadeConfig::NIGHT_CLEAR &&
+                           (random(0, 4) == 0);
+        if (wantSpike) _distanceSinceLastSpike = 0.0f;
 
         // Back down from the floating platforms: level with the ground, so
         // this block never stands taller than a stair step above the last
@@ -393,7 +414,10 @@ private:
         _pool[index].nightScored = _pool[index].fired = _pool[index].jetLive = false;
         _pool[index].glintAt = 0;
         if (kind == NIGHT_BEAM || kind == NIGHT_JET) {
-            _pool[index].nightX = (float)random(RUNNER_WIDTH + 2, width - RUNNER_WIDTH - 2 - ArcadeConfig::NIGHT_COLUMN_W + 1);
+            // In the pit stages at the front of its block, so a pit can come
+            // next with 30px or more to stand up and jump in.
+            _pool[index].nightX = passTier <= 1 ? (float)(RUNNER_WIDTH + 2)
+                                : (float)random(RUNNER_WIDTH + 2, width - RUNNER_WIDTH - 2 - ArcadeConfig::NIGHT_COLUMN_W + 1);
             _pool[index].jetPhase = SPIKE_SAFE;
             _pool[index].jetPhaseEnd = millis() + random(0, ArcadeConfig::NIGHT_JET_OFF_MS);
         } else if (kind == NIGHT_LAUNCHER) {
@@ -401,6 +425,8 @@ private:
         }
         _sinceNight = kind != NIGHT_NONE ? 0.0f : _sinceNight + width;
         _prevNight  = kind != NIGHT_NONE;
+        _prevNightRoom = (kind == NIGHT_BEAM || kind == NIGHT_JET)
+                       ? (int)(width - _pool[index].nightX - ArcadeConfig::NIGHT_COLUMN_W) : 0;
         _prevPit    = wantFirePit;
         _flatRunPx  = (newY == prevY && !wantFirePit) ? _flatRunPx + width : width;
 
@@ -490,16 +516,19 @@ public:
                          _distanceSinceLastSpike(9999.0f), _loop(0),
                          _cycleDistance(0),
                          _scrollSpeedCap(ArcadeConfig::RUNNER_MAX_SCROLL_SPEED),
-                         _afterSlabs(false), _sinceNight(9999.0f), _prevNight(false), _prevPit(false),
+                         _afterSlabs(false), _sinceNight(9999.0f), _prevNight(false), _prevPit(false), _prevNightRoom(0),
                          _flatRunPx(0) {
         for (int i = 0; i < DARTS; i++) _darts[i].active = false;
         for (int i = 0; i < POOL_SIZE; i++) _pool[i].active = false;
     }
 
-    // Stages: each tier (0-7) of each loop is one, numbered from 1, so a
-    // loop is TIERS_PER_LOOP stages. A death restarts the stage it happened
-    // in (see PlatformFluxGame).
-    static const int TIERS_PER_LOOP = 8;
+    // Stages: each tier (0-8) of each loop is one, numbered from 1, so a
+    // loop is TIERS_PER_LOOP stages, the last of them the boss stretch
+    // (RunnerBoss.h). A death restarts the stage it happened in (see
+    // PlatformFluxGame).
+    static const int TIERS_PER_LOOP = 9;   // eight stages and the boss
+    static const int BOSS_TIER = 8;
+    static bool isBossStage(int stage) { return (stage - 1) % TIERS_PER_LOOP == BOSS_TIER; }
 
     int stageNumber() const { return _loop * TIERS_PER_LOOP + _tier + 1; }
     int loopsCompleted() const { return _loop; }
@@ -508,7 +537,7 @@ public:
     unsigned long stageStartDistance(int stage) const {
         int s = stage - 1;
         int loop = s / TIERS_PER_LOOP, tier = s % TIERS_PER_LOOP;
-        unsigned long t[7];
+        unsigned long t[8];
         computeThresholds(t);
         return (unsigned long)loop * cycleLength() + (tier == 0 ? 0 : t[tier - 1]);
     }
@@ -524,17 +553,17 @@ public:
     // on, the wrap into tier 0 is one too), up to the loop's ceiling.
     static float speedAtStageStart(int stage) {
         const int loop = (stage - 1) / TIERS_PER_LOOP, tier = (stage - 1) % TIERS_PER_LOOP;
-        const float speed = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * loop +
+        const float speed = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + ArcadeConfig::RUNNER_LOOP_SPEED_STEP * loop +
                             ArcadeConfig::RUNNER_SPEED_STEP * (float)(tier + (loop > 0 ? 1 : 0));
-        return min(speed, ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + 0.25f * loop);
+        return min(speed, ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + ArcadeConfig::RUNNER_LOOP_SPEED_STEP * loop);
     }
 
     // 0..1 through the current stage, for the HUD's progress line.
     float stageProgress() const {
-        unsigned long t[7];
+        unsigned long t[8];
         computeThresholds(t);
         unsigned long start = _tier == 0 ? 0 : t[_tier - 1];
-        unsigned long end   = _tier < 7 ? t[_tier] : cycleLength();
+        unsigned long end   = _tier < BOSS_TIER ? t[_tier] : cycleLength();
         if (_cycleDistance <= start) return 0.0f;
         float p = (float)(_cycleDistance - start) / (float)(end - start);
         return p > 1.0f ? 1.0f : p;
@@ -549,7 +578,7 @@ public:
         _loop               = (int)(_distance / cycleLen);
         _cycleDistance      = _distance % cycleLen;
         _tier               = tierForDistance(_cycleDistance);
-        _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + 0.25f * _loop;
+        _scrollSpeedCap     = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED + ArcadeConfig::RUNNER_LOOP_SPEED_STEP * _loop;
         _scrollSpeed        = speedAtStageStart(stage);
         _introPlatformsLeft = stage <= 1 ? ArcadeConfig::PLATFORM_INTRO_COUNT : 1;
         _lastGroundY        = groundLevel();
@@ -561,6 +590,7 @@ public:
         _afterSlabs         = false;
         _sinceNight         = 9999.0f;
         _prevNight = _prevPit = false;
+        _prevNightRoom      = 0;
         _flatRunPx          = 0;
         for (int i = 0; i < DARTS; i++) _darts[i].active = false;
 
@@ -605,8 +635,8 @@ public:
             // still opens gently and ramps up the same way — just a
             // little faster start-to-finish than the loop before it,
             // rather than only getting faster near the end.
-            _scrollSpeed    = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + 0.25f * _loop;
-            _scrollSpeedCap = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED  + 0.25f * _loop;
+            _scrollSpeed    = ArcadeConfig::RUNNER_BASE_SCROLL_SPEED + ArcadeConfig::RUNNER_LOOP_SPEED_STEP * _loop;
+            _scrollSpeedCap = ArcadeConfig::RUNNER_MAX_SCROLL_SPEED  + ArcadeConfig::RUNNER_LOOP_SPEED_STEP * _loop;
         }
 
         int newTier = tierForDistance(_cycleDistance);
@@ -935,6 +965,27 @@ public:
             if (dx < pr + 50.0f && dx + 6.0f > px - 2.0f) return true;
         }
         return false;
+    }
+
+    // A dart at screen x `x`, at head height over the ground there (the
+    // Night boss fires them).
+    void spawnDart(float x) {
+        const int ground = surfaceYNear((float)ArcadeConfig::RUNNER_BASE_X, (float)ArcadeConfig::RUNNER_BASE_X + RUNNER_WIDTH);
+        for (int k = 0; k < DARTS; k++) {
+            if (_darts[k].active) continue;
+            _darts[k] = Dart{ x, ground - ArcadeConfig::NIGHT_DART_HEIGHT, true, false };
+            return;
+        }
+    }
+
+    bool dartsFlying() const {
+        for (int i = 0; i < DARTS; i++) if (_darts[i].active) return true;
+        return false;
+    }
+
+    // Frames to the end of the stage the runner is in.
+    long framesLeftInStage() const {
+        return (long)stageStartDistance(stageNumber() + 1) - (long)_distance;
     }
 
     // A Night obstacle on screen ahead of the runner, or a dart in flight:

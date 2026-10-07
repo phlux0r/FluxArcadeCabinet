@@ -47,8 +47,10 @@ public:
         if (_active || millis() < _cooldownUntil) return;
         if (tier < 2 && loop == 0) return;
         // None at Night, under its gantries (a flying runner can't duck), nor
-        // in the stage before it, whose 10s of flight could carry over.
-        if (PlatformManager::isNight(loop) || (tier == 7 && PlatformManager::isNight(loop + 1))) return;
+        // in the two stages before it (the last and the boss), whose 10s of
+        // flight could carry over; and none in any boss stretch.
+        if (PlatformManager::isNight(loop) || tier == PlatformManager::BOSS_TIER ||
+            (tier == 7 && PlatformManager::isNight(loop + 1))) return;
 
         if (hasFirePitAhead) {
             if (!_pendingFirePitSpawn) {

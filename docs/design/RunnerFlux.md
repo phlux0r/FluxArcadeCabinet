@@ -17,11 +17,14 @@ Night first, then the boss.
 
 | Loop | Stages | World | New |
 |---|---|---|---|
-| 1 | 1-8 | Outpost (today's game) | pits, platforms, spikes, boulders, the ship |
-| 2 | 9-16 | Night | B ducks: low beams, flame jets, darts |
-| 3 | 17-24 | Ruins | crumbling slabs, springs to a high route with gem chains |
-| 4 | 25-32 | Storm | wind gusts and conveyor ground pushing the runner |
-| 5+ | 33- | the worlds again, faster | |
+| 1 | 1-8, boss 9 | Outpost (today's game) | pits, platforms, spikes, boulders, the ship |
+| 2 | 10-17, boss 18 | Night | B ducks: low beams, flame jets, darts |
+| 3 | 19-26, boss 27 | Ruins | crumbling slabs, springs to a high route with gem chains |
+| 4 | 28-35, boss 36 | Storm | wind gusts and conveyor ground pushing the runner |
+| 5+ | 37- | the worlds again, faster | |
+
+(A loop was 8 stages; the boss made it 9, so the numbers below are as
+built. Until Ruins and Storm exist, the Outpost and Night alternate.)
 
 Each world keeps the old hazards, mixed with its own, so it's harder,
 not just different. Each loop ends with the boss stretch (section 4) and
@@ -72,35 +75,42 @@ Placement, each rule found by the harness bot dying to its absence:
   under it, and level with the block before: off a step down the runner
   stays on the higher block till it's wholly past it, then falls, and it
   can't duck in the air.
-- In the pit stages (9-10) a beam goes in each gap round the pits
+- In the pit stages (10-11) a beam goes in each gap round the pits
   (before the first, then halfway between each pit's mark and the next),
-  giving way when the next pit is due; never on a pit's block, and no
-  pit on the block after one (a duck then a jump at once). Pits stay
-  exact.
-- 110px between obstacles (60 in the pit stages, where the pits part
-  them), 72px from spikes; a launcher wants level ground and no spike for
-  130px behind it (the dart's path); the dart stage (15) has no spikes and
-  Night's dart stages keep the ground level.
+  giving way when the next pit is due, at the front of its block; never
+  on a pit's landing block (the one after is fine: a whole block to land
+  and duck in), and a pit after it only with 30px or more of its block
+  past the column (a duck, then a jump). Pits stay exact (2000 runs over
+  four loops), and every run meets beams in both stages.
+- 110px between obstacles (40 in the pit stages, where the pits part
+  them and a duck can stay down for two), 72px from spikes, an obstacle
+  taking a block before a spike may; a launcher wants level ground and no
+  spike for 130px behind it (the dart's path); the dart stage (16) has no
+  spikes and Night's dart stages keep the ground level.
 - No boulder is sent while an obstacle is on screen ahead or a dart is in
   flight (a boulder wants a jump, these a duck).
 - No diamond at Night, nor in the stage before it (a flying runner can't
   duck; ten seconds of flight would carry over).
 
-### Stages 9-16
+### Stages 10-17
 
 | Stage | Terrain (as the Outpost) | Night's addition |
 |---|---|---|
-| 9 | ground, fire pits (2) | beams round the pits |
-| 10 | ground, fire pits (3), stairs | beams round the pits |
-| 11 | floating platforms | the dark only |
-| 12 | moving platforms | the dark only |
-| 13 | platforms + the ship | the dark only |
-| 14 | stairs, spikes | flame jets |
-| 15 | boulders (no spikes) | darts |
-| 16 | all + ships | all three; then (next phase) the boss |
+| 10 | ground, fire pits (2) | beams round the pits |
+| 11 | ground, fire pits (3), stairs | beams round the pits |
+| 12 | floating platforms | the dark only |
+| 13 | moving platforms | the dark only |
+| 14 | platforms + the ship | the dark only |
+| 15 | stairs, spikes | flame jets |
+| 16 | boulders (no spikes) | darts |
+| 17 | all + ships | all three |
+| 18 | the boss | its darts too |
 
-The harness bot, over 30 runs of stages 9-16, lost no lives to Night's
-obstacles (its deaths there were rocks and boulders at Night's speed).
+The harness bot, over 30 runs of Night, lost no lives to its obstacles
+(its deaths there were rocks and boulders at Night's speed). The owner
+then found Night too fast: the speed-up was eased for every stage, 0.12
+to 0.08 px a frame a stage and 0.25 to 0.15 a loop (Night runs about 11%
+slower at its start and 20% at its end).
 
 ### The look
 
@@ -131,17 +141,49 @@ Detailed when their turn comes.
 
 ---
 
-## 4. The boss stretch (end of every loop, the first included)
+## 4. The boss stretch (built): every loop's ninth stage
 
-After the loop's last stage, before the extra life: a big ship crosses
-above for a set distance (about 20s), dropping rocks in patterns (a
-line, a pair with a gap to stand in, a tracking drop that lands where the
-runner was). The ground is plain so the rocks are the test. Survive it to
-finish the loop: the banner, the extra life, the next world. A life lost
-restarts the stretch, like a stage. Each world's boss adds its world's
-twist (Night: darts from the ship; Ruins: rocks crumble the ground;
-Storm: gusts while it drops). The first loop's is the plain one, so a
-first-time player meets it.
+`RunnerBoss.h`. After the loop's eight stages, a stage of its own
+(`RUNNER_BOSS_DISTANCE`, 750 frames, about 25s): the banner says BOSS, a
+gunship flies in (2.5s), runs patterns, and leaves 100 frames before the
+end. Surviving it ends the loop: the stage bonus, 250 more, the extra
+life. A life lost restarts it.
+
+- **The ground** is plain and level (blocks reached in it: no spikes,
+  pits or Night obstacles; built during it: level). No ship, boulder,
+  star or diamond comes while it's in.
+- **The runner's reach** widens to the left half of the screen (offset to
+  60, from 20) for the stretch, and walks back a pixel a frame after. The
+  usual 34px band was too narrow to dodge falling rocks in: aimed rocks
+  cornered the bot every time.
+- **Patterns** (all in frames, so the autopilot predicts them exactly),
+  one at a time, never the same twice running; the next starts only once
+  the last one's rocks and darts are gone, after a breather (16 frames, 3
+  less a loop, at least 8):
+  - LINE: the bay flashes (14 frames), then rocks fall every 13px across
+    the reach, none within 18px of the gap's centre (a 26px clear gap for
+    the 18px runner). The gap is within 32px of the runner, so it can
+    always get there before they land (they fall in about 47 frames).
+  - TRACK: 3 rocks (more on later loops, to 5), 24 frames apart, each
+    aimed at the runner but never within 16px of either end of its reach,
+    so a runner at an end can always stand clear.
+  - ROLL: a rock lands ahead and rolls at the runner, 1px a frame faster
+    than the scroll: jump it (20 points, like a boulder).
+  - DART (Night's boss only): two darts at head height, 40 frames apart:
+    duck.
+- **Rocks** fall from under the ship, from 0.5px a frame with 0.05 of
+  pull (slower than the flying enemy's, so a spread can be read), and
+  shatter on the ground.
+- **Fair**: the harness bot (as a player) gets through 20 runs each of
+  the bosses at 9, 18 and 27 with no lives lost, meeting about 6 patterns a
+  run. Each rule above was found by it dying without it.
+- The look: a long hull (magenta; steel at Night) with a canopy, engine
+  glows, portholes, and the red bay that flashes white before a spread.
+- Sounds (optional): `runner_boss.wav` as it arrives (three low beeps
+  without), `runner_drop.wav` as it drops or fires (a low tone).
+
+Each world's boss adds its world's twist as the worlds come (Night's:
+darts). Ruins: rocks crumble the ground; Storm: gusts while it drops.
 
 ---
 

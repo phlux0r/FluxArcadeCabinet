@@ -307,7 +307,7 @@ an autopilot, and back to the title. A starts a real game straight from a demo; 
 | Game | The demo |
 |---|---|
 | Brick | a random level 2-12, or one time in four the Warden; predicts where the ball comes down, tilts to send it at the lowest brick (or the core) in that brick's colour, absorbs or dodges bolts, detours for capsules and sparks, and smashes (mostly Perfect) |
-| Runner | a random stage 2-15 (Night from 9); the autopilot predicts on the game's own rules, jumps at the best moment and ducks under Night's obstacles |
+| Runner | a random stage 2-17 (the boss at 9, Night from 10); the autopilot predicts on the game's own rules, jumps at the best moment, ducks under Night's obstacles and steps into the boss's gaps |
 | Tank | a random level 3-6, sometimes with a boss due; aims, keeps its range, sidesteps a glowing barrel |
 | Asteroid | a busier field (3-6 asteroids); steers for the spot furthest from every predicted asteroid path |
 | Lander | random levels; plans a route through the rocks, lands, and flies the next; sometimes comes in too fast and crashes |
@@ -411,8 +411,16 @@ Runner (Platform Flux) plays in stages, like Moon Patrol's checkpoints:
 each hazard section is a numbered stage, and the rule under the HUD fills
 as you get through it. You have 3 lives; losing one restarts the stage you
 were on (score kept) with 2s of blinking protection. Clearing a stage
-scores 50, or 100 if you didn't die in it, and finishing a full loop of 8
-stages gives an extra life (up to 5). Jumps are forgiving: A pressed just
+scores 50, or 100 if you didn't die in it. A loop is 8 stages and then a
+boss stretch (stage 9, 18, 27, ...): a gunship flies in over plain, level
+ground and drops rocks for about 25 seconds (a spread with one gap in it
+after its bay flashes: step into the gap; rocks aimed where you are: keep
+moving; a rock that lands ahead and rolls at you: jump it; at Night, darts
+too: duck). The runner can range across the left half of the screen
+while it lasts, and walks back afterwards. Survive it and the loop's done:
+250 more points and an extra life (up to 5); lose a life in it and it
+starts again. The scroll speeds up a little each stage (0.08 px a frame)
+and each loop starts 0.15 faster than the last. Jumps are forgiving: A pressed just
 before landing still jumps, and so does one just after running off an edge.
 Fire pits come in each loop's first two stages, 2 in the first and 3 in
 the second, spread through the stage, and burn when the runner's middle
@@ -427,9 +435,10 @@ by, never while you're invincible already. The
 diamond gives 10s of flight (the stick moves you up and down, never into
 the ground; the runner flashes red as it runs out). The diamond turns up
 from stage 3, and from the second loop also just before fire pits; never
-at Night, nor in the stage before it.
+at Night, in a boss stretch, or the stage before Night's loop.
 
-Every second loop is Night (stages 9-16, 25-32, ...; docs/design/RunnerFlux.md):
+Every second loop is Night (stages 10-17, then its boss at 18; 28-35, ...;
+docs/design/RunnerFlux.md):
 dark, a moon, and the ground and gantries past the runner's lantern
 (about 100px ahead) drawn dimmer, flames and lamps still bright. **B held
 on the ground ducks** (in the air it does nothing; A from a duck jumps;
@@ -438,8 +447,8 @@ gets under: beams (a gantry hanging to just above a ducked runner), flame
 jets (a shorter housing a standing runner passes under, until its flame
 lights, timed like the spikes: sputter, then lit for a moment) and darts
 (a launcher glints, then fires one at head height; duck or jump it).
-Beams go between the pits in stages 9-10, jets come in 14, darts in 15,
-all three in 16; the platform stages (11-13) have only the dark. Passing
+Beams go round the pits in stages 10-11, jets come in 15, darts in 16,
+all three in 17; the platform stages (12-14) have only the dark. Passing
 a beam scores 10, a jet 10 if it was lit over you, a dart 20.
 
 Distance scores a point every 3 frames (about 10 a second). Getting past
@@ -448,8 +457,8 @@ were over it, and jumping a boulder 20,
 with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
 slow stars, a far mountain range and nearer hills, their colours changing
 each loop. Stage select, for testing: on the title, how-to or scores
-screens, hold B and press A; the stick picks the stage, 1-32 (left/right
-by one, up/down by a loop of 8), over a preview of its terrain and what
+screens, hold B and press A; the stick picks the stage, 1-36 (left/right
+by one, up/down by a loop of 9), over a preview of its terrain and what
 it brings; A starts a test run there (an orange T before the score;
 nothing goes on the high-score table, and A at game over runs the stage
 again), B goes back.
@@ -834,6 +843,8 @@ the same way.
 | `runner_duck.wav` | the runner ducks | ~0.1s | nothing |
 | `runner_dart.wav` | a launcher fires a dart | ~0.2s | a high tone |
 | `runner_jet.wav` | a flame jet on screen lights | ~0.4s | a low tone |
+| `runner_boss.wav` | the boss ship arrives | ~1s | two low beeps and a lower one |
+| `runner_drop.wav` | the boss drops rocks or fires | ~0.2s | a low tone |
 
 As it rolls, the ball ticks over each tile edge: a short low tone on the
 synth, higher the faster it goes, none in the air. The ticks give way to

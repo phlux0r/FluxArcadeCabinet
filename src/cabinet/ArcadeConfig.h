@@ -220,9 +220,16 @@ struct ArcadeConfig {
     // even minimum-width gaps feel like they required frame-perfect jumps.
     static constexpr float RUNNER_JUMP_VELOCITY       = 5.4f;
     static constexpr float RUNNER_BASE_SCROLL_SPEED   = 0.9f;
-    static constexpr float RUNNER_SPEED_STEP          = 0.12f;
+    // Each stage a step faster, each loop LOOP_SPEED_STEP faster from its
+    // start (eased from 0.12 and 0.25 when Night proved too fast).
+    static constexpr float RUNNER_SPEED_STEP          = 0.08f;
+    static constexpr float RUNNER_LOOP_SPEED_STEP     = 0.15f;
     static constexpr float RUNNER_MAX_SCROLL_SPEED    = 2.6f;
     static const int   RUNNER_TIER_DISTANCE       = 400;   // score units per tier
+    // The boss stretch ending every loop (its ninth stage): this many
+    // frames long, about 25s at 30fps (see RunnerBoss.h).
+    static const int   RUNNER_BOSS_DISTANCE       = 750;
+    static const int   RUNNER_BOSS_POINTS         = 250;
     static const int   RUNNER_INVINCIBLE_MS       = 6000;
     // The star (invincibility) comes along STAR_GAP_MIN..MAX ms after the
     // last one was picked up or went by, never while the runner's already
@@ -252,7 +259,7 @@ struct ArcadeConfig {
     // Attract demo: the autopilot plays a random stage in this range for
     // DEMO_MIN..MAX_MS (or until it dies), silently.
     static const int   RUNNER_DEMO_MIN_STAGE = 2;
-    static const int   RUNNER_DEMO_MAX_STAGE = 15;   // into Night (its last stage, 16, ends the loop)
+    static const int   RUNNER_DEMO_MAX_STAGE = 17;   // into Night (10-17), the Outpost's boss (9) on the way
     static const unsigned long RUNNER_DEMO_MIN_MS = 30000;
     static const unsigned long RUNNER_DEMO_MAX_MS = 40000;
     static const int   RUNNER_DEMO_LOOKAHEAD  = 50;   // frames the autopilot predicts
@@ -266,6 +273,9 @@ struct ArcadeConfig {
     static const int   RUNNER_X_MIN_OFFSET    = -14;
     static const int   RUNNER_X_MAX_OFFSET    = 20;
     static constexpr float RUNNER_X_MOVE_SPEED = 1.0f;
+    // In a boss stretch the runner has the left half of the screen to
+    // dodge in; afterwards it walks back in a step a frame.
+    static const int   RUNNER_BOSS_MAX_OFFSET = 60;
 
     // Platform generation — how the run opens and how gaps/movement scale.
     // Shortened from 5 — real terrain (and fire pits) now starts around
