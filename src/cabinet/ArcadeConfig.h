@@ -236,6 +236,9 @@ struct ArcadeConfig {
     static const int   RUNNER_LIVES               = 3;
     static const int   RUNNER_MAX_LIVES           = 5;
     static const int   RUNNER_STAGE_BONUS         = 50;
+    // Distance scores a point every SCORE_FRAMES frames of it (about 10 a
+    // second at 30fps).
+    static const int   RUNNER_SCORE_FRAMES        = 3;
     // Hazards got past score these, shown as a rising "+10" where they were.
     static const int   RUNNER_PIT_POINTS          = 10;
     static const int   RUNNER_SPIKE_POINTS        = 10;

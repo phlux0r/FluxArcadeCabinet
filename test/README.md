@@ -250,7 +250,10 @@ being freed on exit to the launcher).
   stages 1 and 9 and 3 in stages 2 and 10, none elsewhere or closer than
   60 frames) and the star (`runnerstars`: 30s or more from each wait's
   start, none while invincible; with the wait over, none while shielded
-  and one as soon as the shield's gone);
+  and one as soon as the shield's gone), a lost life (`runnerdeath`: the
+  world stays drawn and stopped under the burst; the burst and the flight
+  exhaust are trailed) and the distance score (`runnerscore`: a point
+  every 3 frames, the same at 17ms and 50ms a frame and in a second game);
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
@@ -285,7 +288,7 @@ good to ship". Hardware still decides that.
 test/
 ├── build.sh                    # finds Jet, builds every harness + audio_test, runs
 ├── audio_test.cpp              # audio mixer/loader unit tests (no stubs needed)
-├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars; particle trails
+├── games2d_harness.cpp         # Runner, Asteroid and Lander attract demos: idle + demoexit; Runner's pits, ground, game over, levitation, diamond, spikes, sounds, play, stages, names, stage select, pit counts, stars, death, score; particle trails
 ├── rollflux_harness.cpp        # Roll Flux: physics, rules, play, poses
 ├── resonanceflux_harness.cpp   # Resonance Flux: figure maths, matching, play, attract, options, Chords
 ├── mazeflux_harness.cpp        # Maze Flux: layout, doors, bullets, deaths, teleports, the bot

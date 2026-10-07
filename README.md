@@ -427,7 +427,8 @@ by, never while you're invincible already. The
 diamond gives 10s of flight (the stick moves you up and down, never into
 the ground; the runner flashes red as it runs out). The diamond turns up
 from stage 3, and from the second loop also just before fire pits.
-Getting past a fire pit scores 10, a spike trap 10 if it rose while you
+Distance scores a point every 3 frames (about 10 a second). Getting past
+a fire pit scores 10, a spike trap 10 if it rose while you
 were over it, and jumping a boulder 20,
 with a "+10" popup where it was. Behind it all, Moon Patrol-style parallax:
 slow stars, a far mountain range and nearer hills, their colours changing

@@ -102,10 +102,16 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
     four loops all exact (`runnerpitcount`). The star waits 30-45s from
     the last one taken or gone (or a life's start), and not while the
     runner is invincible (`runnerstars`).
-  Still open from the review, in the proposed order:
-  the terrain vanishing during the 0.8s death; the score ticking by real
-  time (a function `static`) not distance; particle trails; per-frame
-  movement with no `_frameScale` (like the other 2D games).
+  - The last review items, each confirmed by the owner: a lost life keeps
+    the world drawn, stopped, under the burst (it all vanished for 0.8s);
+    the score ticks a point every 3 frames of distance (`RUNNER_SCORE_FRAMES`;
+    it was every 100ms of real time, on a function `static` shared between
+    games); trails on the death burst (3) and the flight exhaust (2), the
+    hit sparks and pickup halos plain (`runnerdeath`, `runnerscore`). Left
+    as it is, by the owner's choice: per-frame movement with no
+    `_frameScale`, like the other 2D games.
+  The review is done. Needs the board: the death frame and the trails'
+  look and cost, and everything listed above.
 - **Runner: longer play (owner's request, to plan next).** Stages repeat
   the same eight hazards each loop, only faster and recoloured. Ideas to
   propose, for the owner to pick from:
@@ -144,8 +150,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   sparks 4, the thrust plume 2). Lander's particles were updated twice a
   frame while the ship broke up, so the debris flew at double speed; now
   once. Host-checked with `games2d` (`trails`, `lander`) and dumped frames;
-  the look, feel and frame rate need the board. Then perhaps Maze,
-  Runner and Brick, the other games on `ParticleManager`.
+  the look, feel and frame rate need the board. Runner has them now (its
+  review); Maze and Brick are the others on `ParticleManager`.
 - **Lander flight** (merged): the owner found it
   unbalanced from the start. Gravity 0.012 a physics step on level 1 (was
   0.025), +0.0025 every level to level 20 (0.0595); the HUD's G is the

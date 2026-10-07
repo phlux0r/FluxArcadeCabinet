@@ -806,6 +806,79 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "runnerdeath")) {
+        // A lost life: the world stays drawn, stopped, under the burst
+        // (only the backdrop and the burst were); the burst and the flight
+        // exhaust have trails.
+        using G = PlatformFluxGame;
+        static G g;
+        g = G();
+        AudioEngine audio;
+        g.init(audio);
+        g.startNewGame(audio);
+        auto step = [&](InputState in = InputState{}) { g.update(canvas, in, audio); g_fakeMillis += STEP_MS; };
+        for (int f = 0; f < 40; ++f) step();
+        auto groundLit = [&]() {   // the ground's rows, below the hills
+            int n = 0;
+            for (int y = ArcadeConfig::LANDSCAPE_HEIGHT - 6; y < ArcadeConfig::LANDSCAPE_HEIGHT; ++y)
+                for (int x = 0; x < ArcadeConfig::LANDSCAPE_WIDTH; ++x) n += canvas.getBuffer()[y * canvas.width() + x] != 0;
+            return n;
+        };
+        const int playing = groundLit();
+        g._player._invincible = false;
+        auto &r = g._enemies._rocks[0];
+        r = {}; r.active = true; r.radius = 4;
+        r.x = g._player.getX() + RUNNER_WIDTH / 2.0f; r.y = g._player.getY() + RUNNER_HEIGHT / 2.0f;
+        step();
+        const bool died = g._phase == G::PHASE_DEATH;
+        const int atDeath = groundLit();
+        int trailed = 0, sparks = 0;
+        for (const auto &p : g._particles._pool)   // the burst, not the rock's grey hit sparks
+            if (p.active && p.color != ArcadeConfig::COLOR_GREY) { ++sparks; trailed += p.trail >= 3; }
+        const float x0 = g._platforms._pool[0].x;
+        for (int f = 0; f < 20; ++f) step();
+        const int during = groundLit();
+        const bool still = g._platforms._pool[0].x == x0;
+        // Flight: the exhaust's sparks have trails.
+        for (int f = 0; f < 200 && g._phase != G::PHASE_PLAYING; ++f) step();
+        g._particles.clearAll();
+        g._player.activateLevitation(5000);
+        int exhaust = 0, exhaustTrailed = 0;
+        for (int f = 0; f < 30; ++f) {
+            step();
+            for (const auto &p : g._particles._pool)
+                if (p.active && p.color == ArcadeConfig::COLOR_ION_BLUE) { ++exhaust; exhaustTrailed += p.trail >= 2; }
+        }
+        bool pass = died && atDeath >= playing * 3 / 4 && during >= playing * 3 / 4 && still &&
+                    sparks > 0 && trailed == sparks && exhaust > 0 && exhaustTrailed == exhaust;
+        printf("runnerdeath: ground pixels playing %d, at the death %d, during %d, stopped %d; burst %d/%d trailed; exhaust %d/%d trailed -> %s\n",
+               playing, atDeath, during, (int)still, trailed, sparks, exhaustTrailed, exhaust, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
+    if (!strcmp(which, "all") || !strcmp(which, "runnerscore")) {
+        // The score ticks with distance, a point every 3 frames of it,
+        // whatever the clock does (it ticked every 100ms of real time),
+        // and a game doesn't share its tick with the last one.
+        using G = PlatformFluxGame;
+        int got[3] = {};
+        const unsigned long steps[3] = { 17, 50, 17 };
+        for (int k = 0; k < 3; ++k) {
+            static G g;
+            g = G();
+            AudioEngine audio;
+            g_rng = 5;
+            g.init(audio);
+            g.startNewGame(audio);
+            for (int f = 0; f < 150; ++f) { InputState n{}; g.update(canvas, n, audio); g_fakeMillis += steps[k]; }
+            got[k] = g._score;
+        }
+        bool pass = got[0] == 150 / ArcadeConfig::RUNNER_SCORE_FRAMES && got[1] == got[0] && got[2] == got[0];
+        printf("runnerscore: 150 frames at 17ms %d, at 50ms %d, a second game %d (want %d) -> %s\n",
+               got[0], got[1], got[2], 150 / ArcadeConfig::RUNNER_SCORE_FRAMES, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "asteroid")) {
         static AsteroidFluxGame g;
         int hits = 0, prevPhase = -1, maxField = 0;

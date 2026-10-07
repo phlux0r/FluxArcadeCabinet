@@ -390,9 +390,21 @@ private:
         sfx(SFX_STAGE);
     }
 
+    // Everything but the runner, from the backdrop up. A lost life draws
+    // it stopped, under the burst.
+    void renderWorld(GFXcanvas16 &canvas) {
+        _backdrop.render(canvas, 11, _platforms.getLoop());
+        _platforms.render(canvas);
+        _particles.render(canvas, 11);
+        _powerUp.render(canvas);
+        _levitationPowerUp.render(canvas);
+        _enemies.render(canvas, _platforms.getLoop());
+        _boulders.render(canvas, _platforms, _platforms.getLoop());
+    }
+
     void triggerPlayerDeath() {
         _particles.triggerExplosion(_player.getX() + RUNNER_WIDTH / 2.0f,
-                                     _player.getY() + RUNNER_HEIGHT / 2.0f);
+                                     _player.getY() + RUNNER_HEIGHT / 2.0f, 60, 3);   // trailed
         sfx(SFX_DEATH);
     }
 
@@ -732,7 +744,7 @@ public:
                 if (millis() % 120 < 20) {
                     _particles.spawnFire(_player.getX() + RUNNER_WIDTH / 2.0f,
                                          _player.getY() + RUNNER_HEIGHT,
-                                         0.0f, 0.3f, ArcadeConfig::COLOR_ION_BLUE);
+                                         0.0f, 0.3f, ArcadeConfig::COLOR_ION_BLUE, 2);   // a short trail
                 }
             }
             // If levitation just ended, physics below resumes falling
@@ -784,12 +796,10 @@ public:
             // fall is caught the moment it happens instead of some frames later.)
             bool fellOffScreen = _player.getY() > ArcadeConfig::LANDSCAPE_HEIGHT;
 
-            // Score ticks with distance travelled (matches PlatformManager's
-            // internal distance counter so difficulty and score stay in sync).
-            static unsigned long lastScoreTick = 0;
-            if (millis() - lastScoreTick > 100) {
+            // Score ticks with distance travelled: PlatformManager's
+            // distance counter, the one stages are measured in.
+            if (_platforms.getDistance() % ArcadeConfig::RUNNER_SCORE_FRAMES == 0) {
                 _score++;
-                lastScoreTick = millis();
                 uiNeedsUpdate = true;
             }
 
@@ -803,21 +813,14 @@ public:
                 _phase = PHASE_DEATH;
                 _phaseTimer = millis();
 
-                _backdrop.render(canvas, 11, _platforms.getLoop());
-                _particles.render(canvas, 11);
+                renderWorld(canvas);
                 drawUI(canvas);
                 flushLandscape(canvas);
                 return true;
             }
 
             scoreClearedHazards();
-            _backdrop.render(canvas, 11, _platforms.getLoop());
-            _platforms.render(canvas);
-            _particles.render(canvas, 11);
-            _powerUp.render(canvas);
-            _levitationPowerUp.render(canvas);
-            _enemies.render(canvas, _platforms.getLoop());
-            _boulders.render(canvas, _platforms, _platforms.getLoop());
+            renderWorld(canvas);
             _player.render(canvas);
             drawPopups(canvas);
             drawBanner(canvas);
@@ -836,8 +839,7 @@ public:
         // ---- PHASE: DEATH — let the disintegration play out ----
         if (_phase == PHASE_DEATH) {
             _particles.update();
-            _backdrop.render(canvas, 11, _platforms.getLoop());
-            _particles.render(canvas, 11);
+            renderWorld(canvas);   // stopped where it was, under the burst
             drawUI(canvas);
             if (_demo) drawDemoOverlay(canvas);
             flushLandscape(canvas);
