@@ -43,6 +43,17 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
 
 ## Open
 
+- **Next up: Runner polish from play.** The owner is playing all four
+  worlds (Outpost, Night, Ruins, Storm) on the board over a few days and
+  will bring polish notes; start from those. So far after play: the
+  speed-up eased, the boss's rocks slowed, the Ruins boss's cracks made
+  fair, Storm's rocks orange. docs/design/RunnerFlux.md has each world's
+  rules and why.
+- **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
+  was looked at: its gain here would be DMA for the ~8ms frame push at
+  40MHz, overlapping the next frame's drawing, with a second canvas and
+  care over the SD card on the same SPI bus. The owner chose to keep
+  Adafruit; don't raise it again unless a game runs short of its frame.
 - **Sounds.** Roll's, Brick's and Resonance's own effect WAVs aren't on the card yet;
   the fallback tones are good enough for now and the owner will make the
   WAVs another time. README.md's audio section lists every file each game
@@ -152,7 +163,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   speed (now 20 by 6, about 8-10 frames to jump in); the flying ship's
   rocks over crumbling slabs and logs were too much (no ship in stage 23,
   rocks held while a pillar's ahead); the boss's ground now drops to the
-  base level. Scenario `runnerruins`; `runnerplay` must reach stage 28.
+  base level. Scenario `runnerruins`.
   Played on the board (2026-10): the owner likes the new stages and
   finds them play well.
   **Storm is built** (stages 28-36; the worlds now come Outpost, Night,
@@ -218,8 +229,10 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   (from level 7, +40) stay. Not done: stick up/down as a throttle.
 - **Asteroid Fire power-up** (merged): from 500
   points Fire is in the power-up draw; holding A then shoots bolts (BoltManager.h) every 160ms for 20s. A bolt
-  breaks the asteroid it meets (a trailed burst), which scores and counts
-  towards the field filling up as passing it would. The line under the HUD
+  breaks the asteroid it meets (a trailed burst), which scores what
+  passing it would and 5 more (`ASTEROID_SHOT_BONUS`; the owner found a
+  shot earned nothing over dodging), and counts towards the field filling
+  up as passing it would. The line under the HUD
   is the timer, flashing in the last 3s; a hit ends it. `tube_shot.wav`
   and `shot.wav` (the owner's choice) if on the card, else tones. The demo
   shoots when it has it. The owner found Fire rare, so the power-ups were
@@ -296,6 +309,19 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   test with the stick held, not just stopping on each target.
 - The owner sometimes commits WAVs (Git LFS) to the working branch: fetch
   before merging, and use the `-c filter.lfs.*` flags from CLAUDE.md.
+- The harnesses include the games with `#define private public`, so a
+  game reaching into another class's private member compiles on the host
+  and fails `pio run` (Runner's colour constants did). After changing
+  what classes use of each other, compile a file that includes the game
+  headers without the macro (`g++ -fsyntax-only` against test/stub).
+- `stdbuf` doesn't work with the ASan builds (the runtime must load
+  first): the run dies at once and the log only holds the ASan warning.
+  Redirect to a file and read it when the run ends.
+- The harness bot is a poor judge of what a person can dodge: it knows
+  every rock's landing to the frame. It passed the Ruins boss with no
+  lives lost while the owner found it near unbeatable. Check overlapping
+  hazards (one pattern's rocks over another's jumps) by rule, not only by
+  whether the bot survives.
 
 ## Working with the owner
 
