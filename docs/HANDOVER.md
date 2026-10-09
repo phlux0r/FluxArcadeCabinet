@@ -5,7 +5,7 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at the Runner worlds merge)
+## State (main at the Lander look merge)
 
 Ten games, all merged and played on the board: Asteroid, Brick, Lander,
 Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
@@ -36,7 +36,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   scenario `pick` in each.
 - **Since Resonance**, all merged: particle trails (Asteroid, Lander,
   Maze), Lander's flight rebalanced, Asteroid's Fire power-up and
-  rebalanced power-ups, and Maze Flux reviewed and redesigned; the entries
+  rebalanced power-ups, Maze Flux reviewed and redesigned, and Lander's
+  new ship and five worlds of scenery; the entries
   under Open below say what each did and what's left to check.
 - The full suite was 60 PASS before Resonance; since then, by the owner's
   choice, only the harnesses a change touches run before a push (CLAUDE.md).
@@ -49,6 +50,28 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   speed-up eased, the boss's rocks slowed, the Ruins boss's cracks made
   fair, Storm's rocks orange. docs/design/RunnerFlux.md has each world's
   rules and why.
+- **Lander's new look** (merged, needs the board): the owner wanted a
+  bulging cartoon rocket, Jetsons-style, in place of the arrowhead.
+  Ship.h draws a fat teardrop hull (cyan, the outline still flashing
+  green/red near the ground), a porthole, an antenna with a bobble,
+  orange swept fins whose tips sit on the ground line (y+4) and a nozzle
+  that lights yellow under thrust; the heading line is gone (the nose
+  shows it). Hitbox and ground contact unchanged. Then the scenery
+  (Scenery.h): five worlds, a new one every 4 levels, cycling (dust with
+  a ringed planet, ice with a banded giant, ember with a sun, jade with
+  twin moons, the moon with Earth), each a graded sky with stars (some
+  twinkle), a far ridge, a ground with a lit rim, layers, craters and
+  pebbles, and its own rock colours; rocks are solid, lit on the upper
+  left, with craters; the pad has beacon masts. The layout has its own
+  generator, so random() and the demo's trace are unchanged (harness
+  `landerworlds`). Each world has a name in Scenery.h; the owner chose
+  not to show it. Also from play: the how-to-play best box moved 8px
+  down off the last line, and explosion.wav and land_success.wav are
+  preloaded with pickup.wav (the first crash's bang, read from the card
+  behind the music, came in the next round). To check on the board: the
+  frame rate (a sky line per row replaces the clear; rocks are filled),
+  the gradients on the ST7735, how the ship reads at speed, and the
+  first crash's bang after power-on.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

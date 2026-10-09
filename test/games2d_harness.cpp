@@ -1962,6 +1962,58 @@ int main(int argc, char** argv) {
         ok &= pass;
     }
 
+    if (!strcmp(which, "all") || !strcmp(which, "landerworlds")) {
+        // Lander's scenery: the world (sky, ground, rocks, the body in the
+        // sky) changes every 4 levels and cycles through 5; laying a level's
+        // scenery out takes nothing from random(), so the rocks, pad and the
+        // demo are as they were; and a frame shows the world's sky at the
+        // top and its rim along the ground's surface.
+        using LS = LanderScenery;
+        bool worlds = true;
+        for (int lv = 1; lv <= 40; ++lv) {
+            const bool sameBlock = (lv - 1) % 4 != 0;
+            if (lv > 1) worlds &= (&LS::worldFor(lv) == &LS::worldFor(lv - 1)) == sameBlock;
+            worlds &= &LS::worldFor(lv) == &LS::worldFor(lv + 20);
+        }
+        int distinct = 0;
+        for (int w = 0; w < 5; ++w) {
+            bool fresh = true;
+            for (int v = 0; v < w; ++v) fresh &= &LS::worldFor(1 + w * 4) != &LS::worldFor(1 + v * 4);
+            distinct += fresh;
+        }
+        worlds &= distinct == 5;
+
+        LS sc;
+        const uint32_t rng0 = g_rng;
+        sc.generate(9, 40, 30);
+        const bool rngKept = g_rng == rng0;
+
+        static LanderFluxGame l;
+        AudioEngine audio;
+        auto &e = l._engine;
+        l.init(audio);
+        e.startGame(audio);
+        e._level = 13;
+        e.initLevel();
+        GFXcanvas16 c(ArcadeConfig::PORTRAIT_WIDTH, ArcadeConfig::PORTRAIT_HEIGHT);
+        InputState n{};
+        g_fakeMillis += 20;
+        l.update(c, n, audio);
+        const LS::World &w = e._scenery.world();
+        int rimOk = 0, cols = 0;
+        for (int x = 0; x < ArcadeConfig::PORTRAIT_WIDTH; x += 8) {
+            if (x >= e._padX - 4 && x <= e._padX + e._padWidth + 4) continue;   // pad, masts
+            ++cols;
+            const int y = LS::surfaceAt(e._groundY, e.GROUND_SEGMENTS, e._groundStepX, x);
+            rimOk += c.getBuffer()[y * ArcadeConfig::PORTRAIT_WIDTH + x] == w.rim;
+        }
+        const bool drawn = &w == &LS::worldFor(13) && c.getBuffer()[0] == w.skyTop && rimOk == cols;
+        const bool pass = worlds && rngKept && drawn;
+        printf("landerworlds: every 4 levels, 5 cycling %d; random() untouched %d; sky and rim drawn (%d/%d columns) %d -> %s\n",
+               (int)worlds, (int)rngKept, rimOk, cols, (int)drawn, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+
     if (!strcmp(which, "all") || !strcmp(which, "trails")) {
         // A spark with a trail leaves dimmer pixels behind it, in a line
         // back along its path; one without leaves just the spark.

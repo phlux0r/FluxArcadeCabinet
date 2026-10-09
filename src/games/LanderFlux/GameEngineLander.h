@@ -8,6 +8,7 @@
 #include "../../cabinet/AudioEngine.h"
 #include "../../cabinet/HighScores.h"
 #include "CavernObstacles.h"
+#include "Scenery.h"
 #include "Ship.h"
 #include "assets/TitleScreen.h"
 #include "../../assets/shared/SharedAssets.h"
@@ -36,6 +37,7 @@ private:
     bool _naming = false;            // entering a name for the table, after the last crash
     Adafruit_ST7735* _tft = nullptr;
     CavernObstacles  _obstacles;
+    LanderScenery    _scenery;
     ParticleManager  _particles;
     Ship             _lander;
 
@@ -178,6 +180,7 @@ private:
                 _groundY[i] = baselineFloorY - random(-7, 7);
             }
         }
+        _scenery.generate(_level, _padX, _obstacles.topRockX());
 
         _lastPhysicsTick  = millis();
         _thrustSoundActive = false;
@@ -217,9 +220,10 @@ private:
         canvas.setCursor(1, 88);  canvas.print("> LAND SLOW ON PAD");
         canvas.setCursor(1, 100); canvas.print("> V H A GREEN = SAFE");
 
-        canvas.drawRect(4, 106,
+        // Clear of the last line above (y 100-107).
+        canvas.drawRect(4, 114,
             ArcadeConfig::PORTRAIT_WIDTH - 12, 28, ArcadeConfig::COLOR_ION_BLUE);
-        canvas.setCursor(10, 115);
+        canvas.setCursor(10, 123);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
         canvas.print("BEST: ");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
@@ -487,7 +491,12 @@ public:
         _demo                = false;
         initLevel();
         audio.playLanderStartSound();
-        audio.preload("/audio/pickup.wav");     // the fuel pickup; loaded now, not on the first
+        // Loaded now, not on first use: read from the card while the music
+        // streams, the first crash's bang came late enough to land in the
+        // next round.
+        audio.preload("/audio/pickup.wav");
+        audio.preload("/audio/explosion.wav");
+        audio.preload("/audio/land_success.wav");
     }
 
     // Quitting (the Back button): a game in progress still goes on the
@@ -732,8 +741,9 @@ public:
         }
 
         // ---- RENDER (every frame regardless of physics tick) ----
-        canvas.fillScreen(ArcadeConfig::COLOR_BLACK);
-        _obstacles.render(canvas);
+        const LanderScenery::World &world = _scenery.world();
+        _scenery.renderBack(canvas);
+        _obstacles.render(canvas, world.rockFill, world.rockLit, world.rockShade);
         _particles.update();             // once a frame, the crash's debris too
         _particles.render(canvas);
 
@@ -749,17 +759,7 @@ public:
             canvas.fillCircle(_fuelTankX, _fuelTankY, 2, ArcadeConfig::COLOR_YELLOW);
         }
 
-        // Ground terrain
-        for (int xs = 0; xs < ArcadeConfig::PORTRAIT_WIDTH; xs++) {
-            int seg = xs / _groundStepX;
-            if (seg >= GROUND_SEGMENTS - 1) seg = GROUND_SEGMENTS - 2;
-            int sx = seg * _groundStepX;
-            float p = (float)(xs - sx) / (float)_groundStepX;
-            int ey = _groundY[seg] + (int)(p * (_groundY[seg+1] - _groundY[seg]));
-            canvas.drawFastVLine(xs, ey,
-                ArcadeConfig::PORTRAIT_HEIGHT - ey, 0x9300);
-            canvas.drawPixel(xs, ey, 0x4100);
-        }
+        _scenery.renderGround(canvas, _groundY, GROUND_SEGMENTS, _groundStepX);
 
         // Landing pad (styled with grid lines — original)
         int padY = ArcadeConfig::PORTRAIT_HEIGHT - 10;
@@ -768,6 +768,7 @@ public:
         for (int gx = _padX + 4; gx < _padX + _padWidth; gx += 6) {
             canvas.drawFastVLine(gx, padY - 1, 2, ArcadeConfig::COLOR_ION_BLUE);
         }
+        _scenery.renderPadBeacons(canvas, _padX, _padWidth, padY - 2);
 
         _lander.render(canvas, btnA, safeToLand());
 

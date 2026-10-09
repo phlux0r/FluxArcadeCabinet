@@ -13,15 +13,13 @@ private:
     struct Hazard {
         int x, y;
         int maxRadius;
-        uint16_t color;
+        uint8_t variant;             // 0-3: which way round its craters sit
         int pointX[NUM_POINTS];
         int pointY[NUM_POINTS];
     };
 
     Hazard _rocks[MAX_HAZARDS];
     int _activeHazardsCount = 0;
-
-    const uint16_t ROCK_COLORS[4] = {0xCE59, 0x7BF3, 0x93A6, 0xBDF7};
 
     // Space the ship needs between two rocks' surfaces to fly through: a
     // hit is the ship's centre within (rock radius + 2), so 4px is the bare
@@ -76,7 +74,7 @@ public:
         for (int band = 0; band < wanted; band++) {
             const int i = _activeHazardsCount;
             _rocks[i].maxRadius = random(minSize, maxSize + 1);
-            _rocks[i].color     = ROCK_COLORS[random(0, 4)];
+            _rocks[i].variant   = (uint8_t)random(0, 4);
             const bool lowest = band == wanted - 1;
 
             bool placed = false;
@@ -112,6 +110,9 @@ public:
         return true;
     }
 
+    // The top rock's x (the first placed), or -1 with none.
+    int topRockX() const { return _activeHazardsCount > 0 ? _rocks[0].x : -1; }
+
     bool checkCollision(float shipX, float shipY, int shipRadius) {
         for (int i = 0; i < _activeHazardsCount; i++) {
             float dx = shipX - _rocks[i].x;
@@ -122,14 +123,26 @@ public:
         return false;
     }
 
-    void render(GFXcanvas16 &canvas) {
+    // Solid rocks in the world's colours: filled, edges facing the upper
+    // left lit and the rest shaded, and a crater or two.
+    void render(GFXcanvas16 &canvas, uint16_t fill, uint16_t lit, uint16_t shade) {
         for (int i = 0; i < _activeHazardsCount; i++) {
+            const Hazard &h = _rocks[i];
             for (int p = 0; p < NUM_POINTS; p++) {
-                int next = (p + 1) % NUM_POINTS;
-                canvas.drawLine(
-                    _rocks[i].pointX[p], _rocks[i].pointY[p],
-                    _rocks[i].pointX[next], _rocks[i].pointY[next],
-                    _rocks[i].color);
+                const int next = (p + 1) % NUM_POINTS;
+                canvas.fillTriangle(h.x, h.y, h.pointX[p], h.pointY[p],
+                                    h.pointX[next], h.pointY[next], fill);
+            }
+            const int r = h.maxRadius;
+            const int sx = (h.variant & 1) ? -1 : 1, sy = (h.variant & 2) ? -1 : 1;
+            canvas.fillCircle(h.x + sx * r / 3, h.y + sy * r / 4, r >= 7 ? 2 : 1, shade);
+            canvas.drawPixel(h.x - sx * r / 3, h.y - sy * r / 3, shade);
+            for (int p = 0; p < NUM_POINTS; p++) {
+                const int next = (p + 1) % NUM_POINTS;
+                const int mx = h.pointX[p] + h.pointX[next] - 2 * h.x;
+                const int my = h.pointY[p] + h.pointY[next] - 2 * h.y;
+                canvas.drawLine(h.pointX[p], h.pointY[p], h.pointX[next], h.pointY[next],
+                                (mx + my < 0) ? lit : shade);
             }
         }
     }

@@ -7,7 +7,7 @@ the cabinet's display, audio, input and particle subsystems.
 |---|---|---|---|
 | Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer; a shot asteroid scores its points and 5 more) and a nebula backdrop |
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
-| Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern |
+| Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern, across five worlds (dust, ice, ember, jade, the moon), a new one every 4 levels, each with its own sky, ridge, ground, rocks and planet |
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
 | Resonance Flux | Resonance | Landscape | An oscilloscope: tune your Lissajous figure to match incoming signals, by eye and by ear (see below) |
 | Roll Flux | Roll | Landscape | 3D marble game: tilt the course to roll a ball to the goal against the clock, 20 courses in 4 worlds, a guardian at the end of each |
@@ -629,7 +629,8 @@ FluxArcadeCabinet/
         │   ├── ResonanceScope.h    # The afterglow planes, HUD, dial, title
         │   └── ResonanceAutopilot.h # The harness's player
         ├── LanderFlux/         # LanderFluxGame.h (thin) + GameEngineLander.h,
-        │                       # Ship.h, CavernObstacles.h + assets/
+        │                       # Ship.h, CavernObstacles.h, Scenery.h
+        │                       # (the worlds' sky and ground) + assets/
         ├── MazeFlux/           # MazeFluxGame.h + GameEngineMaze.h, generator,
         │                       # renderer, player, collectibles, sprites + assets/
         ├── PlatformFlux/       # PlatformFluxGame.h + platform/boulder/enemy/
