@@ -11,8 +11,7 @@
 #include "PlayerShip.h"
 #include "PowerUpManager.h"
 #include "BoltManager.h"
-#include "BackgroundStars.h"
-#include "NebulaManager.h"
+#include "SpaceBackdrop.h"
 
 // Game-specific bitmap assets (splash is Asteroid Flux only)
 #include "assets/splash_image.h"
@@ -28,8 +27,8 @@ private:
     PlayerShip      _ship;
     PowerUpManager  _powerUps;
     AsteroidManager _asteroids;
-    BackgroundStars _background;
-    NebulaManager   _nebula;
+    SpaceBackdrop   _backdrop;
+    uint32_t        _backdropSeed = 0;   // a fresh sky each game and demo
     ParticleManager _particles;
     BoltManager     _bolts;
 
@@ -226,6 +225,7 @@ private:
         _bolts.clearAll();
         _fireBarShown = false;
         _asteroids.initGame();
+        _backdrop.reset(++_backdropSeed);
         _shipXOffset  = 0.0f;
         _shipYOffset  = (float)(ArcadeConfig::LANDSCAPE_HEIGHT / 2);
         _uiDirty      = true;
@@ -406,8 +406,7 @@ public:
             bool uiNeedsUpdate = false;
             bool playerHit     = false;
 
-            _nebula.update();
-            _background.update();
+            _backdrop.update(_score);
             _particles.update();
 
             _ship.updatePosition(in.joyX);  // no-op, kept for compat
@@ -468,10 +467,7 @@ public:
                 }
 
                 // Render one explosion frame before phase switch
-                canvas.fillRect(0, 11,
-                                ArcadeConfig::LANDSCAPE_WIDTH,
-                                ArcadeConfig::LANDSCAPE_HEIGHT - 11,
-                                ArcadeConfig::COLOR_BLACK);
+                _backdrop.render(canvas);
                 _particles.render(canvas, 11);
                 drawUI(canvas);
                 flushLandscape(canvas);
@@ -489,13 +485,8 @@ public:
                 uiNeedsUpdate = true;
             }
 
-            // Normal gameplay render
-            canvas.fillRect(0, 11,
-                            ArcadeConfig::LANDSCAPE_WIDTH,
-                            ArcadeConfig::LANDSCAPE_HEIGHT - 11,
-                            ArcadeConfig::COLOR_BLACK);
-            _nebula.render(canvas);
-            _background.render(canvas);
+            // Normal gameplay render: the backdrop clears the playfield
+            _backdrop.render(canvas);
             _particles.render(canvas, 11);
             _powerUps.render(canvas);
             _asteroids.render(canvas);
@@ -518,10 +509,7 @@ public:
         // ---- PHASE: HIT — show explosion, then respawn or game over ----
         if (_phase == PHASE_HIT) {
             _particles.update();
-            canvas.fillRect(0, 11,
-                            ArcadeConfig::LANDSCAPE_WIDTH,
-                            ArcadeConfig::LANDSCAPE_HEIGHT - 11,
-                            ArcadeConfig::COLOR_BLACK);
+            _backdrop.render(canvas);            // held still while the ship breaks up
             _particles.render(canvas, 11);
             drawUI(canvas);
             if (_demo) drawDemoOverlay(canvas);

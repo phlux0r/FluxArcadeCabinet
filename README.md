@@ -5,7 +5,7 @@ the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
 |---|---|---|---|
-| Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer; a shot asteroid scores its points and 5 more) and a nebula backdrop |
+| Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer; a shot asteroid scores its points and 5 more); solid, lit asteroids over a drifting nebula whose colours change every 600 points, three depths of stars, and now and then something distant passing (a ringed planet, a moon, a galaxy, a space station, a satellite, a pulsar) |
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern, across five worlds (dust, ice, ember, jade, the moon), a new one every 4 levels, each with its own sky, ridge, ground, rocks and planet |
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
@@ -612,7 +612,8 @@ FluxArcadeCabinet/
     └── games/
         ├── IGame.h             # Interface every game implements
         ├── AsteroidFlux/       # AsteroidFluxGame.h + ship/asteroid/power-up/
-        │                       # bolt/background managers + assets/
+        │                       # bolt managers, SpaceBackdrop.h (nebula, stars,
+        │                       # distant objects) + assets/
         ├── BrickFlux/          # Brick breaker, header-only:
         │   ├── BrickFluxGame.h     # Class, phases, attract cycle, sounds
         │   ├── BrickConfig.h       # All tuning: field, bat, ball, smash, wall, capsules

@@ -1655,6 +1655,43 @@ int main(int argc, char** argv) {
                (int)h._phase, h._lives, h._score, h._asteroids.activeCount(), pass ? "PASS" : "FAIL");
         ok &= pass;
     }
+    if (!strcmp(which, "all") || !strcmp(which, "asteroidsky")) {
+        // Asteroid's backdrop: it writes the whole playfield (so it can
+        // clear it) and never the HUD above; its sector, and the nebula's
+        // colours, change every 600 points and cycle through 5; it takes
+        // nothing from random(); and a distant object comes by within 10s
+        // and another after it.
+        static SpaceBackdrop sky;
+        const uint32_t rng0 = g_rng;
+        sky.reset(7);
+        GFXcanvas16 c(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+        const uint16_t MARK = 0x1234;
+        bool covers = true, hudKept = true, objSeen = false;
+        int objects = 0;
+        bool wasActive = false;
+        for (int f = 0; f < 3000; ++f) {
+            sky.update(0);
+            if (sky.objectActive() && !wasActive) ++objects;
+            wasActive = sky.objectActive();
+            if (f < 300) objSeen |= sky.objectActive();
+            if (f % 50) continue;
+            uint16_t* b = c.getBuffer();
+            for (int i = 0; i < c.width() * c.height(); ++i) b[i] = MARK;
+            sky.render(c);
+            for (int i = 0; i < c.width() * c.height(); ++i) {
+                const bool hud = i < ArcadeConfig::UI_MARGIN_TOP * c.width();
+                if (hud) hudKept &= b[i] == MARK; else covers &= b[i] != MARK;
+            }
+        }
+        bool sectors = true;
+        for (int sc = 0; sc <= 3000; sc += 150) { sky.update(sc); sectors &= sky.sector() == (sc / 600) % 5; }
+        const bool rngKept = g_rng == rng0;
+        const bool pass = covers && hudKept && sectors && rngKept && objSeen && objects >= 2;
+        printf("asteroidsky: playfield covered %d, HUD untouched %d, sector every 600 cycling 5 %d, random() untouched %d, "
+               "an object within 10s %d, %d objects in 100s -> %s\n",
+               (int)covers, (int)hudKept, (int)sectors, (int)rngKept, (int)objSeen, objects, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
     if (!strcmp(which, "all") || !strcmp(which, "fire")) {
         // The Fire power-up: A shoots only while it lasts (20s), a bolt
         // breaks an asteroid in its path and scores as passing it would,

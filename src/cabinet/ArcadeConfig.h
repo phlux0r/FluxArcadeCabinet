@@ -196,14 +196,6 @@ struct ArcadeConfig {
     static const uint16_t COLOR_SLOW   = 0x07FF;   // Cyan
     static const uint16_t COLOR_FIRE   = 0xFD20;   // Orange
 
-    // Background
-    static const int   MAX_STARS              = 16;
-    static constexpr float STAR_SCROLL_SPEED  = 0.25f;
-
-    // Nebula
-    static constexpr float NEBULA_SCROLL_SPEED = 0.05f;
-    static const uint16_t  COLOR_NEBULA        = 0x2087;
-
     // Particles
     static const int MAX_PARTICLES        = 30;
     static const int PARTICLE_LIFESPAN_MS = 600;

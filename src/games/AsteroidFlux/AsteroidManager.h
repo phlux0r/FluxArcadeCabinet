@@ -95,10 +95,31 @@ private:
             rotatedX[i] = (int)(ast.x + (rawX * cosA - rawY * sinA));
             rotatedY[i] = (int)(ast.y + (rawX * sinA + rawY * cosA));
         }
+        // Solid rock in its size's colour (the how-to-play page teaches the
+        // colours): a dark fill, two craters turning with it, and its edges
+        // lit in the full colour where they face the upper left, dimmer
+        // round the back.
+        const int cx = (int)ast.x, cy = (int)ast.y;
+        const uint16_t fill = shade(ast.color, 70), dim = shade(ast.color, 150), pit = shade(ast.color, 35);
         for (int i = 0; i < 8; i++) {
-            int nextIndex = (i + 1) % 8;
-            canvas.drawLine(rotatedX[i], rotatedY[i], rotatedX[nextIndex], rotatedY[nextIndex], ast.color);
+            const int n = (i + 1) % 8;
+            canvas.fillTriangle(cx, cy, rotatedX[i], rotatedY[i], rotatedX[n], rotatedY[n], fill);
         }
+        if (ast.radius >= 5.0f) {
+            canvas.fillCircle(cx + (rotatedX[1] - cx) * 2 / 5, cy + (rotatedY[1] - cy) * 2 / 5,
+                              ast.radius >= 9.0f ? 2 : 1, pit);
+            canvas.drawPixel(cx + (rotatedX[5] - cx) / 2, cy + (rotatedY[5] - cy) / 2, pit);
+        }
+        for (int i = 0; i < 8; i++) {
+            const int n = (i + 1) % 8;
+            const int mx = rotatedX[i] + rotatedX[n] - 2 * cx, my = rotatedY[i] + rotatedY[n] - 2 * cy;
+            canvas.drawLine(rotatedX[i], rotatedY[i], rotatedX[n], rotatedY[n], (mx + my < 0) ? ast.color : dim);
+        }
+    }
+
+    // c darkened to t/255 of itself.
+    static uint16_t shade(uint16_t c, int t) {
+        return (uint16_t)((((c >> 11) * t / 255) << 11) | ((((c >> 5) & 63) * t / 255) << 5) | ((c & 31) * t / 255));
     }
 
     void drawComet(GFXcanvas16 &canvas, Asteroid& ast) {
