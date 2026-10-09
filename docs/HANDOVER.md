@@ -62,6 +62,14 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   first use, behind the music; it and land_success.wav are now preloaded
   with pickup.wav). The sound needs checking on the board: the first
   crash after power-on.
+  Then the scenery (Scenery.h): five worlds, a new one every 4 levels
+  (dust with a ringed planet, ice with a banded giant, ember with a sun,
+  jade with twin moons, the moon with Earth), each a graded sky with
+  stars (some twinkle), a far ridge, a ground with a lit rim, layers,
+  craters and pebbles, and its own rock colours; rocks are solid now, lit
+  on the upper left, with craters; the pad has beacon masts. The layout
+  has its own generator, so random() and the demo's trace are unchanged.
+  Frame rate needs the board (a sky line per row replaces the clear).
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

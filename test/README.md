@@ -300,6 +300,9 @@ stage 28 (Storm's gusts about) and 37 too;
   `runnerdiamond` checks the diamond stays away from Night;
   checks Lander's crash debris moves one step a frame and its gravity by
   level (gentle on level 1, rising every level to 20) (`lander`); its
+  scenery (`landerworlds`: the world changes every 4 levels and cycles
+  through 5, laying it out takes nothing from `random()`, and a frame
+  shows the world's sky and its rim along the ground); its
   flight (`landerphys`: the engine 2.8x gravity on levels 1 and 20,
   spooling up over 8 steps and down over 5-6, the ship turning to the
   stick at 180 degrees a second and ignoring an off-centre raw reading,
