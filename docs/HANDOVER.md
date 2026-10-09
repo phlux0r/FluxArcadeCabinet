@@ -5,7 +5,7 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at the Lander look merge)
+## State (main at the Asteroid look merge)
 
 Ten games, all merged and played on the board: Asteroid, Brick, Lander,
 Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
@@ -37,7 +37,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
 - **Since Resonance**, all merged: particle trails (Asteroid, Lander,
   Maze), Lander's flight rebalanced, Asteroid's Fire power-up and
   rebalanced power-ups, Maze Flux reviewed and redesigned, and Lander's
-  new ship and five worlds of scenery; the entries
+  new ship and five worlds of scenery, and Asteroid's backdrop, saucer
+  and comet tail; the entries
   under Open below say what each did and what's left to check.
 - The full suite was 60 PASS before Resonance; since then, by the owner's
   choice, only the harnesses a change touches run before a push (CLAUDE.md).
@@ -72,8 +73,7 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   frame rate (a sky line per row replaces the clear; rocks are filled),
   the gradients on the ST7735, how the ship reads at speed, and the
   first crash's bang after power-on.
-- **Asteroid's new look and the saucer** (branch
-  `claude/sharp-keller-7qlb9g`, not merged): SpaceBackdrop.h replaces the
+- **Asteroid's new look and the saucer** (merged, needs the board): SpaceBackdrop.h replaces the
   stars and line nebula: a dithered nebula from a half-resolution map
   written straight into the canvas (it clears the playfield), its colours
   fading to the next of five sectors every 600 points (the owner's
