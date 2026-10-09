@@ -56,7 +56,12 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   a bobble, orange swept fins whose tips sit on the ground line (y+4) and
   a nozzle that lights yellow under thrust; the heading line is gone (the
   nose shows it). Hitbox and ground contact unchanged. How it reads at
-  speed needs the board.
+  speed needs the board. Also from play: the how-to-play page's best-score
+  box overlapped the last line (moved 8px down), and the first crash's
+  bang came in the next round (explosion.wav was read from the card on
+  first use, behind the music; it and land_success.wav are now preloaded
+  with pickup.wav). The sound needs checking on the board: the first
+  crash after power-on.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

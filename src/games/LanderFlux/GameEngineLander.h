@@ -217,9 +217,10 @@ private:
         canvas.setCursor(1, 88);  canvas.print("> LAND SLOW ON PAD");
         canvas.setCursor(1, 100); canvas.print("> V H A GREEN = SAFE");
 
-        canvas.drawRect(4, 106,
+        // Clear of the last line above (y 100-107).
+        canvas.drawRect(4, 114,
             ArcadeConfig::PORTRAIT_WIDTH - 12, 28, ArcadeConfig::COLOR_ION_BLUE);
-        canvas.setCursor(10, 115);
+        canvas.setCursor(10, 123);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
         canvas.print("BEST: ");
         canvas.setTextColor(ArcadeConfig::COLOR_GREEN);
@@ -487,7 +488,12 @@ public:
         _demo                = false;
         initLevel();
         audio.playLanderStartSound();
-        audio.preload("/audio/pickup.wav");     // the fuel pickup; loaded now, not on the first
+        // Loaded now, not on first use: read from the card while the music
+        // streams, the first crash's bang came late enough to land in the
+        // next round.
+        audio.preload("/audio/pickup.wav");
+        audio.preload("/audio/explosion.wav");
+        audio.preload("/audio/land_success.wav");
     }
 
     // Quitting (the Back button): a game in progress still goes on the
