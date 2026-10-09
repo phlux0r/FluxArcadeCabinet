@@ -1202,6 +1202,10 @@ public:
         struct { const char* path; bool* on; } sounds[] = {
             { PICKUP_WAV, &_pickupOnCard }, { POWERUP_WAV, &_powerupOnCard }, { DOOR_WAV, &_doorOnCard },
             { SWITCH_WAV, &_switchOnCard }, { TELEPORT_WAV, &_teleportOnCard } };
+        // The deaths' sounds (a bomb's, anything else's) first: read from
+        // the card on first use, behind the music, they came late.
+        audio.preload("/audio/explosion.wav");
+        audio.preload("/audio/death.wav");
         for (auto &snd : sounds) {
             *snd.on = audio.exists(snd.path);
             if (*snd.on) audio.preload(snd.path);

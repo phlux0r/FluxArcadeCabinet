@@ -90,6 +90,11 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   Needs the board: frame rate (the nebula writes every playfield pixel,
   as the clear did; rocks are filled), how the nebula looks on the
   ST7735, the saucer's difficulty, and an `asteroid_ufo.wav` if wanted.
+  Also from play: Asteroid's crash bang came late, as Lander's had
+  (explosion.wav read from the card on first use, behind the music);
+  it's preloaded now, and Maze's explosion.wav and death.wav with it
+  (queued before its optional sounds). Every game now preloads the
+  sounds it plays at a death. Check: the first crash after launching.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

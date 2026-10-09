@@ -385,6 +385,9 @@ public:
         _demo              = false;
         // No start sound: the attract loop starts straight away.
         audio.preload("/audio/powerup.wav");   // every pickup; loaded now, not on the first
+        // The ship's (and saucer's) explosion too: read from the card on
+        // first use, behind the music, it came well after the crash.
+        audio.preload("/audio/explosion.wav");
         _shotOnCard = audio.exists(SHOT_WAV);
         _hitOnCard  = audio.exists(HIT_WAV);
         if (_shotOnCard) audio.preload(SHOT_WAV);
