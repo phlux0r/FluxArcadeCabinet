@@ -178,9 +178,9 @@ private:
 
     // Nav hint, below the background art's menu box, in the 5px TomThumb
     // font (as Asteroid's info screen uses), centred. Its box border is row
-    // 123 and the art's INSERT COIN starts at row 146: baselines 129/138/147
-    // put the glyphs (5 rows above the baseline) at 124-128, 133-137 and
-    // 142-146, the last just touching the art.
+    // 123; baselines 132/141/150 put the glyphs (5 rows above the baseline)
+    // at 127-131, 136-140 and 145-149, clear of the box, the last where the
+    // art's INSERT COIN used to be (painted out).
     void drawHint(GFXcanvas16 &canvas, const char* a, const char* b, const char* c) {
         canvas.setFont(&TomThumb);
         canvas.setTextColor(ArcadeConfig::COLOR_AMBER);
@@ -190,7 +190,7 @@ private:
             int16_t x1, y1;
             uint16_t w, h;
             canvas.getTextBounds(lines[i], 0, 0, &x1, &y1, &w, &h);
-            canvas.setCursor((ArcadeConfig::PORTRAIT_WIDTH - (int)w) / 2 - x1, 129 + i * 9);
+            canvas.setCursor((ArcadeConfig::PORTRAIT_WIDTH - (int)w) / 2 - x1, 132 + i * 9);
             canvas.print(lines[i]);
         }
         canvas.setFont();   // back to the built-in font for everything else

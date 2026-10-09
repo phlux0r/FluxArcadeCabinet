@@ -95,6 +95,11 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   it's preloaded now, and Maze's explosion.wav and death.wav with it
   (queued before its optional sounds). Every game now preloads the
   sounds it plays at a death. Check: the first crash after launching.
+  The comet's flickering streaks are now a particle tail (two a frame
+  off its head, fanning, white and pale cyan to ice blue and magenta,
+  fading; spawnFire took an optional lifespan for it) behind a pulsing
+  head; harness `comettail`. The launcher's nav hints moved 3px lower
+  (baselines 132/141/150), on the owner's word.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

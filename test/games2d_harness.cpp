@@ -1842,6 +1842,68 @@ int main(int argc, char** argv) {
                (int)unshieldedHit, (int)(!shieldedHit && shieldTook), f, (int)leaves, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
+    if (!strcmp(which, "all") || !strcmp(which, "comettail")) {
+        // Asteroid's comet: its tail is particles streaming out behind it
+        // (never ahead of its head), a good length, at most 72 of the shared
+        // pool's 120 even at the harness's ~60fps (half that at 30fps; the
+        // exhaust and a shot asteroid's burst fit beside it), and gone
+        // within the particles' life once the comet's passed.
+        static AsteroidManager am;
+        static ParticleManager pm;
+        PlayerShip ship;
+        ship.setX(15); ship.setY(110);
+        AudioEngine audio;
+        am.initGame();
+        pm.clearAll();
+        auto &c = am._pool[0];
+        c.active = true; c.isComet = true; c.radius = 2.5f; c.sizeClass = 1;
+        c.x = ArcadeConfig::SCREEN_WIDTH + 4; c.y = 50; c.vy = 0; c.speedMultiplier = 1;
+        am._cometOnScreen = true;
+        int score = 0, passed = 0, next = 1000;
+        bool ui = false, hit = false;
+        bool behind = true;
+        float longest = 0;
+        int maxAlive = 0, f = 0;
+        for (; f < 600 && score == 0; ++f) {
+            am.update(ship, score, passed, next, ui, hit, audio, pm);
+            pm.update();
+            g_fakeMillis += 17;
+            if (score) break;
+            int alive = 0;
+            for (int k = 0; k < ParticleManager::POOL_SIZE; ++k) {
+                const auto &p = pm._pool[k];
+                if (!p.active) continue;
+                ++alive;
+                behind &= p.x >= c.x - 1.0f;
+                longest = max(longest, p.x - c.x);
+            }
+            maxAlive = max(maxAlive, alive);
+        }
+        const bool passedBy = score == ArcadeConfig::COMET_BONUS_SCORE;
+        pm.clearAll();                                  // the pass's own burst aside
+        // Now with the tail left behind: it dies away.
+        int left = 0;
+        int g = 0;
+        {
+            // run again, stopping the moment the comet's gone
+            am.initGame(); pm.clearAll(); score = 0;
+            c.active = true; c.isComet = true; c.radius = 2.5f; c.sizeClass = 1;
+            c.x = 60; c.y = 50; c.vy = 0;
+            am._cometOnScreen = true;
+            while (score == 0 && g < 600) { am.update(ship, score, passed, next, ui, hit, audio, pm); pm.update(); g_fakeMillis += 17; ++g; }
+            for (g = 0; g < 60; ++g) {
+                am.update(ship, score, passed, next, ui, hit, audio, pm); pm.update(); g_fakeMillis += 17;
+                left = 0;
+                for (int k = 0; k < ParticleManager::POOL_SIZE; ++k) left += pm._pool[k].active;
+                if (!left) break;
+            }
+        }
+        const bool fades = left == 0 && g * 17 <= 850;
+        const bool pass = passedBy && !hit && behind && longest >= 12 && maxAlive >= 10 && maxAlive <= 72 && fades;
+        printf("comettail: passed for %d %d, tail behind the head %d, up to %.0fpx long, %d particles at most, gone %dms after %d -> %s\n",
+               score, (int)passedBy, (int)behind, longest, maxAlive, g * 17, (int)fades, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
     if (!strcmp(which, "all") || !strcmp(which, "fire")) {
         // The Fire power-up: A shoots only while it lasts (20s), a bolt
         // breaks an asteroid in its path and scores as passing it would,
