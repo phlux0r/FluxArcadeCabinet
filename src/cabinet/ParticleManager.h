@@ -175,8 +175,11 @@ public:
     // SPAWN FIRE — LanderFlux thrust trail style
     // Single directed particle with explicit velocity.
     // -------------------------------------------------------------------------
+    // lifeMin/lifeMax: how long it lasts, ms (the thrust's quick fade by
+    // default; Asteroid's comet tail lingers longer).
     void spawnFire(float x, float y, float vx, float vy,
-                   uint16_t color = 0, int trail = 0) {
+                   uint16_t color = 0, int trail = 0,
+                   int lifeMin = 150, int lifeMax = 400) {
         Particle* p = allocate();
         if (!p) return;
 
@@ -185,7 +188,7 @@ public:
             color = (random(0, 2) == 0) ? ArcadeConfig::COLOR_AMBER : ArcadeConfig::COLOR_RED;
         }
 
-        int life = random(150, 400);  // Thrust trails fade quickly
+        int life = random(lifeMin, lifeMax);
 
         p->active      = true;
         p->x           = x;

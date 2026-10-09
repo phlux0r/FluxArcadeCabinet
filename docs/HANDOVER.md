@@ -5,7 +5,7 @@ Where things stand, for a new session picking the cabinet up. CLAUDE.md
 first; this is what isn't in them: the state of the work, what's open, and
 what's been learnt the hard way.
 
-## State (main at the Lander look merge)
+## State (main at the Asteroid look merge)
 
 Ten games, all merged and played on the board: Asteroid, Brick, Lander,
 Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
@@ -37,7 +37,8 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
 - **Since Resonance**, all merged: particle trails (Asteroid, Lander,
   Maze), Lander's flight rebalanced, Asteroid's Fire power-up and
   rebalanced power-ups, Maze Flux reviewed and redesigned, and Lander's
-  new ship and five worlds of scenery; the entries
+  new ship and five worlds of scenery, and Asteroid's backdrop, saucer
+  and comet tail; the entries
   under Open below say what each did and what's left to check.
 - The full suite was 60 PASS before Resonance; since then, by the owner's
   choice, only the harnesses a change touches run before a push (CLAUDE.md).
@@ -72,6 +73,33 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   frame rate (a sky line per row replaces the clear; rocks are filled),
   the gradients on the ST7735, how the ship reads at speed, and the
   first crash's bang after power-on.
+- **Asteroid's new look and the saucer** (merged, needs the board): SpaceBackdrop.h replaces the
+  stars and line nebula: a dithered nebula from a half-resolution map
+  written straight into the canvas (it clears the playfield), its colours
+  fading to the next of five sectors every 600 points (the owner's
+  number); stars at three depths; every 10-30s a distant object (ringed
+  planet, moon, galaxy, station, satellite, pulsar). Its own generator,
+  not random(). Asteroids are solid, in their size colours (the
+  how-to-play page teaches them). The ship's sprite now leaves its black
+  out (it showed as a box over the nebula). The saucer (AlienSaucer.h):
+  a third of Fire pickups bring one 2-4s later; it swerves about the
+  right third, shoots aimed plasma every 1.7-3.3s after a red glow, takes
+  3 hits for 1000, and leaves when Fire ends; its arrival refills Fire
+  (the owner asked for time enough: a bot needs 9s at worst). The demo
+  dodges its plasma and lines up on it. Harness `asteroidsky`, `saucer`.
+  Needs the board: frame rate (the nebula writes every playfield pixel,
+  as the clear did; rocks are filled), how the nebula looks on the
+  ST7735, the saucer's difficulty, and an `asteroid_ufo.wav` if wanted.
+  Also from play: Asteroid's crash bang came late, as Lander's had
+  (explosion.wav read from the card on first use, behind the music);
+  it's preloaded now, and Maze's explosion.wav and death.wav with it
+  (queued before its optional sounds). Every game now preloads the
+  sounds it plays at a death. Check: the first crash after launching.
+  The comet's flickering streaks are now a particle tail (two a frame
+  off its head, fanning, white and pale cyan to ice blue and magenta,
+  fading; spawnFire took an optional lifespan for it) behind a pulsing
+  head; harness `comettail`. The launcher's nav hints moved 3px lower
+  (baselines 132/141/150), on the owner's word.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

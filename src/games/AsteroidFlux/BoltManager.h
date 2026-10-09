@@ -6,9 +6,10 @@
 #include "../../cabinet/ArcadeConfig.h"
 #include "../../cabinet/ParticleManager.h"
 #include "AsteroidManager.h"
+#include "AlienSaucer.h"
 
 // The Fire power-up's bolts: straight ahead from the ship's nose, until
-// they hit an asteroid or leave the screen.
+// they hit an asteroid or the saucer, or leave the screen.
 class BoltManager {
 private:
     static const int MAX_BOLTS = 8;
@@ -29,10 +30,14 @@ public:
         }
     }
 
-    // Moves every bolt and breaks what it hits; returns how many hit.
-    int update(AsteroidManager &asteroids, int &score, int &asteroidsPassed,
+    // Moves every bolt and breaks what it hits; returns how many hit an
+    // asteroid. saucerHit: 0, or 1 if one hit the saucer, 2 if one
+    // brought it down.
+    int update(AsteroidManager &asteroids, AlienSaucer &saucer, int &saucerHit,
+               int &score, int &asteroidsPassed,
                int &nextTargetScore, ParticleManager &particles) {
         int hits = 0;
+        saucerHit = 0;
         for (auto &b : _pool) {
             if (!b.active) continue;
             const float x0 = b.x;
@@ -40,6 +45,9 @@ public:
             if (asteroids.shoot(x0, b.x, b.y, score, asteroidsPassed, nextTargetScore, particles)) {
                 b.active = false;
                 ++hits;
+            } else if (const int s = saucer.shoot(x0, b.x, b.y, particles)) {
+                b.active = false;
+                saucerHit = max(saucerHit, s);
             } else if (b.x - BOLT_LENGTH > ArcadeConfig::SCREEN_WIDTH) {
                 b.active = false;
             }

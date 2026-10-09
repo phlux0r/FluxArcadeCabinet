@@ -148,8 +148,14 @@ public:
             }
         }
 
-        canvas.drawRGBBitmap((int)_x, _y, _frames[_currentFrame],
-                             SHIP_WIDTH, SHIP_HEIGHT);
+        // Black is the sprite's background: left out, so the nebula and
+        // stars show round the ship rather than a black box.
+        const uint16_t* px = _frames[_currentFrame];
+        for (int row = 0; row < SHIP_HEIGHT; row++)
+            for (int col = 0; col < SHIP_WIDTH; col++) {
+                const uint16_t c = px[row * SHIP_WIDTH + col];
+                if (c != ST7735_BLACK) canvas.drawPixel((int)_x + col, _y + row, c);
+            }
     }
 };
 

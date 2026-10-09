@@ -95,28 +95,61 @@ private:
             rotatedX[i] = (int)(ast.x + (rawX * cosA - rawY * sinA));
             rotatedY[i] = (int)(ast.y + (rawX * sinA + rawY * cosA));
         }
+        // Solid rock in its size's colour (the how-to-play page teaches the
+        // colours): a dark fill, two craters turning with it, and its edges
+        // lit in the full colour where they face the upper left, dimmer
+        // round the back.
+        const int cx = (int)ast.x, cy = (int)ast.y;
+        const uint16_t fill = shade(ast.color, 70), dim = shade(ast.color, 150), pit = shade(ast.color, 35);
         for (int i = 0; i < 8; i++) {
-            int nextIndex = (i + 1) % 8;
-            canvas.drawLine(rotatedX[i], rotatedY[i], rotatedX[nextIndex], rotatedY[nextIndex], ast.color);
+            const int n = (i + 1) % 8;
+            canvas.fillTriangle(cx, cy, rotatedX[i], rotatedY[i], rotatedX[n], rotatedY[n], fill);
+        }
+        if (ast.radius >= 5.0f) {
+            canvas.fillCircle(cx + (rotatedX[1] - cx) * 2 / 5, cy + (rotatedY[1] - cy) * 2 / 5,
+                              ast.radius >= 9.0f ? 2 : 1, pit);
+            canvas.drawPixel(cx + (rotatedX[5] - cx) / 2, cy + (rotatedY[5] - cy) / 2, pit);
+        }
+        for (int i = 0; i < 8; i++) {
+            const int n = (i + 1) % 8;
+            const int mx = rotatedX[i] + rotatedX[n] - 2 * cx, my = rotatedY[i] + rotatedY[n] - 2 * cy;
+            canvas.drawLine(rotatedX[i], rotatedY[i], rotatedX[n], rotatedY[n], (mx + my < 0) ? ast.color : dim);
         }
     }
 
+    // c darkened to t/255 of itself.
+    static uint16_t shade(uint16_t c, int t) {
+        return (uint16_t)((((c >> 11) * t / 255) << 11) | ((((c >> 5) & 63) * t / 255) << 5) | ((c & 31) * t / 255));
+    }
+
+    // The comet's head: a white core in a magenta glow that pulses; its
+    // tail is particles (emitCometTail()).
     void drawComet(GFXcanvas16 &canvas, Asteroid& ast) {
-        int cx = (int)ast.x; int cy = (int)ast.y; int r = (int)ast.radius;
-        canvas.drawCircle(cx, cy, r, ast.color);
-        bool alternateFrame = (millis() / 60) % 2 == 0;
-        if (alternateFrame) {
-            canvas.drawLine(cx + r, cy, cx + r + 11, cy, ST7735_WHITE);
-            canvas.drawLine(cx, cy - r, cx + r + 8, cy - 1, ArcadeConfig::COLOR_ION_BLUE);
-            canvas.drawLine(cx, cy + r, cx + r + 8, cy + 1, ArcadeConfig::COLOR_ION_BLUE);
-        } else {
-            canvas.drawLine(cx + r, cy, cx + r + 7, cy, ST7735_WHITE);
-            canvas.drawLine(cx + r, cy - 1, cx + r + 6, cy, ST7735_WHITE);
-            canvas.drawLine(cx + r, cy + 1, cx + r + 6, cy, ST7735_WHITE);
-            canvas.drawLine(cx, cy - r, cx + r + 9, cy - 3, ArcadeConfig::COLOR_ION_BLUE);
-            canvas.drawLine(cx, cy + r, cx + r + 9, cy + 3, ArcadeConfig::COLOR_ION_BLUE);
+        const int cx = (int)ast.x, cy = (int)ast.y;
+        const bool bright = (millis() / 90) % 3 != 0;
+        canvas.fillCircle(cx, cy, 3, bright ? COMET_GLOW : COMET_GLOW_DIM);
+        canvas.fillCircle(cx, cy, 2, ST7735_MAGENTA);
+        canvas.drawFastHLine(cx - 1, cy, 3, ST7735_WHITE);
+        canvas.drawFastVLine(cx, cy - 1, 3, ST7735_WHITE);
+    }
+
+    // Two particles a frame off the back of the head, drifting left more
+    // slowly than the comet, so they stream out behind it: white and pale
+    // cyan nearest, ice blue and magenta further back, each fading.
+    void emitCometTail(const Asteroid& ast, ParticleManager &particles) {
+        static const uint16_t TAIL[6] = { ST7735_WHITE, COMET_ICE, COMET_ICE, ST7735_CYAN,
+                                          ArcadeConfig::COLOR_ION_BLUE, ST7735_MAGENTA };
+        for (int k = 0; k < 2; k++) {
+            const float vx = ast.vx * (0.25f + random(0, 20) * 0.01f);
+            const float vy = random(-12, 13) * 0.022f;    // fanning out a little
+            particles.spawnFire(ast.x + 2.0f, ast.y + random(-2, 3), vx, vy,
+                                TAIL[min(5, k * 3 + (int)random(0, 3))], 3, 300, 700);
         }
     }
+
+    static const uint16_t COMET_GLOW     = 0x780F;   // dim magenta
+    static const uint16_t COMET_GLOW_DIM = 0x4808;
+    static const uint16_t COMET_ICE      = 0xAFFF;   // pale cyan
 
     // One more asteroid got past (or was shot): every so many, another joins
     // the field, or once it's full the field speeds up.
@@ -278,6 +311,8 @@ public:
 
             _pool[i].x += _pool[i].vx; 
             _pool[i].y += _pool[i].vy;
+            if (_pool[i].isComet && _pool[i].x - _pool[i].radius < ArcadeConfig::SCREEN_WIDTH)
+                emitCometTail(_pool[i], particles);
             _pool[i].angle += _pool[i].spinSpeed;
 
             if (_pool[i].angle >= 360.0f) _pool[i].angle -= 360.0f;
