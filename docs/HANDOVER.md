@@ -49,6 +49,14 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   speed-up eased, the boss's rocks slowed, the Ruins boss's cracks made
   fair, Storm's rocks orange. docs/design/RunnerFlux.md has each world's
   rules and why.
+- **Lander's new ship** (branch `claude/sharp-keller-7qlb9g`, not merged):
+  the owner wanted a bulging cartoon rocket, Jetsons-style, in place of
+  the arrowhead. Ship.h now draws a fat teardrop hull (cyan, the outline
+  still flashing green/red near the ground), a porthole, an antenna with
+  a bobble, orange swept fins whose tips sit on the ground line (y+4) and
+  a nozzle that lights yellow under thrust; the heading line is gone (the
+  nose shows it). Hitbox and ground contact unchanged. How it reads at
+  speed needs the board.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and
