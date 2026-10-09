@@ -72,6 +72,24 @@ Maze, Resonance, Roll, Runner (Platform Flux), Star, Tank, Tube.
   frame rate (a sky line per row replaces the clear; rocks are filled),
   the gradients on the ST7735, how the ship reads at speed, and the
   first crash's bang after power-on.
+- **Asteroid's new look and the saucer** (branch
+  `claude/sharp-keller-7qlb9g`, not merged): SpaceBackdrop.h replaces the
+  stars and line nebula: a dithered nebula from a half-resolution map
+  written straight into the canvas (it clears the playfield), its colours
+  fading to the next of five sectors every 600 points (the owner's
+  number); stars at three depths; every 10-30s a distant object (ringed
+  planet, moon, galaxy, station, satellite, pulsar). Its own generator,
+  not random(). Asteroids are solid, in their size colours (the
+  how-to-play page teaches them). The ship's sprite now leaves its black
+  out (it showed as a box over the nebula). The saucer (AlienSaucer.h):
+  a third of Fire pickups bring one 2-4s later; it swerves about the
+  right third, shoots aimed plasma every 1.7-3.3s after a red glow, takes
+  3 hits for 1000, and leaves when Fire ends; its arrival refills Fire
+  (the owner asked for time enough: a bot needs 9s at worst). The demo
+  dodges its plasma and lines up on it. Harness `asteroidsky`, `saucer`.
+  Needs the board: frame rate (the nebula writes every playfield pixel,
+  as the clear did; rocks are filled), how the nebula looks on the
+  ST7735, the saucer's difficulty, and an `asteroid_ufo.wav` if wanted.
 - **Display library: staying on Adafruit** (decided 2026-10). LovyanGFX
   was looked at: its gain here would be DMA for the ~8ms frame push at
   40MHz, overlapping the next frame's drawing, with a second canvas and

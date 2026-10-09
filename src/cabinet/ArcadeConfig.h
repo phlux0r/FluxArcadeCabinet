@@ -189,6 +189,11 @@ struct ArcadeConfig {
     static const unsigned long FIRE_DURATION_MS = 20000;
     static const unsigned long FIRE_INTERVAL_MS = 160;    // between shots, A held
     static constexpr float BOLT_SPEED           = 5.0f;   // px/frame
+    // The alien saucer (AlienSaucer.h): the chance a Fire pickup brings
+    // one, the bolts it takes, what it's worth.
+    static const int   SAUCER_CHANCE_PCT        = 33;
+    static const int   SAUCER_HITS              = 3;
+    static const int   SAUCER_SCORE             = 1000;
 
     // Power-up colours
     static const uint16_t COLOR_SHIELD = 0x07E0;   // Green

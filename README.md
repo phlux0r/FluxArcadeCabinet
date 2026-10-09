@@ -5,7 +5,7 @@ the cabinet's display, audio, input and particle subsystems.
 
 | Game | Menu name | Orientation | What it is |
 |---|---|---|---|
-| Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer; a shot asteroid scores its points and 5 more); solid, lit asteroids over a drifting nebula whose colours change every 600 points, three depths of stars, and now and then something distant passing (a ringed planet, a moon, a galaxy, a space station, a satellite, a pulsar) |
+| Asteroid Flux | Asteroids | Landscape | Asteroid dodger with power-ups (shield, slow-time, extra life, and from 500 points Fire: hold A to shoot for 20s, the line under the HUD its timer; a shot asteroid scores its points and 5 more; a third of Fire pickups bring an alien saucer that swerves about the right of the screen lobbing plasma at you, 3 hits for 1000, Fire topped back up when it arrives, gone when Fire ends); solid, lit asteroids over a drifting nebula whose colours change every 600 points, three depths of stars, and now and then something distant passing (a ringed planet, a moon, a galaxy, a space station, a satellite, a pulsar) |
 | Brick Flux | Brick | Portrait | Brick breaker: a tilting bat, two-colour bricks, the Flux Smash, a wall that creeps down, bosses (see below) |
 | Lander Flux | Lander | Portrait | Fuel-limited landing through a scrolling cavern, across five worlds (dust, ice, ember, jade, the moon), a new one every 4 levels, each with its own sky, ridge, ground, rocks and planet |
 | Maze Flux | Maze | Portrait | Scrolling generated mazes: keys, doors, traps and bombs against the clock |
@@ -612,8 +612,8 @@ FluxArcadeCabinet/
     └── games/
         ├── IGame.h             # Interface every game implements
         ├── AsteroidFlux/       # AsteroidFluxGame.h + ship/asteroid/power-up/
-        │                       # bolt managers, SpaceBackdrop.h (nebula, stars,
-        │                       # distant objects) + assets/
+        │                       # bolt managers, AlienSaucer.h, SpaceBackdrop.h
+        │                       # (nebula, stars, distant objects) + assets/
         ├── BrickFlux/          # Brick breaker, header-only:
         │   ├── BrickFluxGame.h     # Class, phases, attract cycle, sounds
         │   ├── BrickConfig.h       # All tuning: field, bat, ball, smash, wall, capsules
@@ -768,7 +768,7 @@ fetches the real files into an existing clone.
 |---|---|
 | `gameend.wav`, `explosion.wav` | Shared across games |
 | `lander_start.wav`, `land_success.wav`, `pickup.wav` (fuel pickup) | Lander Flux |
-| `powerup.wav` (any pickup); optional, else a tone: `tube_shot.wav` (a Fire shot), `shot.wav` (a shot asteroid) | Asteroid Flux |
+| `powerup.wav` (any pickup), `explosion.wav` (the saucer brought down); optional, else a tone: `tube_shot.wav` (a Fire shot), `shot.wav` (a shot asteroid), `asteroid_ufo.wav` (the saucer arriving, ~0.5s; else a warble) | Asteroid Flux |
 | `jump.wav`, `death.wav`, `gameend.wav`, else melodies; `lander_start.wav` (title, if no `runner_title.wav`), `powerup.wav` (star and diamond, if no own files); optional sounds below | Platform Flux (Runner) |
 | `tank_start.wav`, `shot.wav`, `repair.wav` | Tank Flux |
 | `powerup.wav` (any pickup), `tube_shot.wav`, `tube_bump.wav` (losing a shield); also `explosion.wav` | Tube Flux |

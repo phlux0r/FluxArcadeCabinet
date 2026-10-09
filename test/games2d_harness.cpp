@@ -11,6 +11,7 @@
 
 #include <Adafruit_ST7735.h>   // main.cpp includes it before the games
 #include <cstdio>
+#include <algorithm>
 #include <cstdint>
 
 // The same fake clock and seeded RNG as the other harnesses
@@ -1690,6 +1691,155 @@ int main(int argc, char** argv) {
         printf("asteroidsky: playfield covered %d, HUD untouched %d, sector every 600 cycling 5 %d, random() untouched %d, "
                "an object within 10s %d, %d objects in 100s -> %s\n",
                (int)covers, (int)hudKept, (int)sectors, (int)rngKept, (int)objSeen, objects, pass ? "PASS" : "FAIL");
+        ok &= pass;
+    }
+    if (!strcmp(which, "all") || !strcmp(which, "saucer")) {
+        // Asteroid's alien saucer: about a third of Fire pickups bring one,
+        // none if Fire's over before it's due; it keeps to the right-hand
+        // third, swerving about, and shoots now and then, aimed at the ship;
+        // 3 bolts bring it down for 1000; its plasma costs a life, or the
+        // shield; it leaves, unscored, when Fire ends. And Fire is long
+        // enough: its arrival refills Fire, and a bot that only lines up and
+        // holds A, at 30fps, brings it down well inside the 20s.
+        static AsteroidFluxGame g;
+        AudioEngine audio;
+        g.init(audio);
+        g.resetGame();
+        AlienSaucer &sc = g._saucer;
+        PlayerShip &ship = g._ship;
+        ParticleManager &pm = g._particles;
+        bool arrived, fired, took;
+
+        int brought = 0;
+        for (int i = 0; i < 600; ++i) { sc.reset(); sc.fireStarted(); brought += sc.due(); }
+        const bool chance = brought > 600 * 25 / 100 && brought < 600 * 41 / 100;
+
+        sc.reset();
+        while (!sc.due()) sc.fireStarted();
+        for (int f = 0; f < 200; ++f) sc.update(ship, f < 10, pm, arrived, fired, took);
+        const bool notAfterFire = !sc.onScreen();
+
+        // Hovering: where it goes, and its shots, the ship well left.
+        sc.reset();
+        while (!sc.due()) sc.fireStarted();
+        ship.setX(20); ship.setY(60);
+        float minX = 999, minY = 999, maxY = -999;
+        int shots = 0, aimed = 0, arrivedAt = -1;
+        for (int f = 0; f < 1800; ++f) {
+            sc.update(ship, true, pm, arrived, fired, took);
+            if (arrived) arrivedAt = f;
+            if (sc.onScreen() && arrivedAt >= 0 && f > arrivedAt + 60) {
+                minX = min(minX, sc.x()); minY = min(minY, sc.y()); maxY = max(maxY, sc.y());
+            }
+            if (fired) {
+                ++shots;
+                for (int k = 0; k < AlienSaucer::MAX_SHOTS; k++) {
+                    const auto &p = sc.shots()[k];
+                    if (!p.active) continue;
+                    // the newest: heading for the ship's middle (28, 65)
+                    const float t = (28 - p.x) / p.vx;
+                    if (t > 0 && fabsf(p.y + p.vy * t - 65) < 4) { ++aimed; break; }
+                }
+            }
+            sc.clearShots();                          // keep the ship out of it here
+        }
+        const bool stays = minX >= ArcadeConfig::SCREEN_WIDTH * 2 / 3 - 2 && maxY - minY > 40;
+        const bool shoots = shots >= 15 && shots <= 40 && aimed == shots;
+
+        // Three hits, the last for 1000, through the game's own bolts.
+        g.resetGame();
+        g._score = 700;
+        ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+        g._fireWasOn = true;
+        sc.reset();
+        while (!sc.due()) sc.fireStarted();
+        GFXcanvas16 canvas(ArcadeConfig::LANDSCAPE_WIDTH, ArcadeConfig::LANDSCAPE_HEIGHT);
+        long killFrames[40]; int killed = 0, trials = 0;
+        {
+            // first a straight check of the hit count
+            AlienSaucer t; t.reset();
+            while (!t.due()) t.fireStarted();
+            for (int f = 0; f < 400 && !(t.onScreen() && t.x() < ArcadeConfig::SCREEN_WIDTH - 12); ++f)
+                t.update(ship, true, pm, arrived, fired, took);   // in view
+            int r1 = t.shoot(t.x() - 9, t.x(), t.y(), pm), r2 = t.shoot(t.x() - 9, t.x(), t.y(), pm),
+                r3 = t.shoot(t.x() - 9, t.x(), t.y(), pm);
+            killed = (r1 == 1 && r2 == 1 && r3 == 2 && !t.onScreen()) ? -1 : -2;
+        }
+        const bool threeHits = killed == -1;
+        killed = 0;
+        int scoreJump = 0, refilled = 0;
+        for (trials = 0; trials < 40; ++trials) {
+            g.resetGame();
+            g._lives = 99;
+            ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+            g._fireWasOn = true;
+            sc.reset();
+            while (!sc.due()) sc.fireStarted();
+            long seen = -1, f = 0;
+            const int s0 = g._score;
+            bool down = false;
+            for (; f < 2 * 20000 / 33 && ship.isFireActive(); ++f) {
+                ship.activateShield(100000);          // aim only: nothing ends Fire early
+                InputState in{};
+                in.btnA = true;
+                if (sc.onScreen()) in.joyX = constrain((sc.y() - 4.0f - g._shipYOffset) / 1.2f, -1.0f, 1.0f);
+                g.update(canvas, in, audio);
+                if (sc.onScreen() && seen < 0) {
+                    seen = f;
+                    refilled += ship.fireRemainingMs() >= ArcadeConfig::FIRE_DURATION_MS - 50;
+                }
+                g_fakeMillis += 33;
+                if (seen >= 0 && !sc.onScreen() && !sc.due()) { down = true; break; }
+            }
+            const int gained = g._score - s0;
+            if (down && gained >= ArcadeConfig::SAUCER_SCORE) {
+                killFrames[killed++] = f - seen;
+                scoreJump = max(scoreJump, gained);
+            }
+        }
+        std::sort(killFrames, killFrames + killed);
+        const float medianS = killed ? killFrames[killed / 2] * 0.033f : 99.0f;
+        const float worstS  = killed ? killFrames[killed - 1] * 0.033f : 99.0f;
+        const bool killable = killed == trials && worstS < 14.0f && refilled == trials;
+
+        // Its plasma: a life unshielded, the shield otherwise.
+        g.resetGame();
+        ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+        sc.reset();
+        ship.setX(20); ship.setY(60);
+        auto plasmaAt = [&](bool shielded) {
+            sc.clearShots();
+            if (shielded) ship.activateShield(5000); else ship.deactivateShield();
+            AlienSaucer::Shot &p = const_cast<AlienSaucer::Shot&>(sc.shots()[0]);
+            p = { 30.0f, 65.0f, -0.5f, 0.0f, true };
+            return sc.update(ship, true, pm, arrived, fired, took);
+        };
+        const bool unshieldedHit = plasmaAt(false);
+        const bool shieldedHit = plasmaAt(true);
+        const bool shieldTook = took;
+        const bool plasma = unshieldedHit && !shieldedHit && shieldTook && !ship.isShieldActive();
+
+        // Fire over: it leaves to the right and is gone, nothing scored.
+        sc.reset();
+        while (!sc.due()) sc.fireStarted();
+        for (int f = 0; f < 300; ++f) sc.update(ship, true, pm, arrived, fired, took);
+        const bool wasOn = sc.onScreen();
+        float lastX = sc.x();
+        bool rightwards = true;
+        int f = 0;
+        for (; f < 300 && sc.onScreen(); ++f) {
+            sc.update(ship, false, pm, arrived, fired, took);
+            if (sc.onScreen()) { rightwards &= sc.x() >= lastX - 0.5f; lastX = sc.x(); }
+        }
+        const bool leaves = wasOn && !sc.onScreen() && f < 120;
+
+        const bool pass = chance && notAfterFire && stays && shoots && threeHits && killable && plasma && leaves;
+        printf("saucer: brought by %d%% of Fire pickups %d, none once Fire's over %d; keeps x >= %.0f, y %.0f-%.0f %d; "
+               "%d shots in 60s all aimed %d; 3 hits %d; bot brings it down in %d/%d, median %.1fs worst %.1fs (+%d), Fire refilled %d %d; "
+               "plasma: life %d, shield %d; leaves in %d frames %d -> %s\n",
+               brought * 100 / 600, (int)chance, (int)notAfterFire, minX, minY, maxY, (int)stays,
+               shots, (int)shoots, (int)threeHits, killed, trials, medianS, worstS, scoreJump, refilled, (int)killable,
+               (int)unshieldedHit, (int)(!shieldedHit && shieldTook), f, (int)leaves, pass ? "PASS" : "FAIL");
         ok &= pass;
     }
     if (!strcmp(which, "all") || !strcmp(which, "fire")) {

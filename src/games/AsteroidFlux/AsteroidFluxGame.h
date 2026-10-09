@@ -11,6 +11,7 @@
 #include "PlayerShip.h"
 #include "PowerUpManager.h"
 #include "BoltManager.h"
+#include "AlienSaucer.h"
 #include "SpaceBackdrop.h"
 
 // Game-specific bitmap assets (splash is Asteroid Flux only)
@@ -31,6 +32,8 @@ private:
     uint32_t        _backdropSeed = 0;   // a fresh sky each game and demo
     ParticleManager _particles;
     BoltManager     _bolts;
+    AlienSaucer     _saucer;
+    bool            _fireWasOn = false;      // a Fire pickup may bring the saucer
 
     Adafruit_ST7735* _tft = nullptr;
 
@@ -39,9 +42,10 @@ private:
     // which of its sounds are on the card (checked once, in init()).
     unsigned long _nextShotMs = 0;
     bool _fireBarShown = false;
-    bool _shotOnCard = false, _hitOnCard = false;
+    bool _shotOnCard = false, _hitOnCard = false, _ufoOnCard = false;
     static constexpr const char* SHOT_WAV = "/audio/tube_shot.wav";
     static constexpr const char* HIT_WAV  = "/audio/shot.wav";
+    static constexpr const char* UFO_WAV  = "/audio/asteroid_ufo.wav";
 
     int  _score           = 0;
     int  _highScore       = 0;
@@ -140,6 +144,13 @@ private:
         if (_hitOnCard) audio.playWAV(HIT_WAV);
         else            audio.playSound(500, 60);
     }
+    // The saucer arriving: its own WAV, else a rising and falling warble.
+    void sfxSaucer(AudioEngine &audio) {
+        if (_ufoOnCard) { audio.playWAV(UFO_WAV); return; }
+        static const int f[] = { 600, 900, 1200, 900, 600, 900, 1200, 900 };
+        static const int d[] = { 60, 60, 60, 60, 60, 60, 60, 60 };
+        audio.playMelody(f, d, 8);
+    }
 
     void renderSplash(GFXcanvas16 &canvas) {
         for (int i = 0; i < 20480; i++) {
@@ -172,14 +183,16 @@ private:
 
         // TomThumb rows: 5px/char + 1px gap = 6px/char
         // "YELLOW(S1)  CYAN(S2)" = 20 chars = 120px → x=20
-        // Row spacing: 13px for comfortable reading
+        // Row spacing: 10px, four rows above the power-ups
         canvas.setFont(&TomThumb);
         canvas.setTextColor(ArcadeConfig::COLOR_YELLOW);
-        canvas.setCursor(20, 18); canvas.print("YELLOW +1    CYAN +2");
+        canvas.setCursor(20, 17); canvas.print("YELLOW +1    CYAN +2");
         canvas.setTextColor(ArcadeConfig::COLOR_ORANGE);
-        canvas.setCursor(20, 31); canvas.print("ORANGE +3     RED +4");
+        canvas.setCursor(20, 27); canvas.print("ORANGE +3     RED +4");
         canvas.setTextColor(ArcadeConfig::COLOR_CYAN);
-        canvas.setCursor(20, 44); canvas.print("BLUE +5    COMET +15");
+        canvas.setCursor(20, 37); canvas.print("BLUE +5    COMET +15");
+        canvas.setTextColor(ArcadeConfig::COLOR_MAGENTA);
+        canvas.setCursor(20, 47); canvas.print("SAUCER, 3 HITS +1000");
 
         // --- POWERUPS section ---
         // Header: "---== POWERUPS ==---" = 20 chars = 120px → x=20
@@ -223,6 +236,8 @@ private:
         _powerUps.newGame();
         _particles.clearAll();
         _bolts.clearAll();
+        _saucer.reset();
+        _fireWasOn    = false;
         _fireBarShown = false;
         _asteroids.initGame();
         _backdrop.reset(++_backdropSeed);
@@ -255,6 +270,16 @@ private:
                 const float gap = sqrtf((ax - cx) * (ax - cx) + (ay - cy) * (ay - cy)) - rs[i];
                 if (gap < worst) worst = gap;
             }
+            // The saucer's plasma balls, flying straight on.
+            for (int k = 0; k < AlienSaucer::MAX_SHOTS; k++) {
+                const AlienSaucer::Shot &p = _saucer.shots()[k];
+                if (!p.active) continue;
+                const float ax = p.x + p.vx * (t + 1), ay = p.y + p.vy * (t + 1);
+                const float cx = max(sx, min(ax, sx + ArcadeConfig::SHIP_WIDTH));
+                const float cy = max(sy, min(ay, sy + ArcadeConfig::SHIP_HEIGHT));
+                const float gap = sqrtf((ax - cx) * (ax - cx) + (ay - cy) * (ay - cy)) - 2.5f;
+                if (gap < worst) worst = gap;
+            }
         }
         return worst;
     }
@@ -267,12 +292,19 @@ private:
         float rs[ArcadeConfig::MAX_ASTEROIDS];
         _asteroids.predictPaths(DEMO_HORIZON, _demoXs, _demoYs, rs);
         const float xSpan = (float)(SHIP_X_MAX - SHIP_X_MIN);
+        // With the saucer about, any spot clear enough will do, and the
+        // one most in line with it (to shoot it) is best.
+        auto worth = [&](float tx, float ty) {
+            const float c = demoClearance(tx, ty, rs);
+            if (!_saucer.onScreen()) return c;
+            return min(c, 10.0f) - 0.08f * fabsf(ty + 4.0f - _saucer.y());   // bolts leave at the ship's y + 4
+        };
         float bestX = _demoTargetX, bestY = _demoTargetY;
-        float best = demoClearance(bestX, bestY, rs) + 3.0f;   // the current aim's head start
+        float best = worth(bestX, bestY) + 3.0f;   // the current aim's head start
         for (float ty = (float)SHIP_Y_MIN; ty <= (float)SHIP_Y_MAX; ty += 6.0f) {
             for (int k = 0; k < 3; k++) {
                 const float tx = xSpan * 0.5f * (float)k;
-                float c = demoClearance(tx, ty, rs);
+                float c = worth(tx, ty);
                 if (c > best) { best = c; bestX = tx; bestY = ty; }
             }
         }
@@ -357,6 +389,8 @@ public:
         _hitOnCard  = audio.exists(HIT_WAV);
         if (_shotOnCard) audio.preload(SHOT_WAV);
         if (_hitOnCard)  audio.preload(HIT_WAV);
+        _ufoOnCard = audio.exists(UFO_WAV);
+        if (_ufoOnCard)  audio.preload(UFO_WAV);
     }
 
     void setTFT(Adafruit_ST7735 &tft) override { _tft = &tft; }
@@ -438,9 +472,24 @@ public:
             _asteroids.update(_ship, _score, _asteroidsPassed, _nextTargetScore,
                               uiNeedsUpdate, playerHit, audio, _particles);
 
-            if (playerHit) {                         // a hit ends the Fire power-up
+            // The saucer: maybe one with each Fire pickup.
+            const bool fireOn = _ship.isFireActive();
+            if (fireOn && !_fireWasOn) _saucer.fireStarted();
+            _fireWasOn = fireOn;
+            bool arrived, fired, shieldTook;
+            if (_saucer.update(_ship, fireOn, _particles, arrived, fired, shieldTook)) playerHit = true;
+            if (arrived) {                          // Fire refilled, to have time to bring it down
+                _ship.activateFire(ArcadeConfig::FIRE_DURATION_MS);
+                sfxSaucer(audio);
+            }
+            if (fired)      audio.playSound(320, 90);
+            if (shieldTook) audio.playSound(300, 200);
+
+            if (playerHit) {                         // a hit ends the Fire power-up, and the saucer
                 _ship.deactivateFire();
                 _bolts.clearAll();
+                _saucer.reset();
+                _fireWasOn = false;
             }
             if (playerHit && _demo) {                // a demo hit just ends the demo
                 triggerShipExplosion(audio);
@@ -480,9 +529,18 @@ public:
                 _nextShotMs = millis() + ArcadeConfig::FIRE_INTERVAL_MS;
                 sfxShot(audio);
             }
-            if (_bolts.update(_asteroids, _score, _asteroidsPassed, _nextTargetScore, _particles) > 0) {
+            int saucerHit = 0;
+            if (_bolts.update(_asteroids, _saucer, saucerHit, _score, _asteroidsPassed,
+                              _nextTargetScore, _particles) > 0) {
                 sfxHit(audio);
                 uiNeedsUpdate = true;
+            }
+            if (saucerHit == 2) {                    // brought down
+                _score += ArcadeConfig::SAUCER_SCORE;
+                uiNeedsUpdate = true;
+                audio.playExplosionSound(explosion_data, sizeof(explosion_data));
+            } else if (saucerHit == 1) {
+                audio.playSound(900, 40);
             }
 
             // Normal gameplay render: the backdrop clears the playfield
@@ -490,6 +548,7 @@ public:
             _particles.render(canvas, 11);
             _powerUps.render(canvas);
             _asteroids.render(canvas);
+            _saucer.render(canvas);
             _bolts.render(canvas);
             _ship.render(canvas);
 

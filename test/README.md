@@ -313,7 +313,13 @@ stage 28 (Storm's gusts about) and 37 too;
   Asteroid's backdrop (`asteroidsky`: it writes the whole playfield and
   never the HUD, its sector changes every 600 points and cycles through
   5, it takes nothing from `random()`, and a distant object comes by
-  within 10s and another after it), its Fire power-up (`fire`: A shoots nothing without it; with
+  within 10s and another after it), its saucer (`saucer`: about a third
+  of Fire pickups bring one, none once Fire's over; it keeps to the right
+  third and swerves over most of the height; 15-40 shots a minute, every
+  one aimed at the ship; 3 hits bring it down; a bot that only lines up
+  and holds A at 30fps downs it in all 40 tries, the worst well inside
+  the 20s, its arrival having refilled Fire; its plasma costs a life, or
+  the shield; it leaves when Fire ends), its Fire power-up (`fire`: A shoots nothing without it; with
   it a bolt breaks an asteroid ahead, scoring what passing it would and 5
   more, and counting as passing it would; the HUD line is orange for the time left and green again after
   20s, when A stops shooting), its power-ups (`powerups`: the mix drawn
